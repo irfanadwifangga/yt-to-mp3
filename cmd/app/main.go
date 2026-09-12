@@ -22,11 +22,13 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/tools"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ytdlp"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/instance"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/version"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/worker"
 	"github.com/irfanadwifangga/yt-to-mp3/web"
 )
 
@@ -131,21 +133,40 @@ func run() error {
 		log.Warn("job tertinggal dari sesi sebelumnya ditandai gagal", "jumlah", swept)
 	}
 
+	presets := db.NewPresetRepository(database)
+	mediaCache := db.NewMediaRepository(database)
+	resolver := ytdlp.NewResolver(toolManager, log)
+
+	hub := api.NewHub(jobs, log)
+
+	// Pipeline unduhan dan transcode menyusul pada tahap 5; sampai saat itu
+	// mesin antrean tetap utuh dan job berakhir gagal dengan sebab jelas.
+	scheduler := worker.New(jobs, pendingPipeline{}, hub, cfg.MaxConcurrentJobs, log)
+
+	jobService := application.NewJobService(
+		jobs, presets, mediaCache, resolver, hub, scheduler.Notify(),
+		application.JobServiceConfig{
+			MaxQueueDepth:   cfg.MaxQueueDepth,
+			DefaultPreset:   cfg.DefaultPresetID,
+			DefaultFilename: domain.FilenameMode(cfg.FilenameMode),
+		}, log)
+
+	go scheduler.Run(ctx)
+
 	srv := api.New(api.Options{
-		Config:   cfg,
-		Logger:   log,
-		Token:    token,
-		Port:     actualPort,
-		SPA:      spaFS,
-		SPABuilt: spaBuilt,
-		Dev:      *devMode,
-		Tools:    toolManager,
-		Presets:  db.NewPresetRepository(database),
-		Metadata: application.NewMetadataService(
-			ytdlp.NewResolver(toolManager, log),
-			db.NewMediaRepository(database),
-			log,
-		),
+		Config:    cfg,
+		Logger:    log,
+		Token:     token,
+		Port:      actualPort,
+		SPA:       spaFS,
+		SPABuilt:  spaBuilt,
+		Dev:       *devMode,
+		Tools:     toolManager,
+		Presets:   presets,
+		Metadata:  application.NewMetadataService(resolver, mediaCache, log),
+		Jobs:      jobService,
+		Canceller: scheduler,
+		Hub:       hub,
 	})
 
 	info := instance.Info{
@@ -218,4 +239,18 @@ func newLogger(level string) *slog.Logger {
 		lv = slog.LevelInfo
 	}
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lv}))
+}
+
+// pendingPipeline adalah JobRunner sementara untuk tahap 4.
+//
+// Mesin antrean sudah lengkap, tetapi isi pekerjaannya (yt-dlp dan FFmpeg)
+// baru hadir pada tahap 5. Sampai saat itu job berakhir gagal dengan sebab
+// yang jelas alih-alih menggantung, dan seluruh jalur transisi, pembatalan,
+// serta siaran event tetap berjalan sungguhan. Hapus tipe ini ketika
+// pipeline sudah ada.
+type pendingPipeline struct{}
+
+func (pendingPipeline) Run(context.Context, *domain.Job) error {
+	return domain.NewError(domain.CodeInternal, domain.ClassPermanent,
+		"pipeline unduhan belum tersedia pada versi ini")
 }

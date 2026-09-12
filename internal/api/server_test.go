@@ -22,11 +22,13 @@ const (
 )
 
 type harness struct {
-	srv      *api.Server
-	tools    *fakeTools
-	resolver *fakeResolver
-	cache    *fakeCache
-	presets  *fakePresets
+	srv       *api.Server
+	tools     *fakeTools
+	resolver  *fakeResolver
+	cache     *fakeCache
+	presets   *fakePresets
+	jobs      *fakeJobRepo
+	canceller *fakeCanceller
 }
 
 func newHarness(t *testing.T) *harness {
@@ -35,24 +37,39 @@ func newHarness(t *testing.T) *harness {
 	fr := newFakeResolver()
 	fc := newFakeCache()
 	fp := newFakePresets()
+	jr := newFakeJobRepo()
+	fcan := &fakeCanceller{}
 	log := newDiscardLogger()
+
+	hub := api.NewHub(jr, log)
+	jobService := application.NewJobService(jr, fp, fc, fr, hub, nil,
+		application.JobServiceConfig{
+			MaxQueueDepth:   3,
+			DefaultPreset:   "mp3_standard",
+			DefaultFilename: domain.FilenameTitle,
+		}, log)
 
 	return &harness{
 		srv: api.New(api.Options{
-			Config:   config.Default(),
-			Logger:   log,
-			Token:    testToken,
-			Port:     testPort,
-			SPA:      fstest.MapFS{},
-			SPABuilt: false,
-			Tools:    ft,
-			Presets:  fp,
-			Metadata: application.NewMetadataService(fr, fc, log),
+			Config:    config.Default(),
+			Logger:    log,
+			Token:     testToken,
+			Port:      testPort,
+			SPA:       fstest.MapFS{},
+			SPABuilt:  false,
+			Tools:     ft,
+			Presets:   fp,
+			Metadata:  application.NewMetadataService(fr, fc, log),
+			Jobs:      jobService,
+			Canceller: fcan,
+			Hub:       hub,
 		}),
-		tools:    ft,
-		resolver: fr,
-		cache:    fc,
-		presets:  fp,
+		tools:     ft,
+		resolver:  fr,
+		cache:     fc,
+		presets:   fp,
+		jobs:      jr,
+		canceller: fcan,
 	}
 }
 

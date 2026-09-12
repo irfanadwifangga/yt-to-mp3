@@ -24,12 +24,6 @@ func (s *Server) handlePing(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-type queueStatus struct {
-	Active   int `json:"active"`
-	Queued   int `json:"queued"`
-	Capacity int `json:"capacity"`
-}
-
 type healthResponse struct {
 	App           string                            `json:"app"`
 	Version       string                            `json:"version"`
@@ -39,7 +33,7 @@ type healthResponse struct {
 	SPABuilt      bool                              `json:"spa_built"`
 	OutputDir     string                            `json:"output_dir"`
 	Tools         map[string]application.ToolStatus `json:"tools"`
-	Queue         queueStatus                       `json:"queue"`
+	Queue         application.QueueStatus           `json:"queue"`
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +47,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		SPABuilt:      s.spaBuilt,
 		OutputDir:     s.cfg.OutputDir,
 		Tools:         s.tools.StatusAll(r.Context()),
-		Queue:         queueStatus{Capacity: s.cfg.MaxQueueDepth},
+		Queue:         s.jobs.Queue(r.Context()),
 	})
 }
 

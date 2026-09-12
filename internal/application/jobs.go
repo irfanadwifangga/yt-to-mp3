@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -58,14 +59,14 @@ func (t StreamEventType) Persisted() bool {
 
 // StreamEvent adalah satu event yang disiarkan ke pelanggan SSE.
 type StreamEvent struct {
-	JobID   string          `json:"-"`
-	Seq     int64           `json:"-"`
-	Type    StreamEventType `json:"-"`
+	JobID   string           `json:"-"`
+	Seq     int64            `json:"-"`
+	Type    StreamEventType  `json:"-"`
 	Status  domain.JobStatus `json:"status,omitempty"`
-	Phase   string          `json:"phase,omitempty"`
-	Percent *float64        `json:"percent,omitempty"`
+	Phase   string           `json:"phase,omitempty"`
+	Percent *float64         `json:"percent,omitempty"`
 	Code    domain.ErrorCode `json:"code,omitempty"`
-	Message string          `json:"message,omitempty"`
+	Message string           `json:"message,omitempty"`
 }
 
 // EventPublisher menyiarkan event ke pelanggan yang sedang terhubung.
@@ -331,4 +332,29 @@ func (s *JobService) Queue(ctx context.Context) QueueStatus {
 		s.log.Warn("hitung antrean gagal", "error", err)
 	}
 	return QueueStatus{Active: active, Queued: queued, Capacity: s.maxQueueDepth}
+}
+
+// PayloadJSON menyusun isi kolom job_events untuk event ini.
+//
+// Dipersist sebagai JSON dengan bentuk yang sama seperti event live,
+// sehingga pelanggan yang menyambung ulang menerima struktur identik dengan
+// yang diterima pelanggan yang tidak pernah terputus.
+func (e StreamEvent) PayloadJSON() string {
+	raw, err := json.Marshal(e)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+// ParseEventPayload membaca kembali payload yang dipersist.
+//
+// Payload lama yang berupa teks biasa tetap diterima dan dipetakan ke
+// Message, supaya database yang sudah terisi tidak perlu dimigrasi.
+func ParseEventPayload(payload string) StreamEvent {
+	var ev StreamEvent
+	if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+		return StreamEvent{Message: payload}
+	}
+	return ev
 }

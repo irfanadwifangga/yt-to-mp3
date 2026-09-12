@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
@@ -125,4 +126,150 @@ func (p *fakePresets) Get(_ context.Context, id string) (*domain.Preset, error) 
 		}
 	}
 	return nil, domain.NewError(domain.CodeInternal, domain.ClassLocal, "tidak ada")
+}
+
+// fakeJobRepo adalah penyimpanan job in-memory untuk test lapisan HTTP.
+type fakeJobRepo struct {
+	mu     sync.Mutex
+	jobs   map[string]*domain.Job
+	order  []string
+	events map[string][]domain.Event
+}
+
+func newFakeJobRepo() *fakeJobRepo {
+	return &fakeJobRepo{
+		jobs:   map[string]*domain.Job{},
+		events: map[string][]domain.Event{},
+	}
+}
+
+func (r *fakeJobRepo) Create(_ context.Context, j *domain.Job) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, existing := range r.jobs {
+		if existing.SourceKey == j.SourceKey && existing.PresetID == j.PresetID &&
+			existing.Status.IsActive() {
+			return domain.NewError(domain.CodeDuplicateActive, domain.ClassPermanent, "duplikat")
+		}
+	}
+	copied := *j
+	r.jobs[j.ID] = &copied
+	r.order = append(r.order, j.ID)
+	return nil
+}
+
+func (r *fakeJobRepo) Get(_ context.Context, id string) (*domain.Job, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.jobs[id]
+	if !ok {
+		return nil, domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
+	}
+	copied := *j
+	return &copied, nil
+}
+
+func (r *fakeJobRepo) List(_ context.Context, q application.JobListQuery) ([]*domain.Job, string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*domain.Job
+	for i := len(r.order) - 1; i >= 0; i-- {
+		j := r.jobs[r.order[i]]
+		if q.Status != "" && j.Status != q.Status {
+			continue
+		}
+		copied := *j
+		out = append(out, &copied)
+	}
+	return out, "", nil
+}
+
+func (r *fakeJobRepo) Transition(
+	_ context.Context, id string, from, to domain.JobStatus, ev domain.Event,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.jobs[id]
+	if !ok {
+		return domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
+	}
+	if j.Status != from || !domain.CanTransition(from, to) {
+		return domain.ErrInvalidTransition(from, to)
+	}
+	j.Status = to
+	if ev.Type != "" {
+		ev.JobID = id
+		ev.Seq = int64(len(r.events[id]) + 1)
+		r.events[id] = append(r.events[id], ev)
+	}
+	return nil
+}
+
+func (r *fakeJobRepo) Fail(
+	_ context.Context, id string, _ domain.JobStatus, code domain.ErrorCode, detail string,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.jobs[id]
+	if !ok {
+		return domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
+	}
+	j.Status = domain.StatusFailed
+	j.ErrorCode = code
+	j.ErrorMessage = detail
+	return nil
+}
+
+func (r *fakeJobRepo) ClaimNextQueued(context.Context) (*domain.Job, error) { return nil, nil }
+func (r *fakeJobRepo) SweepNonTerminal(context.Context) (int, error)        { return 0, nil }
+
+func (r *fakeJobRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.jobs[id]; !ok {
+		return domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
+	}
+	delete(r.jobs, id)
+	return nil
+}
+
+func (r *fakeJobRepo) Events(_ context.Context, jobID string, afterSeq int64) ([]domain.Event, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.Event
+	for _, ev := range r.events[jobID] {
+		if ev.Seq > afterSeq {
+			out = append(out, ev)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeJobRepo) CountActive(context.Context) (int, int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var active, queued int
+	for _, j := range r.jobs {
+		switch {
+		case j.Status == domain.StatusQueued:
+			queued++
+		case j.Status.IsActive():
+			active++
+		}
+	}
+	return active, queued, nil
+}
+
+// fakeCanceller mencatat permintaan pembatalan.
+type fakeCanceller struct {
+	cancelled []string
+	err       error
+}
+
+func (c *fakeCanceller) Cancel(_ context.Context, jobID string) error {
+	if c.err != nil {
+		return c.err
+	}
+	c.cancelled = append(c.cancelled, jobID)
+	return nil
 }

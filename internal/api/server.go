@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -30,9 +31,20 @@ type Options struct {
 	SPABuilt bool
 	Dev      bool
 
-	Tools    application.ToolManager
-	Metadata *application.MetadataService
-	Presets  application.PresetLister
+	Tools     application.ToolManager
+	Metadata  *application.MetadataService
+	Presets   application.PresetLister
+	Jobs      *application.JobService
+	Canceller JobCanceller
+	Hub       *Hub
+}
+
+// JobCanceller membatalkan job yang sedang berjalan.
+//
+// Dipenuhi scheduler. Interface didefinisikan di sisi pemakai supaya api
+// tidak perlu mengimpor paket worker.
+type JobCanceller interface {
+	Cancel(ctx context.Context, jobID string) error
 }
 
 // Server membungkus router beserta seluruh state HTTP.
@@ -48,9 +60,12 @@ type Server struct {
 	spa      fs.FS
 	spaBuilt bool
 
-	tools    application.ToolManager
-	metadata *application.MetadataService
-	presets  application.PresetLister
+	tools     application.ToolManager
+	metadata  *application.MetadataService
+	presets   application.PresetLister
+	jobs      *application.JobService
+	canceller JobCanceller
+	hub       *Hub
 
 	startedAt time.Time
 
@@ -78,6 +93,9 @@ func New(opts Options) *Server {
 		tools:      opts.Tools,
 		metadata:   opts.Metadata,
 		presets:    opts.Presets,
+		jobs:       opts.Jobs,
+		canceller:  opts.Canceller,
+		hub:        opts.Hub,
 		startedAt:  time.Now(),
 		shutdownCh: make(chan struct{}),
 	}
@@ -107,6 +125,13 @@ func New(opts Options) *Server {
 	protected.HandleFunc("POST /tools/install", s.handleToolInstall)
 	protected.HandleFunc("POST /metadata", s.handleMetadata)
 	protected.HandleFunc("GET /presets", s.handlePresets)
+	protected.HandleFunc("POST /jobs", s.handleCreateJob)
+	protected.HandleFunc("GET /jobs", s.handleListJobs)
+	protected.HandleFunc("GET /jobs/{id}", s.handleGetJob)
+	protected.HandleFunc("GET /jobs/{id}/events", s.handleJobEvents)
+	protected.HandleFunc("POST /jobs/{id}/cancel", s.handleCancelJob)
+	protected.HandleFunc("POST /jobs/{id}/retry", s.handleRetryJob)
+	protected.HandleFunc("DELETE /jobs/{id}", s.handleDeleteJob)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/ping", s.handlePing)

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
 )
@@ -309,7 +310,7 @@ func TestJobListPagination(t *testing.T) {
 	seen := map[string]bool{}
 	cursor := ""
 	for page := range 5 {
-		jobs, next, err := repo.List(ctx, db.ListQuery{Limit: 2, Cursor: cursor})
+		jobs, next, err := repo.List(ctx, application.JobListQuery{Limit: 2, Cursor: cursor})
 		if err != nil {
 			t.Fatalf("List() error = %v", err)
 		}
@@ -349,7 +350,7 @@ func TestJobListFilterStatus(t *testing.T) {
 		t.Fatalf("Transition() error = %v", err)
 	}
 
-	jobs, _, err := repo.List(ctx, db.ListQuery{Status: domain.StatusCancelled})
+	jobs, _, err := repo.List(ctx, application.JobListQuery{Status: domain.StatusCancelled})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

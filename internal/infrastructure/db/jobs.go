@@ -297,7 +297,9 @@ func (r *JobRepository) Fail(
 			return fmt.Errorf("tandai gagal: %w", err)
 		}
 		return insertEvent(ctx, tx, id,
-			domain.Event{Type: domain.EventError, Payload: string(code)}, now)
+			domain.Event{Type: domain.EventError, Payload: application.StreamEvent{
+				Type: application.StreamError, Status: domain.StatusFailed, Code: code,
+			}.PayloadJSON()}, now)
 	})
 }
 
@@ -327,7 +329,9 @@ func (r *JobRepository) ClaimNextQueued(ctx context.Context) (*domain.Job, error
 		}
 		claimed = j
 		return insertEvent(ctx, tx, j.ID,
-			domain.Event{Type: domain.EventState, Payload: string(domain.StatusResolving)}, now)
+			domain.Event{Type: domain.EventState, Payload: application.StreamEvent{
+				Type: application.StreamState, Status: domain.StatusResolving,
+			}.PayloadJSON()}, now)
 	})
 	if err != nil {
 		return nil, err
