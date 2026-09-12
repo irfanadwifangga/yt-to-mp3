@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ffmpeg"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/fs"
@@ -63,3 +64,7 @@ type namingAdapter struct{}
 func (namingAdapter) Build(mode domain.FilenameMode, info *domain.MediaInfo, ext string) string {
 	return fs.BuildFilename(mode, info, ext)
 }
+
+type revealAdapter struct{}
+
+func (revealAdapter) Reveal(path string) error { return browser.Reveal(path) }

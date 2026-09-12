@@ -37,6 +37,8 @@ type Options struct {
 	Jobs      *application.JobService
 	Canceller JobCanceller
 	Hub       *Hub
+	Files     application.FileStore
+	Revealer  Revealer
 }
 
 // JobCanceller membatalkan job yang sedang berjalan.
@@ -66,6 +68,8 @@ type Server struct {
 	jobs      *application.JobService
 	canceller JobCanceller
 	hub       *Hub
+	files     application.FileStore
+	revealer  Revealer
 
 	startedAt time.Time
 
@@ -96,6 +100,8 @@ func New(opts Options) *Server {
 		jobs:       opts.Jobs,
 		canceller:  opts.Canceller,
 		hub:        opts.Hub,
+		files:      opts.Files,
+		revealer:   opts.Revealer,
 		startedAt:  time.Now(),
 		shutdownCh: make(chan struct{}),
 	}
@@ -132,6 +138,8 @@ func New(opts Options) *Server {
 	protected.HandleFunc("POST /jobs/{id}/cancel", s.handleCancelJob)
 	protected.HandleFunc("POST /jobs/{id}/retry", s.handleRetryJob)
 	protected.HandleFunc("DELETE /jobs/{id}", s.handleDeleteJob)
+	protected.HandleFunc("GET /files/{id}", s.handleDownloadFile)
+	protected.HandleFunc("POST /files/{id}/reveal", s.handleRevealFile)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/ping", s.handlePing)

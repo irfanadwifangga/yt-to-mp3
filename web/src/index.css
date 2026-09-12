@@ -187,3 +187,110 @@ button:disabled {
 .tools .muted {
   margin-left: auto;
 }
+
+.jobs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.job {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem 0.9rem;
+  margin-bottom: 0.6rem;
+}
+
+.job-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.job-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.job-foot .muted {
+  flex: 1;
+}
+
+.bar {
+  height: 6px;
+  border-radius: 999px;
+  background: #1c2030;
+  overflow: hidden;
+  margin-top: 0.6rem;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* Total belum diketahui: gerakan menandakan proses berjalan tanpa
+   mengklaim posisi tertentu. */
+.bar-fill.indeterminate {
+  width: 35%;
+  animation: geser 1.4s ease-in-out infinite;
+}
+
+@keyframes geser {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar-fill.indeterminate { animation: none; width: 100%; opacity: 0.4; }
+  .bar-fill { transition: none; }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.actions button {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+button.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.tag {
+  font-size: 0.75rem;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--line);
+}
+
+.tag.ok { color: var(--ok); border-color: var(--ok); }
+.tag.off { color: var(--muted); }
+
+.small { font-size: 0.8rem; }
+
+select {
+  font: inherit;
+  color: var(--fg);
+  background: #0c0e14;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+}

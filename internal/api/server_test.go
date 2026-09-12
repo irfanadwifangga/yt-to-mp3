@@ -29,6 +29,8 @@ type harness struct {
 	presets   *fakePresets
 	jobs      *fakeJobRepo
 	canceller *fakeCanceller
+	files     *fakeFiles
+	revealer  *fakeRevealer
 }
 
 func newHarness(t *testing.T) *harness {
@@ -39,6 +41,8 @@ func newHarness(t *testing.T) *harness {
 	fp := newFakePresets()
 	jr := newFakeJobRepo()
 	fcan := &fakeCanceller{}
+	ff := newFakeFiles()
+	frev := &fakeRevealer{}
 	log := newDiscardLogger()
 
 	hub := api.NewHub(jr, log)
@@ -63,6 +67,8 @@ func newHarness(t *testing.T) *harness {
 			Jobs:      jobService,
 			Canceller: fcan,
 			Hub:       hub,
+			Files:     ff,
+			Revealer:  frev,
 		}),
 		tools:     ft,
 		resolver:  fr,
@@ -70,6 +76,8 @@ func newHarness(t *testing.T) *harness {
 		presets:   fp,
 		jobs:      jr,
 		canceller: fcan,
+		files:     ff,
+		revealer:  frev,
 	}
 }
 

@@ -1,0 +1,205 @@
+import { useState } from "react";
+import { api, downloadFile, isTerminal, type Job } from "./api";
+import {
+  formatTime,
+  messageFor,
+  messageForCode,
+  phaseLabel,
+  statusLabel,
+} from "./messages";
+import { useJobStream } from "./useJobStream";
+
+interface Props {
+  jobs: Job[];
+  onChanged: () => void;
+}
+
+/** Antrean: job yang masih berjalan atau menunggu. */
+export function Queue({ jobs, onChanged }: Props) {
+  if (jobs.length === 0) {
+    return (
+      <section>
+        <h2>Antrean</h2>
+        <p className="muted">Tidak ada job berjalan.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h2>Antrean</h2>
+      <ul className="jobs">
+        {jobs.map((job) => (
+          <ActiveJob key={job.id} job={job} onChanged={onChanged} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Progress live datang lewat SSE; nilai dari polling jadi cadangan bila
+  // stream terputus.
+  const stream = useJobStream(job.id, !isTerminal(job.status));
+  const percent = stream.percent !== undefined ? stream.percent : job.progress;
+  const phase = stream.phase ?? job.phase;
+  const status = stream.status ?? job.status;
+
+  async function handleCancel() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.cancelJob(job.id);
+      onChanged();
+    } catch (err) {
+      setError(messageFor(err, "Pembatalan gagal"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="job">
+      <div className="job-head">
+        <span className="job-title">{job.title || job.source_key}</span>
+        <span className="muted">{phaseLabel(phase) || statusLabel(status)}</span>
+      </div>
+
+      <div className="bar" role="progressbar" aria-valuenow={percent ?? undefined}>
+        {/* Progress null berarti indeterminate: total belum diketahui, bukan nol. */}
+        <div
+          className={percent == null ? "bar-fill indeterminate" : "bar-fill"}
+          style={percent == null ? undefined : { width: `${percent}%` }}
+        />
+      </div>
+
+      <div className="job-foot">
+        <span className="muted">
+          {percent == null ? "menghitung..." : `${percent.toFixed(0)}%`}
+        </span>
+        <button type="button" onClick={() => void handleCancel()} disabled={busy}>
+          {busy ? "Membatalkan..." : "Batalkan"}
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+    </li>
+  );
+}
+
+/** Riwayat: job yang sudah selesai, gagal, atau dibatalkan. */
+export function History({ jobs, onChanged }: Props) {
+  if (jobs.length === 0) {
+    return (
+      <section>
+        <h2>Riwayat</h2>
+        <p className="muted">Belum ada konversi yang selesai.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h2>Riwayat</h2>
+      <ul className="jobs">
+        {jobs.map((job) => (
+          <HistoryRow key={job.id} job={job} onChanged={onChanged} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Kegagalan permanen tidak akan berubah hasilnya bila diulang. */
+const PERMANENT = new Set([
+  "VIDEO_PRIVATE",
+  "VIDEO_UNAVAILABLE",
+  "GEO_BLOCKED",
+  "AGE_RESTRICTED",
+  "LIVE_NOT_SUPPORTED",
+  "UNSUPPORTED_URL",
+  "INVALID_URL",
+]);
+
+function HistoryRow({ job, onChanged }: { job: Job; onChanged: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: string, fn: () => Promise<unknown>) {
+    setBusy(action);
+    setError(null);
+    try {
+      await fn();
+      onChanged();
+    } catch (err) {
+      setError(messageFor(err, "Gagal"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const done = job.status === "completed";
+  const filename = `${job.title || job.source_key}.mp3`;
+  const retryable = job.status !== "completed" && !PERMANENT.has(job.error_code ?? "");
+
+  return (
+    <li className="job">
+      <div className="job-head">
+        <span className="job-title">{job.title || job.source_key}</span>
+        <span className={done ? "tag ok" : "tag off"}>{statusLabel(job.status)}</span>
+      </div>
+
+      <div className="muted small">
+        {formatTime(job.finished_at ?? job.created_at)}
+        {job.error_code && ` — ${messageForCode(job.error_code)}`}
+      </div>
+
+      <div className="actions">
+        {done && job.file_id && (
+          <>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void run("unduh", () => downloadFile(job.file_id!, filename))}
+            >
+              {busy === "unduh" ? "Menyiapkan..." : "Unduh"}
+            </button>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void run("reveal", () => api.revealFile(job.file_id!))}
+            >
+              Buka lokasi
+            </button>
+          </>
+        )}
+
+        {done && !job.file_id && <span className="muted small">Berkas tidak ada di disk</span>}
+
+        {retryable && (
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={() => void run("retry", () => api.retryJob(job.id))}
+          >
+            {busy === "retry" ? "Mengantre..." : "Coba lagi"}
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="danger"
+          disabled={busy !== null}
+          onClick={() => void run("hapus", () => api.deleteJob(job.id))}
+        >
+          Hapus
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+    </li>
+  );
+}

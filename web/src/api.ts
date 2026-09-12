@@ -2,6 +2,9 @@ import { bootstrapToken } from "./token";
 
 const token = bootstrapToken();
 
+/** Token dibutuhkan modul lain yang memanggil fetch sendiri, seperti aliran SSE. */
+export const sessionToken = token;
+
 /** Kode error adalah set tertutup; lihat docs planning. */
 export type ErrorCode =
   | "INVALID_URL"
@@ -71,6 +74,23 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
+  presets: () => request<{ presets: Preset[] }>("/presets"),
+  jobs: (status?: JobStatus) =>
+    request<{ jobs: Job[]; next_cursor?: string }>(
+      status ? `/jobs?status=${status}` : "/jobs",
+    ),
+  createJob: (url: string, presetId: string) =>
+    request<Job>("/jobs", {
+      method: "POST",
+      body: JSON.stringify({ url, preset_id: presetId }),
+    }),
+  cancelJob: (id: string) =>
+    request<{ status: string }>(`/jobs/${id}/cancel`, { method: "POST" }),
+  retryJob: (id: string) => request<Job>(`/jobs/${id}/retry`, { method: "POST" }),
+  deleteJob: (id: string) =>
+    request<void>(`/jobs/${id}?delete_file=false`, { method: "DELETE" }),
+  revealFile: (id: string) =>
+    request<void>(`/files/${id}/reveal`, { method: "POST" }),
   metadata: (url: string) =>
     request<Metadata>("/metadata", {
       method: "POST",
@@ -91,4 +111,79 @@ export interface Metadata {
 
 export interface ToolsPayload {
   tools: Record<string, ToolStatus>;
+}
+
+export type JobStatus =
+  | "queued"
+  | "resolving"
+  | "downloading"
+  | "converting"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "cancelling"
+  | "cancelled";
+
+export interface Job {
+  id: string;
+  source_url: string;
+  source_key: string;
+  title: string;
+  status: JobStatus;
+  preset_id: string;
+  filename_mode: string;
+  progress: number | null;
+  phase?: string;
+  attempt_count: number;
+  error_code?: string;
+  file_id?: string;
+  created_at: string;
+  started_at?: string;
+  finished_at?: string;
+}
+
+export interface Preset {
+  id: string;
+  label: string;
+  format: string;
+  mode: string;
+  bitrate_kbps?: number;
+  vbr_quality?: number;
+  sample_rate?: number;
+  channels: number;
+}
+
+/** Status terminal tidak akan berubah lagi. */
+export const TERMINAL: readonly JobStatus[] = ["completed", "failed", "cancelled"];
+
+export function isTerminal(status: JobStatus): boolean {
+  return TERMINAL.includes(status);
+}
+
+/** URL unduhan dipakai lewat fetch, bukan sebagai href langsung: token
+ *  dikirim di header, bukan di query string. */
+export async function downloadFile(fileId: string, filename: string): Promise<void> {
+  const headers = new Headers();
+  if (token) headers.set("X-Session-Token", token);
+
+  const res = await fetch(`/api/files/${encodeURIComponent(fileId)}`, { headers });
+  if (!res.ok) {
+    let code = "INTERNAL";
+    try {
+      code = (await res.json())?.error?.code ?? code;
+    } catch {
+      // respons bukan JSON
+    }
+    throw new ApiError(code, res.status);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

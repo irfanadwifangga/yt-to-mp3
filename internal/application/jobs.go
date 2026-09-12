@@ -358,3 +358,10 @@ func ParseEventPayload(payload string) StreamEvent {
 	}
 	return ev
 }
+
+// FileStore membaca berkas hasil.
+type FileStore interface {
+	Get(ctx context.Context, id string) (*domain.File, error)
+	IDsByJobs(ctx context.Context, jobIDs []string) (map[string]string, error)
+	MarkMissing(ctx context.Context, id string) error
+}

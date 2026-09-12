@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
@@ -117,4 +118,38 @@ func scanFile(s scanner) (*domain.File, error) {
 		return nil, fmt.Errorf("parse created_at: %w", err)
 	}
 	return &f, nil
+}
+
+// IDsByJobs memetakan job ke id berkas hasilnya.
+//
+// Diambil sekali untuk seluruh halaman history, bukan satu query per baris:
+// pola N+1 pada daftar 100 job menghasilkan 100 perjalanan ke database untuk
+// data yang muat dalam satu.
+func (r *FileRepository) IDsByJobs(ctx context.Context, jobIDs []string) (map[string]string, error) {
+	out := make(map[string]string, len(jobIDs))
+	if len(jobIDs) == 0 {
+		return out, nil
+	}
+
+	placeholders := strings.Repeat("?,", len(jobIDs)-1) + "?"
+	args := make([]any, len(jobIDs))
+	for i, id := range jobIDs {
+		args[i] = id
+	}
+
+	rows, err := r.db.Read().QueryContext(ctx,
+		`SELECT job_id, id FROM files WHERE missing = 0 AND job_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query id berkas: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var jobID, fileID string
+		if err := rows.Scan(&jobID, &fileID); err != nil {
+			return nil, fmt.Errorf("scan id berkas: %w", err)
+		}
+		out[jobID] = fileID
+	}
+	return out, rows.Err()
 }

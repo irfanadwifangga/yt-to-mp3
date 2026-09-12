@@ -1,50 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type Health, type Metadata } from "./api";
+import { api, isTerminal, type Health, type Job, type Metadata, type Preset } from "./api";
+import { formatDuration, messageFor } from "./messages";
+import { History, Queue } from "./Jobs";
 
-/** Pesan dirakit di klien dari kode, bukan dari field message. ADR-027. */
-const MESSAGES: Record<string, string> = {
-  UNAUTHORIZED: "Session token tidak valid. Buka ulang aplikasi dari shortcut.",
-  FORBIDDEN_HOST: "Host tidak diizinkan.",
-  FORBIDDEN_ORIGIN: "Origin tidak diizinkan.",
-  BAD_REQUEST: "Permintaan tidak dapat dibaca.",
-  INVALID_URL: "URL tidak valid.",
-  UNSUPPORTED_URL: "URL ini bukan tautan video YouTube.",
-  LIVE_NOT_SUPPORTED: "Siaran langsung tidak didukung.",
-  VIDEO_PRIVATE: "Video bersifat privat.",
-  VIDEO_UNAVAILABLE: "Video tidak tersedia.",
-  GEO_BLOCKED: "Video diblokir di wilayah ini.",
-  AGE_RESTRICTED: "Video dibatasi usia dan tidak dapat diproses.",
-  RATE_LIMITED: "Terlalu banyak permintaan. Coba lagi beberapa saat lagi.",
-  TOOL_MISSING: "yt-dlp belum terpasang. Pasang dulu di bawah.",
-  TOOL_OUTDATED: "yt-dlp perlu diperbarui.",
-  TOOL_MANIFEST_INCOMPLETE: "Versi tool belum di-pin di manifest, jadi instalasi otomatis ditolak.",
-  TOOL_CHECKSUM_MISMATCH: "Checksum unduhan tidak cocok. Instalasi dibatalkan.",
-  TOOL_INSTALL_FAILED: "Instalasi tool gagal.",
-  TIMEOUT: "Permintaan melewati batas waktu.",
-  INTERNAL: "Terjadi kesalahan internal."
-};
-
-function messageFor(err: unknown, fallback: string): string {
-  if (err instanceof ApiError) return MESSAGES[err.code] ?? `${fallback} (${err.code}).`;
-  return "Tidak dapat menghubungi server.";
-}
-
-function formatDuration(ms: number): string {
-  if (ms <= 0) return "tidak diketahui";
-  const total = Math.round(ms / 1000);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+/** Antrean disegarkan cukup sering untuk terasa hidup, tetapi progress
+ *  halus datang lewat SSE sehingga polling tidak perlu rapat. */
+const POLL_MS = 2000;
 
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [presets, setPresets] = useState<Preset[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [quitting, setQuitting] = useState(false);
 
-  const load = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
-      setHealth(await api.health());
+      const [h, j] = await Promise.all([api.health(), api.jobs()]);
+      setHealth(h);
+      setJobs(j.jobs);
       setError(null);
     } catch (err) {
       setError(messageFor(err, "Gagal memuat status"));
@@ -52,10 +26,19 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 5000);
+    void refresh();
+    const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [refresh]);
+
+  useEffect(() => {
+    // Preset adalah product contract yang hidup di database; SPA tidak
+    // boleh meng-hardcode-nya.
+    api
+      .presets()
+      .then((res) => setPresets(res.presets))
+      .catch(() => setPresets([]));
+  }, []);
 
   async function handleQuit() {
     setQuitting(true);
@@ -75,7 +58,9 @@ export function App() {
     );
   }
 
-  const ytdlpReady = health?.tools["yt-dlp"]?.available ?? false;
+  const ready = health?.tools["yt-dlp"]?.available ?? false;
+  const active = jobs.filter((j) => !isTerminal(j.status));
+  const finished = jobs.filter((j) => isTerminal(j.status));
 
   return (
     <main className="shell">
@@ -86,8 +71,10 @@ export function App() {
 
       {error && <p className="error">{error}</p>}
 
-      <Analyze ready={ytdlpReady} />
-      <Tools health={health} onChanged={load} />
+      <Analyze ready={ready} presets={presets} onQueued={refresh} />
+      <Queue jobs={active} onChanged={refresh} />
+      <History jobs={finished} onChanged={refresh} />
+      <Tools health={health} onChanged={refresh} />
 
       {health && (
         <dl className="grid">
@@ -102,7 +89,7 @@ export function App() {
       )}
 
       <footer>
-        <button type="button" onClick={handleQuit}>
+        <button type="button" onClick={() => void handleQuit()}>
           Keluar
         </button>
       </footer>
@@ -110,15 +97,24 @@ export function App() {
   );
 }
 
-function Analyze({ ready }: { ready: boolean }) {
+interface AnalyzeProps {
+  ready: boolean;
+  presets: Preset[];
+  onQueued: () => void;
+}
+
+function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
   const [url, setUrl] = useState("");
+  const [presetId, setPresetId] = useState("");
   const [result, setResult] = useState<Metadata | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"analisis" | "antre" | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const selected = presetId || presets.find((p) => p.id === "mp3_standard")?.id || presets[0]?.id;
+
+  async function handleAnalyze(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
+    setBusy("analisis");
     setError(null);
     setResult(null);
     try {
@@ -126,14 +122,30 @@ function Analyze({ ready }: { ready: boolean }) {
     } catch (err) {
       setError(messageFor(err, "Analisis gagal"));
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function handleConvert() {
+    if (!selected) return;
+    setBusy("antre");
+    setError(null);
+    try {
+      await api.createJob(url, selected);
+      setResult(null);
+      setUrl("");
+      onQueued();
+    } catch (err) {
+      setError(messageFor(err, "Tidak dapat mengantre"));
+    } finally {
+      setBusy(null);
     }
   }
 
   return (
     <section>
       <h2>Analisis</h2>
-      <form onSubmit={handleSubmit} className="row">
+      <form onSubmit={(e) => void handleAnalyze(e)} className="row">
         <input
           type="url"
           value={url}
@@ -141,8 +153,8 @@ function Analyze({ ready }: { ready: boolean }) {
           placeholder="https://www.youtube.com/watch?v=..."
           required
         />
-        <button type="submit" disabled={busy || !ready}>
-          {busy ? "Menganalisis..." : "Analisis"}
+        <button type="submit" disabled={busy !== null || !ready}>
+          {busy === "analisis" ? "Menganalisis..." : "Analisis"}
         </button>
       </form>
 
@@ -150,19 +162,39 @@ function Analyze({ ready }: { ready: boolean }) {
       {error && <p className="error">{error}</p>}
 
       {result && (
-        <dl className="grid">
-          <dt>Judul</dt>
-          <dd>{result.title}</dd>
-          <dt>Channel</dt>
-          <dd>{result.uploader || "tidak diketahui"}</dd>
-          <dt>Durasi</dt>
-          <dd>{formatDuration(result.duration_ms)}</dd>
-          <dt>Codec sumber</dt>
-          <dd>
-            {result.source_codec || "tidak diketahui"}
-            {result.sample_rate > 0 && ` @ ${result.sample_rate} Hz`}
-          </dd>
-        </dl>
+        <>
+          <dl className="grid">
+            <dt>Judul</dt>
+            <dd>{result.title}</dd>
+            <dt>Channel</dt>
+            <dd>{result.uploader || "tidak diketahui"}</dd>
+            <dt>Durasi</dt>
+            <dd>{formatDuration(result.duration_ms)}</dd>
+            <dt>Codec sumber</dt>
+            <dd>
+              {result.source_codec || "tidak diketahui"}
+              {result.sample_rate > 0 && ` @ ${result.sample_rate} Hz`}
+            </dd>
+          </dl>
+
+          <div className="row">
+            <select
+              value={selected ?? ""}
+              onChange={(e) => setPresetId(e.target.value)}
+              aria-label="Preset"
+            >
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                  {p.bitrate_kbps ? ` — ${p.bitrate_kbps} kbps` : " — VBR"}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={() => void handleConvert()} disabled={busy !== null}>
+              {busy === "antre" ? "Mengantre..." : "Konversi"}
+            </button>
+          </div>
+        </>
       )}
     </section>
   );

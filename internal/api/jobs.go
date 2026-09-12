@@ -30,9 +30,14 @@ type jobView struct {
 	Phase        string           `json:"phase,omitempty"`
 	AttemptCount int              `json:"attempt_count"`
 	ErrorCode    domain.ErrorCode `json:"error_code,omitempty"`
-	CreatedAt    time.Time        `json:"created_at"`
-	StartedAt    *time.Time       `json:"started_at,omitempty"`
-	FinishedAt   *time.Time       `json:"finished_at,omitempty"`
+
+	// FileID terisi hanya bila berkas hasilnya masih ada di disk, sehingga
+	// UI dapat menyembunyikan tombol unduh yang pasti gagal.
+	FileID string `json:"file_id,omitempty"`
+
+	CreatedAt  time.Time  `json:"created_at"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 func toJobView(j *domain.Job) jobView {
@@ -108,9 +113,23 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Id berkas diambil sekali untuk seluruh halaman, bukan satu query per
+	// baris.
+	ids := make([]string, 0, len(jobs))
+	for _, j := range jobs {
+		ids = append(ids, j.ID)
+	}
+	fileIDs, err := s.files.IDsByJobs(r.Context(), ids)
+	if err != nil {
+		s.log.Warn("baca id berkas gagal", "error", err)
+		fileIDs = nil
+	}
+
 	views := make([]jobView, 0, len(jobs))
 	for _, j := range jobs {
-		views = append(views, toJobView(j))
+		v := toJobView(j)
+		v.FileID = fileIDs[j.ID]
+		views = append(views, v)
 	}
 	writeJSON(w, http.StatusOK, listJobsResponse{Jobs: views, NextCursor: next})
 }
@@ -121,7 +140,12 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		s.writeDomainError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toJobView(job))
+
+	view := toJobView(job)
+	if fileIDs, err := s.files.IDsByJobs(r.Context(), []string{job.ID}); err == nil {
+		view.FileID = fileIDs[job.ID]
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {

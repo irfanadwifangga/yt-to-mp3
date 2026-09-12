@@ -195,6 +195,8 @@ func run() error {
 		Jobs:      jobService,
 		Canceller: scheduler,
 		Hub:       hub,
+		Files:     db.NewFileRepository(database),
+		Revealer:  revealAdapter{},
 	})
 
 	info := instance.Info{

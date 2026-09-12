@@ -273,3 +273,56 @@ func (c *fakeCanceller) Cancel(_ context.Context, jobID string) error {
 	c.cancelled = append(c.cancelled, jobID)
 	return nil
 }
+
+// fakeFiles menggantikan repository berkas.
+type fakeFiles struct {
+	byID    map[string]*domain.File
+	byJob   map[string]string
+	missing []string
+}
+
+func newFakeFiles() *fakeFiles {
+	return &fakeFiles{byID: map[string]*domain.File{}, byJob: map[string]string{}}
+}
+
+func (f *fakeFiles) add(file *domain.File) {
+	f.byID[file.ID] = file
+	f.byJob[file.JobID] = file.ID
+}
+
+func (f *fakeFiles) Get(_ context.Context, id string) (*domain.File, error) {
+	file, ok := f.byID[id]
+	if !ok {
+		return nil, domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
+	}
+	return file, nil
+}
+
+func (f *fakeFiles) IDsByJobs(_ context.Context, jobIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range jobIDs {
+		if fileID, ok := f.byJob[id]; ok {
+			out[id] = fileID
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeFiles) MarkMissing(_ context.Context, id string) error {
+	f.missing = append(f.missing, id)
+	return nil
+}
+
+// fakeRevealer mencatat permintaan buka lokasi berkas.
+type fakeRevealer struct {
+	revealed []string
+	err      error
+}
+
+func (r *fakeRevealer) Reveal(path string) error {
+	if r.err != nil {
+		return r.err
+	}
+	r.revealed = append(r.revealed, path)
+	return nil
+}
