@@ -7,6 +7,8 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+
+	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 )
 
 // maxBodyBytes membatasi ukuran body request API.
@@ -21,7 +23,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"panic", rec,
 					"stack", string(debug.Stack()))
-				writeError(w, http.StatusInternalServerError, CodeInternal, "Terjadi kesalahan internal.")
+				writeError(w, http.StatusInternalServerError, domain.CodeInternal, "Terjadi kesalahan internal.")
 			}
 		}()
 		next.ServeHTTP(w, r)

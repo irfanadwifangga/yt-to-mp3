@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "note": "Checksum kosong menolak instalasi (ADR-033). Isi lewat scripts/update-tool-manifest.sh, lalu commit hasilnya sebagai perubahan yang bisa direview.",
+  "tools": {
+    "yt-dlp": {
+      "version": "",
+      "source": "https://github.com/yt-dlp/yt-dlp",
+      "builds": {
+        "windows/amd64": {
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
+          "sha256": "",
+          "archive": "none",
+          "extract": ["yt-dlp.exe"]
+        },
+        "linux/amd64": {
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux",
+          "sha256": "",
+          "archive": "none",
+          "extract": ["yt-dlp"]
+        },
+        "linux/arm64": {
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64",
+          "sha256": "",
+          "archive": "none",
+          "extract": ["yt-dlp"]
+        },
+        "darwin/amd64": {
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos",
+          "sha256": "",
+          "archive": "none",
+          "extract": ["yt-dlp"]
+        },
+        "darwin/arm64": {
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos",
+          "sha256": "",
+          "archive": "none",
+          "extract": ["yt-dlp"]
+        }
+      }
+    },
+    "ffmpeg": {
+      "version": "",
+      "source": "https://github.com/BtbN/FFmpeg-Builds",
+      "builds": {
+        "windows/amd64": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+          "sha256": "",
+          "archive": "zip",
+          "extract": ["ffmpeg.exe", "ffprobe.exe"]
+        },
+        "linux/amd64": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
+          "sha256": "",
+          "archive": "tar.xz",
+          "extract": ["ffmpeg", "ffprobe"]
+        },
+        "linux/arm64": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
+          "sha256": "",
+          "archive": "tar.xz",
+          "extract": ["ffmpeg", "ffprobe"]
+        },
+        "darwin/amd64": {
+          "url": "",
+          "sha256": "",
+          "archive": "zip",
+          "extract": ["ffmpeg", "ffprobe"],
+          "note": "evermeet.cx menerbitkan ffmpeg dan ffprobe sebagai zip terpisah; belum di-pin."
+        },
+        "darwin/arm64": {
+          "url": "",
+          "sha256": "",
+          "archive": "zip",
+          "extract": ["ffmpeg", "ffprobe"],
+          "note": "Belum ada sumber build statis arm64 yang mapan. Sampai ada, aplikasi memakai FFmpeg dari PATH (brew install ffmpeg)."
+        }
+      }
+    }
+  }
+}

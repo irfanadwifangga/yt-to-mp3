@@ -9,5 +9,5 @@ if (!container) throw new Error("elemen #root tidak ditemukan");
 createRoot(container).render(
   <StrictMode>
     <App />
-  </StrictMode>,
+  </StrictMode>
 );

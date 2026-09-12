@@ -20,6 +20,8 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/api"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/tools"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ytdlp"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/instance"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/version"
 	"github.com/irfanadwifangga/yt-to-mp3/web"
@@ -87,6 +89,13 @@ func run() error {
 		log.Warn("SPA belum di-build, menyajikan halaman petunjuk")
 	}
 
+	// Discovery tool tidak boleh menghalangi startup: tool yang belum ada
+	// dilaporkan lewat /api/health dan dapat dipasang dari UI.
+	toolManager, err := tools.New(cfg.Paths.ToolsDir, cfg.Paths.TempDir, log)
+	if err != nil {
+		return fmt.Errorf("siapkan tool manager: %w", err)
+	}
+
 	srv := api.New(api.Options{
 		Config:   cfg,
 		Logger:   log,
@@ -95,6 +104,8 @@ func run() error {
 		SPA:      spaFS,
 		SPABuilt: spaBuilt,
 		Dev:      *devMode,
+		Tools:    toolManager,
+		Resolver: ytdlp.NewResolver(toolManager, log),
 	})
 
 	info := instance.Info{

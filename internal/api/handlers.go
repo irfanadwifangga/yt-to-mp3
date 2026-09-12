@@ -1,9 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/version"
 )
 
@@ -21,12 +24,6 @@ func (s *Server) handlePing(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-type toolStatus struct {
-	Available bool   `json:"available"`
-	Version   string `json:"version"`
-	Path      string `json:"path"`
-}
-
 type queueStatus struct {
 	Active   int `json:"active"`
 	Queued   int `json:"queued"`
@@ -34,20 +31,19 @@ type queueStatus struct {
 }
 
 type healthResponse struct {
-	App           string                `json:"app"`
-	Version       string                `json:"version"`
-	Commit        string                `json:"commit"`
-	Status        string                `json:"status"`
-	UptimeSeconds int64                 `json:"uptime_seconds"`
-	SPABuilt      bool                  `json:"spa_built"`
-	OutputDir     string                `json:"output_dir"`
-	Tools         map[string]toolStatus `json:"tools"`
-	Queue         queueStatus           `json:"queue"`
+	App           string                            `json:"app"`
+	Version       string                            `json:"version"`
+	Commit        string                            `json:"commit"`
+	Status        string                            `json:"status"`
+	UptimeSeconds int64                             `json:"uptime_seconds"`
+	SPABuilt      bool                              `json:"spa_built"`
+	OutputDir     string                            `json:"output_dir"`
+	Tools         map[string]application.ToolStatus `json:"tools"`
+	Queue         queueStatus                       `json:"queue"`
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	// Tool discovery menyusul pada tahap 2 roadmap; sampai saat itu status
-	// dilaporkan apa adanya, bukan dipalsukan jadi tersedia.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	// Antrean masih nol sampai job engine hadir pada tahap 4 roadmap.
 	writeJSON(w, http.StatusOK, healthResponse{
 		App:           version.AppName,
 		Version:       version.Version,
@@ -56,11 +52,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
 		SPABuilt:      s.spaBuilt,
 		OutputDir:     s.cfg.OutputDir,
-		Tools: map[string]toolStatus{
-			"yt_dlp": {Available: false},
-			"ffmpeg": {Available: false},
-		},
-		Queue: queueStatus{Active: 0, Queued: 0, Capacity: s.cfg.MaxQueueDepth},
+		Tools:         s.tools.StatusAll(r.Context()),
+		Queue:         queueStatus{Capacity: s.cfg.MaxQueueDepth},
 	})
 }
 
@@ -69,4 +62,90 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleShutdown(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "shutting_down"})
 	s.requestShutdown()
+}
+
+type toolsResponse struct {
+	Tools map[string]application.ToolStatus `json:"tools"`
+}
+
+func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, toolsResponse{Tools: s.tools.StatusAll(r.Context())})
+}
+
+type installRequest struct {
+	Name string `json:"name"`
+}
+
+// handleToolInstall memasang satu tool.
+//
+// Instalasi berjalan sinkron dan bisa memakan waktu beberapa menit; progres
+// terunduh baru bisa distream setelah SSE hub dipakai pada tahap 4.
+func (s *Server) handleToolInstall(w http.ResponseWriter, r *http.Request) {
+	var req installRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Body bukan JSON yang valid.")
+		return
+	}
+
+	switch req.Name {
+	case "yt-dlp", "ffmpeg":
+	default:
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama tool tidak dikenal.")
+		return
+	}
+
+	if err := s.tools.Install(r.Context(), req.Name); err != nil {
+		s.writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toolsResponse{Tools: s.tools.StatusAll(r.Context())})
+}
+
+type metadataRequest struct {
+	URL string `json:"url"`
+}
+
+type metadataResponse struct {
+	SourceKey    string `json:"source_key"`
+	SourceURL    string `json:"source_url"`
+	Title        string `json:"title"`
+	Uploader     string `json:"uploader"`
+	DurationMS   int64  `json:"duration_ms"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	SourceCodec  string `json:"source_codec"`
+	SampleRate   int    `json:"sample_rate"`
+}
+
+// handleMetadata menganalisis URL tanpa mengunduh apa pun.
+func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
+	var req metadataRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Body bukan JSON yang valid.")
+		return
+	}
+
+	// Validasi dan normalisasi terjadi sebelum apa pun menyentuh yt-dlp,
+	// sehingga skema seperti file:// tidak pernah sampai ke subprocess.
+	sourceKey, derr := domain.NormalizeURL(req.URL)
+	if derr != nil {
+		s.writeDomainError(w, derr)
+		return
+	}
+
+	info, err := s.resolver.Resolve(r.Context(), sourceKey)
+	if err != nil {
+		s.writeDomainError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, metadataResponse{
+		SourceKey:    info.SourceKey,
+		SourceURL:    info.SourceURL,
+		Title:        info.Title,
+		Uploader:     info.Uploader,
+		DurationMS:   info.DurationMS,
+		ThumbnailURL: info.ThumbnailURL,
+		SourceCodec:  info.SourceCodec,
+		SampleRate:   info.SampleRate,
+	})
 }

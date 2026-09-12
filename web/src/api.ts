@@ -65,4 +65,30 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   health: () => request<Health>("/health"),
   shutdown: () => request<{ status: string }>("/shutdown", { method: "POST" }),
+  tools: () => request<ToolsPayload>("/tools"),
+  installTool: (name: string) =>
+    request<ToolsPayload>("/tools/install", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  metadata: (url: string) =>
+    request<Metadata>("/metadata", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
 };
+
+export interface Metadata {
+  source_key: string;
+  source_url: string;
+  title: string;
+  uploader: string;
+  duration_ms: number;
+  thumbnail_url: string;
+  source_codec: string;
+  sample_rate: number;
+}
+
+export interface ToolsPayload {
+  tools: Record<string, ToolStatus>;
+}

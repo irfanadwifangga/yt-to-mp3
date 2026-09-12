@@ -1,19 +1,40 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type Health } from "./api";
+import { api, ApiError, type Health, type Metadata } from "./api";
 
-/** Pesan error dirakit di klien dari kode, bukan dari field message. ADR-027. */
+/** Pesan dirakit di klien dari kode, bukan dari field message. ADR-027. */
 const MESSAGES: Record<string, string> = {
   UNAUTHORIZED: "Session token tidak valid. Buka ulang aplikasi dari shortcut.",
   FORBIDDEN_HOST: "Host tidak diizinkan.",
   FORBIDDEN_ORIGIN: "Origin tidak diizinkan.",
-  INTERNAL: "Terjadi kesalahan internal.",
+  BAD_REQUEST: "Permintaan tidak dapat dibaca.",
+  INVALID_URL: "URL tidak valid.",
+  UNSUPPORTED_URL: "URL ini bukan tautan video YouTube.",
+  LIVE_NOT_SUPPORTED: "Siaran langsung tidak didukung.",
+  VIDEO_PRIVATE: "Video bersifat privat.",
+  VIDEO_UNAVAILABLE: "Video tidak tersedia.",
+  GEO_BLOCKED: "Video diblokir di wilayah ini.",
+  AGE_RESTRICTED: "Video dibatasi usia dan tidak dapat diproses.",
+  RATE_LIMITED: "Terlalu banyak permintaan. Coba lagi beberapa saat lagi.",
+  TOOL_MISSING: "yt-dlp belum terpasang. Pasang dulu di bawah.",
+  TOOL_OUTDATED: "yt-dlp perlu diperbarui.",
+  TOOL_MANIFEST_INCOMPLETE: "Versi tool belum di-pin di manifest, jadi instalasi otomatis ditolak.",
+  TOOL_CHECKSUM_MISMATCH: "Checksum unduhan tidak cocok. Instalasi dibatalkan.",
+  TOOL_INSTALL_FAILED: "Instalasi tool gagal.",
+  TIMEOUT: "Permintaan melewati batas waktu.",
+  INTERNAL: "Terjadi kesalahan internal."
 };
 
-function messageFor(err: unknown): string {
-  if (err instanceof ApiError) {
-    return MESSAGES[err.code] ?? `Gagal memuat status (${err.code}).`;
-  }
+function messageFor(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return MESSAGES[err.code] ?? `${fallback} (${err.code}).`;
   return "Tidak dapat menghubungi server.";
+}
+
+function formatDuration(ms: number): string {
+  if (ms <= 0) return "tidak diketahui";
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function App() {
@@ -26,7 +47,7 @@ export function App() {
       setHealth(await api.health());
       setError(null);
     } catch (err) {
-      setError(messageFor(err));
+      setError(messageFor(err, "Gagal memuat status"));
     }
   }, []);
 
@@ -54,6 +75,8 @@ export function App() {
     );
   }
 
+  const ytdlpReady = health?.tools["yt-dlp"]?.available ?? false;
+
   return (
     <main className="shell">
       <header>
@@ -63,35 +86,19 @@ export function App() {
 
       {error && <p className="error">{error}</p>}
 
-      {health && (
-        <>
-          <dl className="grid">
-            <dt>Status</dt>
-            <dd>{health.status}</dd>
-            <dt>Uptime</dt>
-            <dd>{health.uptime_seconds} detik</dd>
-            <dt>Output</dt>
-            <dd className="path">{health.output_dir}</dd>
-            <dt>Antrean</dt>
-            <dd>
-              {health.queue.active} aktif / {health.queue.queued} menunggu (kapasitas{" "}
-              {health.queue.capacity})
-            </dd>
-          </dl>
+      <Analyze ready={ytdlpReady} />
+      <Tools health={health} onChanged={load} />
 
-          <h2>Tool</h2>
-          <ul className="tools">
-            {Object.entries(health.tools).map(([name, tool]) => (
-              <li key={name}>
-                <span className={tool.available ? "dot ok" : "dot off"} />
-                {name}
-                <span className="muted">
-                  {tool.available ? tool.version : "belum tersedia"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </>
+      {health && (
+        <dl className="grid">
+          <dt>Output</dt>
+          <dd className="path">{health.output_dir}</dd>
+          <dt>Antrean</dt>
+          <dd>
+            {health.queue.active} aktif / {health.queue.queued} menunggu (kapasitas{" "}
+            {health.queue.capacity})
+          </dd>
+        </dl>
       )}
 
       <footer>
@@ -100,5 +107,107 @@ export function App() {
         </button>
       </footer>
     </main>
+  );
+}
+
+function Analyze({ ready }: { ready: boolean }) {
+  const [url, setUrl] = useState("");
+  const [result, setResult] = useState<Metadata | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await api.metadata(url));
+    } catch (err) {
+      setError(messageFor(err, "Analisis gagal"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section>
+      <h2>Analisis</h2>
+      <form onSubmit={handleSubmit} className="row">
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://www.youtube.com/watch?v=..."
+          required
+        />
+        <button type="submit" disabled={busy || !ready}>
+          {busy ? "Menganalisis..." : "Analisis"}
+        </button>
+      </form>
+
+      {!ready && <p className="muted">Pasang yt-dlp dulu untuk mengaktifkan analisis.</p>}
+      {error && <p className="error">{error}</p>}
+
+      {result && (
+        <dl className="grid">
+          <dt>Judul</dt>
+          <dd>{result.title}</dd>
+          <dt>Channel</dt>
+          <dd>{result.uploader || "tidak diketahui"}</dd>
+          <dt>Durasi</dt>
+          <dd>{formatDuration(result.duration_ms)}</dd>
+          <dt>Codec sumber</dt>
+          <dd>
+            {result.source_codec || "tidak diketahui"}
+            {result.sample_rate > 0 && ` @ ${result.sample_rate} Hz`}
+          </dd>
+        </dl>
+      )}
+    </section>
+  );
+}
+
+function Tools({ health, onChanged }: { health: Health | null; onChanged: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function install(name: string) {
+    setBusy(name);
+    setError(null);
+    try {
+      await api.installTool(name);
+      onChanged();
+    } catch (err) {
+      setError(messageFor(err, "Instalasi gagal"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!health) return null;
+
+  return (
+    <section>
+      <h2>Tool</h2>
+      {error && <p className="error">{error}</p>}
+      <ul className="tools">
+        {Object.entries(health.tools).map(([name, tool]) => (
+          <li key={name}>
+            <span className={tool.available ? "dot ok" : "dot off"} />
+            <span>{name}</span>
+            <span className="muted">
+              {tool.available ? tool.version || "terpasang" : "belum tersedia"}
+            </span>
+            {/* ffprobe ikut terpasang bersama ffmpeg dari arsip yang sama. */}
+            {!tool.available && name !== "ffprobe" && (
+              <button type="button" onClick={() => void install(name)} disabled={busy !== null}>
+                {busy === name ? "Memasang..." : "Pasang"}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

@@ -1,8 +1,17 @@
 .DEFAULT_GOAL := help
 
-MODULE  := github.com/irfanadwifangga/yt-to-mp3
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+MODULE := github.com/irfanadwifangga/yt-to-mp3
+
+# Tanpa redirect ke /dev/null: pada Windows, path sh.exe milik Git memuat
+# spasi sehingga Make gagal memakainya untuk $(shell ...) dan jatuh ke
+# cmd.exe, yang membaca /dev/null sebagai path lalu gagal. Akibatnya
+# git describe tidak pernah jalan dan versi selalu ter-stempel "dev".
+# Ditetapkan dengan := supaya git dipanggil sekali, bukan setiap referensi.
+GIT_VERSION := $(shell git describe --tags --always --dirty || echo dev)
+GIT_COMMIT  := $(shell git rev-parse --short HEAD || echo unknown)
+
+VERSION ?= $(GIT_VERSION)
+COMMIT  ?= $(GIT_COMMIT)
 LDFLAGS := -s -w \
 	-X $(MODULE)/internal/version.Version=$(VERSION) \
 	-X $(MODULE)/internal/version.Commit=$(COMMIT)

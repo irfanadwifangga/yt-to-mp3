@@ -75,6 +75,9 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-028 | Tabel `presets` bersifat append-only | `preset_id` tersimpan permanen di history dan jadi kontrak selamanya |
 | ADR-029 | Reservasi nama file atomik dengan `O_EXCL` | Pengecekan "file ada?" yang naif membuat dua worker memenangkan nama yang sama |
 | ADR-030 | Sample rate output 48 kHz, bukan 44.1 kHz | Sumber YouTube didominasi Opus yang secara desain selalu 48 kHz; 44.1 memaksa resampling pada jalur paling umum. MPEG-1 Layer III mendukung 48 kHz secara native, jadi tidak ada kompromi kompatibilitas |
+| ADR-031 | Binary FFmpeg diunduh saat runtime dari BtbN (Windows/Linux) dan evermeet.cx (macOS) | Proyek FFmpeg tidak mendistribusikan build statis resmi. Mengunduh saat runtime membuat rilis kita tidak pernah menjadi distributor FFmpeg, sehingga kewajiban LGPL/GPL tidak menempel pada artifact rilis |
+| ADR-032 | Dependensi pure-Go `github.com/ulikunitz/xz` | Build FFmpeg untuk Linux hanya tersedia sebagai `.tar.xz` dan stdlib tidak punya dekoder xz. Paket ini pure Go sehingga ADR-011 tetap terjaga |
+| ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi |
 
 ## 5. Struktur folder
 
@@ -235,7 +238,9 @@ Urutan subscribe yang benar (mendaftar listener sebelum membaca histori, agar ti
 
 Daftar `code` bersifat tertutup dan menjadi bagian kontrak:
 
-`INVALID_URL`, `UNSUPPORTED_URL`, `LIVE_NOT_SUPPORTED`, `VIDEO_UNAVAILABLE`, `VIDEO_PRIVATE`, `GEO_BLOCKED`, `AGE_RESTRICTED`, `RATE_LIMITED`, `TOOL_MISSING`, `TOOL_OUTDATED`, `DOWNLOAD_FAILED`, `TRANSCODE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_WRITE_FAILED`, `JOB_NOT_FOUND`, `QUEUE_FULL`, `DUPLICATE_ACTIVE_JOB`, `INTERRUPTED`, `CANCELLED`, `INTERNAL`.
+`INVALID_URL`, `UNSUPPORTED_URL`, `LIVE_NOT_SUPPORTED`, `VIDEO_UNAVAILABLE`, `VIDEO_PRIVATE`, `GEO_BLOCKED`, `AGE_RESTRICTED`, `RATE_LIMITED`, `TOOL_MISSING`, `TOOL_OUTDATED`, `TOOL_INSTALL_FAILED`, `TOOL_MANIFEST_INCOMPLETE`, `TOOL_CHECKSUM_MISMATCH`, `DOWNLOAD_FAILED`, `TRANSCODE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_WRITE_FAILED`, `JOB_NOT_FOUND`, `QUEUE_FULL`, `DUPLICATE_ACTIVE_JOB`, `INTERRUPTED`, `CANCELLED`, `TIMEOUT`, `INTERNAL`.
+
+Lapisan HTTP menambahkan kode transport tersendiri yang tidak dimiliki domain: `FORBIDDEN_HOST`, `FORBIDDEN_ORIGIN`, `UNAUTHORIZED`, `UNSUPPORTED_MEDIA_TYPE`, `BAD_REQUEST`, `NOT_FOUND`.
 
 Aturan (ADR-027):
 
@@ -430,10 +435,37 @@ Urutan discovery:
 
 Bila tidak ada satu pun, app tetap berjalan dan `GET /api/health` melaporkan `TOOL_MISSING`; UI menawarkan unduh sekali klik. Aplikasi tidak boleh menolak start hanya karena tool belum ada.
 
-- Versi yt-dlp dan FFmpeg di-pin di manifest yang di-commit, berisi versi + checksum SHA-256 per platform.
-- Unduhan diverifikasi terhadap checksum sebelum dipakai; ditulis ke temp lalu di-rename.
+### 16.1 Sumber binary
+
+| Tool | Platform | Sumber | Bentuk |
+| --- | --- | --- | --- |
+| yt-dlp | semua | GitHub Releases resmi proyek | binary tunggal |
+| FFmpeg | windows/amd64 | `BtbN/FFmpeg-Builds` (GitHub Releases) | `.zip` |
+| FFmpeg | linux/amd64, linux/arm64 | `BtbN/FFmpeg-Builds` | `.tar.xz` |
+| FFmpeg | darwin/amd64, darwin/arm64 | `evermeet.cx` | `.zip` |
+
+FFmpeg tidak punya distribusi binary statis resmi, jadi ketiga sumber di atas adalah pihak ketiga. Itu keputusan rantai pasok, bukan detail implementasi, karena itu dicatat sebagai ADR-031. Konsekuensi hukumnya justru menguntungkan: karena binary diunduh di mesin pengguna dan tidak pernah ikut dalam artifact rilis, proyek ini tidak mendistribusikan ulang FFmpeg dan tidak memikul kewajiban LGPL/GPL.
+
+### 16.2 Manifest
+
+`internal/infrastructure/tools/manifest.json` di-commit dan di-embed. Isinya versi ter-pin, URL, dan SHA-256 per platform.
+
+- **Fail-closed (ADR-033).** Entri dengan `sha256` kosong menolak instalasi dengan `TOOL_MANIFEST_INCOMPLETE`. Verifikasi tidak pernah dilewati, termasuk saat pengembangan.
+- Checksum diisi lewat `scripts/update-tool-manifest.sh`, yang menyelesaikan rilis terbaru, mengambil checksum yang diterbitkan hulu bila tersedia, dan menghitung sendiri bila tidak. Hasilnya di-commit sebagai perubahan yang dapat direview.
+- Menaikkan versi tool adalah commit tersendiri supaya regresi mudah di-bisect.
+
+### 16.3 Instalasi
+
+1. Unduh ke `<data_dir>/tmp/` dengan batas ukuran dan timeout.
+2. Verifikasi SHA-256 terhadap manifest. Tidak cocok berarti berhenti dan berkas dibuang.
+3. Ekstrak (`.zip` lewat stdlib, `.tar.xz` lewat ADR-032), ambil hanya berkas executable yang dibutuhkan.
+4. Pasang ke `<data_dir>/tools/` lewat rename atomik.
+
+Aturan lain:
+
 - Pengecekan update mingguan, opsional, dan tidak pernah memasang tanpa persetujuan user.
 - `GET /api/health` menampilkan versi aktual hasil `yt-dlp --version` / `ffmpeg -version` agar bug report dapat dikaitkan ke versi tool.
+- Tool dari `PATH` dipakai apa adanya tanpa verifikasi checksum: itu milik sistem pengguna, bukan sesuatu yang kita pasang.
 
 ## 17. Storage layout dan konfigurasi
 

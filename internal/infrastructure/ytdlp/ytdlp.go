@@ -1,0 +1,152 @@
+// Package ytdlp membungkus yt-dlp: pembangunan argv, parsing keluaran, dan
+// pemetaan error ke kode domain.
+package ytdlp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"math"
+	"time"
+
+	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/process"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/tools"
+)
+
+// metadataTimeout membatasi pemanggilan metadata. Resolving tidak mengunduh
+// media, jadi batas ini pendek dan tetap.
+const metadataTimeout = 60 * time.Second
+
+// ToolProvider menyediakan path binary. Interface didefinisikan di sisi
+// pemakai supaya paket ini tidak bergantung pada implementasi tertentu.
+type ToolProvider interface {
+	Resolve(ctx context.Context, name string) (path string, version string, err error)
+}
+
+// Resolver mengambil metadata sumber lewat yt-dlp.
+type Resolver struct {
+	tools ToolProvider
+	log   *slog.Logger
+}
+
+// NewResolver membuat Resolver.
+func NewResolver(tp ToolProvider, log *slog.Logger) *Resolver {
+	return &Resolver{tools: tp, log: log}
+}
+
+// CanonicalURL menyusun ulang URL dari source key.
+//
+// yt-dlp selalu menerima bentuk kanonik ini, bukan URL mentah dari pengguna:
+// parameter pelacakan dan playlist tidak pernah ikut, dan hasilnya
+// deterministik untuk video yang sama.
+func CanonicalURL(sourceKey string) string {
+	return "https://www.youtube.com/watch?v=" + domain.VideoID(sourceKey)
+}
+
+// metadataArgs menyusun argv untuk pengambilan metadata.
+func metadataArgs(url string) []string {
+	return []string{
+		// Abaikan yt-dlp.conf milik pengguna: berkas itu bisa menyuntikkan
+		// --exec dan menjadikannya jalur eksekusi perintah sewenang-wenang.
+		"--ignore-config",
+		"--no-exec",
+		"--no-playlist",
+		"--no-warnings",
+		"--dump-single-json",
+		"--skip-download",
+		"--socket-timeout", "30",
+		"--retries", "2",
+		"--", // akhiri parsing flag sebelum URL
+		url,
+	}
+}
+
+// rawMetadata adalah subset keluaran JSON yt-dlp yang kita pakai.
+type rawMetadata struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Uploader  string  `json:"uploader"`
+	Channel   string  `json:"channel"`
+	Duration  float64 `json:"duration"`
+	Thumbnail string  `json:"thumbnail"`
+	ACodec    string  `json:"acodec"`
+	ASR       int     `json:"asr"`
+	IsLive    bool    `json:"is_live"`
+	LiveNow   bool    `json:"live_status_is_live"`
+	LiveState string  `json:"live_status"`
+}
+
+// Resolve mengambil metadata untuk satu source key.
+func (r *Resolver) Resolve(ctx context.Context, sourceKey string) (*domain.MediaInfo, error) {
+	bin, _, err := r.tools.Resolve(ctx, tools.YTDLP)
+	if err != nil {
+		return nil, err
+	}
+
+	url := CanonicalURL(sourceKey)
+	res, err := process.Output(ctx, process.Spec{
+		Bin:     bin,
+		Args:    metadataArgs(url),
+		Timeout: metadataTimeout,
+	})
+	if err != nil {
+		return nil, domain.WrapError(domain.CodeTimeout, domain.ClassTransient,
+			"pemanggilan metadata gagal", err)
+	}
+	if res.ExitCode != 0 {
+		return nil, mapStderr(res.Stderr, res.ExitCode)
+	}
+
+	var raw rawMetadata
+	if err := json.Unmarshal(res.Stdout, &raw); err != nil {
+		return nil, domain.WrapError(domain.CodeInternal, domain.ClassTransient,
+			"keluaran metadata bukan JSON yang dikenal", err)
+	}
+
+	// Livestream tidak berdurasi dan tidak pernah selesai; ditolak sebelum
+	// ada satu byte pun yang diunduh. Lihat ADR-026.
+	if raw.IsLive || raw.LiveNow || raw.LiveState == "is_live" {
+		return nil, domain.NewError(domain.CodeLiveNotSupported, domain.ClassPermanent,
+			"sumber adalah siaran langsung")
+	}
+
+	return &domain.MediaInfo{
+		SourceKey:    sourceKey,
+		SourceURL:    url,
+		Title:        raw.Title,
+		Uploader:     firstNonEmpty(raw.Uploader, raw.Channel),
+		Duration:     durationOf(raw.Duration),
+		DurationMS:   int64(durationOf(raw.Duration) / time.Millisecond),
+		ThumbnailURL: raw.Thumbnail,
+		SourceCodec:  raw.ACodec,
+		SampleRate:   raw.ASR,
+	}, nil
+}
+
+// durationOf mengubah detik pecahan jadi Duration, menolak nilai tak wajar.
+func durationOf(seconds float64) time.Duration {
+	if seconds <= 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return 0 // durasi tidak diketahui; bukan nilai hilang, tapi memang nol
+	}
+	return time.Duration(seconds * float64(time.Second))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// Version mengembalikan versi yt-dlp yang terpasang.
+func (r *Resolver) Version(ctx context.Context) (string, error) {
+	_, version, err := r.tools.Resolve(ctx, tools.YTDLP)
+	if err != nil {
+		return "", fmt.Errorf("resolve yt-dlp: %w", err)
+	}
+	return version, nil
+}

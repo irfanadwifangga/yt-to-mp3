@@ -17,7 +17,11 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font:
+    15px/1.6 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
 }
 
 .shell {
@@ -141,4 +145,45 @@ button {
 button:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+section {
+  margin-top: 2rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+input[type="url"] {
+  flex: 1;
+  font: inherit;
+  color: var(--fg);
+  background: #0c0e14;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45rem 0.7rem;
+  min-width: 0;
+}
+
+input[type="url"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tools li button {
+  padding: 0.2rem 0.7rem;
+  font-size: 0.85rem;
+  margin-left: 0.75rem;
+}
+
+.tools .muted {
+  margin-left: auto;
 }
