@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/api"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 )
@@ -24,25 +25,34 @@ type harness struct {
 	srv      *api.Server
 	tools    *fakeTools
 	resolver *fakeResolver
+	cache    *fakeCache
+	presets  *fakePresets
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	ft := newFakeTools()
 	fr := newFakeResolver()
+	fc := newFakeCache()
+	fp := newFakePresets()
+	log := newDiscardLogger()
+
 	return &harness{
 		srv: api.New(api.Options{
 			Config:   config.Default(),
-			Logger:   newDiscardLogger(),
+			Logger:   log,
 			Token:    testToken,
 			Port:     testPort,
 			SPA:      fstest.MapFS{},
 			SPABuilt: false,
 			Tools:    ft,
-			Resolver: fr,
+			Presets:  fp,
+			Metadata: application.NewMetadataService(fr, fc, log),
 		}),
 		tools:    ft,
 		resolver: fr,
+		cache:    fc,
+		presets:  fp,
 	}
 }
 
@@ -314,5 +324,54 @@ func TestBodyHarusJSON(t *testing.T) {
 
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("status = %d, mau 415", rec.Code)
+	}
+}
+
+// Cache yang mengena harus mencegah pemanggilan yt-dlp sama sekali; itu
+// seluruh alasan keberadaannya.
+func TestMetadataMemakaiCache(t *testing.T) {
+	h := newHarness(t)
+	body := `{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}`
+
+	if rec := h.do(t, http.MethodPost, "/api/metadata", body); rec.Code != http.StatusOK {
+		t.Fatalf("panggilan pertama status = %d", rec.Code)
+	}
+	if h.resolver.calls != 1 {
+		t.Fatalf("resolver dipanggil %d kali, mau 1", h.resolver.calls)
+	}
+	if h.cache.puts != 1 {
+		t.Errorf("cache ditulis %d kali, mau 1", h.cache.puts)
+	}
+
+	if rec := h.do(t, http.MethodPost, "/api/metadata", body); rec.Code != http.StatusOK {
+		t.Fatalf("panggilan kedua status = %d", rec.Code)
+	}
+	if h.resolver.calls != 1 {
+		t.Errorf("resolver dipanggil %d kali setelah cache terisi, mau tetap 1", h.resolver.calls)
+	}
+}
+
+func TestPresets(t *testing.T) {
+	h := newHarness(t)
+
+	rec := h.do(t, http.MethodGet, "/api/presets", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, mau 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Presets []struct {
+			ID         string `json:"id"`
+			SampleRate int    `json:"sample_rate"`
+		} `json:"presets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Presets) != 1 || body.Presets[0].ID != "mp3_standard" {
+		t.Fatalf("preset = %+v", body.Presets)
+	}
+	if body.Presets[0].SampleRate != 48000 {
+		t.Errorf("sample_rate = %d, mau 48000", body.Presets[0].SampleRate)
 	}
 }

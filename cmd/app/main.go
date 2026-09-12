@@ -14,12 +14,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/api"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/tools"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ytdlp"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/instance"
@@ -49,6 +52,11 @@ func run() error {
 		fmt.Printf("%s %s (%s)\n", version.AppName, version.Version, version.Commit)
 		return nil
 	}
+
+	// Dibuat sejak awal supaya pekerjaan startup yang lama (migrasi, probe
+	// tool) ikut dapat dibatalkan dengan Ctrl+C.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -96,6 +104,33 @@ func run() error {
 		return fmt.Errorf("siapkan tool manager: %w", err)
 	}
 
+	database, err := db.Open(ctx, filepath.Join(cfg.Paths.DBDir, "app.db"), log)
+	if err != nil {
+		return fmt.Errorf("buka database: %w", err)
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Warn("tutup database gagal", "error", err)
+		}
+	}()
+
+	if err := database.Migrate(ctx, version.Version); err != nil {
+		return fmt.Errorf("migrasi database: %w", err)
+	}
+
+	jobs := db.NewJobRepository(database)
+
+	// Recovery dijalankan sebelum listener dibuka. Job berstatus aktif di
+	// database berarti proses pemiliknya sudah mati bersama sesi sebelumnya,
+	// jadi tidak mungkin dilanjutkan.
+	swept, err := jobs.SweepNonTerminal(ctx)
+	if err != nil {
+		return fmt.Errorf("crash recovery: %w", err)
+	}
+	if swept > 0 {
+		log.Warn("job tertinggal dari sesi sebelumnya ditandai gagal", "jumlah", swept)
+	}
+
 	srv := api.New(api.Options{
 		Config:   cfg,
 		Logger:   log,
@@ -105,7 +140,12 @@ func run() error {
 		SPABuilt: spaBuilt,
 		Dev:      *devMode,
 		Tools:    toolManager,
-		Resolver: ytdlp.NewResolver(toolManager, log),
+		Presets:  db.NewPresetRepository(database),
+		Metadata: application.NewMetadataService(
+			ytdlp.NewResolver(toolManager, log),
+			db.NewMediaRepository(database),
+			log,
+		),
 	})
 
 	info := instance.Info{
@@ -150,9 +190,6 @@ func run() error {
 			log.Warn("gagal membuka browser", "error", err)
 		}
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	select {
 	case err := <-serveErr:

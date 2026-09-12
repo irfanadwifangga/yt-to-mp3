@@ -124,15 +124,9 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validasi dan normalisasi terjadi sebelum apa pun menyentuh yt-dlp,
-	// sehingga skema seperti file:// tidak pernah sampai ke subprocess.
-	sourceKey, derr := domain.NormalizeURL(req.URL)
-	if derr != nil {
-		s.writeDomainError(w, derr)
-		return
-	}
-
-	info, err := s.resolver.Resolve(r.Context(), sourceKey)
+	// Normalisasi, cache, dan pemanggilan tool ditangani use case; handler
+	// hanya menerjemahkan bentuk HTTP-nya.
+	info, err := s.metadata.Analyze(r.Context(), req.URL)
 	if err != nil {
 		s.writeDomainError(w, err)
 		return
@@ -148,4 +142,21 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		SourceCodec:  info.SourceCodec,
 		SampleRate:   info.SampleRate,
 	})
+}
+
+type presetsResponse struct {
+	Presets []domain.Preset `json:"presets"`
+}
+
+// handlePresets memasok daftar preset ke UI. SPA tidak boleh meng-hardcode
+// preset karena definisinya adalah product contract yang hidup di database.
+func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
+	presets, err := s.presets.List(r.Context(), false)
+	if err != nil {
+		s.log.Error("baca preset gagal", "error", err)
+		writeError(w, http.StatusInternalServerError, domain.CodeInternal,
+			"Tidak dapat membaca daftar preset.")
+		return
+	}
+	writeJSON(w, http.StatusOK, presetsResponse{Presets: presets})
 }

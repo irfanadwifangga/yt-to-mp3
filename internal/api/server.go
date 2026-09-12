@@ -31,7 +31,8 @@ type Options struct {
 	Dev      bool
 
 	Tools    application.ToolManager
-	Resolver application.MediaResolver
+	Metadata *application.MetadataService
+	Presets  application.PresetLister
 }
 
 // Server membungkus router beserta seluruh state HTTP.
@@ -48,7 +49,8 @@ type Server struct {
 	spaBuilt bool
 
 	tools    application.ToolManager
-	resolver application.MediaResolver
+	metadata *application.MetadataService
+	presets  application.PresetLister
 
 	startedAt time.Time
 
@@ -74,7 +76,8 @@ func New(opts Options) *Server {
 		spa:        opts.SPA,
 		spaBuilt:   opts.SPABuilt,
 		tools:      opts.Tools,
-		resolver:   opts.Resolver,
+		metadata:   opts.Metadata,
+		presets:    opts.Presets,
 		startedAt:  time.Now(),
 		shutdownCh: make(chan struct{}),
 	}
@@ -103,6 +106,7 @@ func New(opts Options) *Server {
 	protected.HandleFunc("GET /tools", s.handleTools)
 	protected.HandleFunc("POST /tools/install", s.handleToolInstall)
 	protected.HandleFunc("POST /metadata", s.handleMetadata)
+	protected.HandleFunc("GET /presets", s.handlePresets)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/ping", s.handlePing)

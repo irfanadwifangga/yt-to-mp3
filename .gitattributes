@@ -1,0 +1,22 @@
+# Normalkan seluruh berkas teks ke LF, baik di repo maupun di working tree.
+#
+# Tanpa ini, editor Windows dapat menyimpan ulang berkas dengan CRLF. Go
+# tidak peduli saat kompilasi, tetapi gofmt menganggapnya belum diformat,
+# sehingga `make fmt-check` dan CI gagal karena alasan yang tidak ada
+# hubungannya dengan kode.
+* text=auto eol=lf
+
+# Skrip shell wajib LF; CRLF membuatnya gagal dijalankan di Linux dan macOS.
+*.sh text eol=lf
+
+# Berkas biner jangan pernah disentuh normalisasi.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.exe binary
+*.woff binary
+*.woff2 binary

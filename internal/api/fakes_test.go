@@ -76,3 +76,53 @@ func (f *fakeResolver) Resolve(_ context.Context, sourceKey string) (*domain.Med
 	}
 	return f.info, nil
 }
+
+// fakeCache adalah cache metadata in-memory; selalu meleset kecuali test
+// mengisinya lebih dulu.
+type fakeCache struct {
+	items map[string]*domain.MediaInfo
+	puts  int
+}
+
+func newFakeCache() *fakeCache {
+	return &fakeCache{items: map[string]*domain.MediaInfo{}}
+}
+
+func (c *fakeCache) Get(_ context.Context, key string) (*domain.MediaInfo, bool, error) {
+	info, ok := c.items[key]
+	return info, ok, nil
+}
+
+func (c *fakeCache) Upsert(_ context.Context, info *domain.MediaInfo, _ string) error {
+	c.puts++
+	c.items[info.SourceKey] = info
+	return nil
+}
+
+// fakePresets menggantikan repository preset.
+type fakePresets struct {
+	presets []domain.Preset
+	err     error
+}
+
+func newFakePresets() *fakePresets {
+	rate := 48000
+	bitrate := 192
+	return &fakePresets{presets: []domain.Preset{{
+		ID: "mp3_standard", Label: "Standard", Format: "mp3", Codec: "libmp3lame",
+		Mode: "cbr", BitrateKbps: &bitrate, SampleRate: &rate, Channels: 2,
+	}}}
+}
+
+func (p *fakePresets) List(context.Context, bool) ([]domain.Preset, error) {
+	return p.presets, p.err
+}
+
+func (p *fakePresets) Get(_ context.Context, id string) (*domain.Preset, error) {
+	for i := range p.presets {
+		if p.presets[i].ID == id {
+			return &p.presets[i], nil
+		}
+	}
+	return nil, domain.NewError(domain.CodeInternal, domain.ClassLocal, "tidak ada")
+}
