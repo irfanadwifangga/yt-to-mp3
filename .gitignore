@@ -1,0 +1,43 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# SPA build output. Direktori dipertahankan lewat .gitkeep supaya
+# //go:embed all:dist tidak gagal compile pada clone yang masih bersih.
+/web/dist/*
+!/web/dist/.gitkeep
+
+# Node
+node_modules/
+.vite/
+*.tsbuildinfo
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Data runtime lokal, tidak pernah masuk repo
+*.db
+*.db-wal
+*.db-shm
+/tmp/
+/logs/
+runtime.json
+app.lock
+config.json
+
+# Tool pihak ketiga yang diunduh saat runtime
+/tools/
+
+# Editor dan OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
