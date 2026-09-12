@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, isTerminal, type Health, type Job, type Metadata, type Preset } from "./api";
 import { formatDuration, messageFor } from "./messages";
 import { History, Queue } from "./Jobs";
+import { Settings } from "./Settings";
 
 /** Antrean disegarkan cukup sering untuk terasa hidup, tetapi progress
  *  halus datang lewat SSE sehingga polling tidak perlu rapat. */
@@ -75,6 +76,7 @@ export function App() {
       <Queue jobs={active} onChanged={refresh} />
       <History jobs={finished} onChanged={refresh} />
       <Tools health={health} onChanged={refresh} />
+      <Settings />
 
       {health && (
         <dl className="grid">

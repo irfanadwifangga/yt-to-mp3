@@ -102,16 +102,9 @@ type JobService struct {
 	notify   chan<- struct{}
 	log      *slog.Logger
 
-	maxQueueDepth   int
-	defaultPreset   string
-	defaultFilename domain.FilenameMode
-}
-
-// JobServiceConfig memisahkan konfigurasi dari dependensi.
-type JobServiceConfig struct {
-	MaxQueueDepth   int
-	DefaultPreset   string
-	DefaultFilename domain.FilenameMode
+	// live dibaca setiap permintaan, bukan sekali saat startup, sehingga
+	// perubahan preset default dan batas antrean berlaku tanpa restart.
+	live func() LiveSettings
 }
 
 // NewJobService membuat use case job.
@@ -122,15 +115,12 @@ func NewJobService(
 	resolver MediaResolver,
 	events EventPublisher,
 	notify chan<- struct{},
-	cfg JobServiceConfig,
+	live func() LiveSettings,
 	log *slog.Logger,
 ) *JobService {
 	return &JobService{
 		repo: repo, presets: presets, cache: cache, resolver: resolver,
-		events: events, notify: notify, log: log,
-		maxQueueDepth:   cfg.MaxQueueDepth,
-		defaultPreset:   cfg.DefaultPreset,
-		defaultFilename: cfg.DefaultFilename,
+		events: events, notify: notify, live: live, log: log,
 	}
 }
 
@@ -157,9 +147,11 @@ func (s *JobService) Create(ctx context.Context, req CreateRequest) (*CreateResu
 		return nil, derr
 	}
 
+	settings := s.live()
+
 	presetID := req.PresetID
 	if presetID == "" {
-		presetID = s.defaultPreset
+		presetID = settings.DefaultPresetID
 	}
 	preset, err := s.presets.Get(ctx, presetID)
 	if err != nil {
@@ -173,7 +165,7 @@ func (s *JobService) Create(ctx context.Context, req CreateRequest) (*CreateResu
 
 	mode := req.FilenameMode
 	if mode == "" {
-		mode = s.defaultFilename
+		mode = settings.FilenameMode
 	}
 	if !mode.Valid() {
 		return nil, domain.NewError(domain.CodeInternal, domain.ClassLocal,
@@ -186,7 +178,7 @@ func (s *JobService) Create(ctx context.Context, req CreateRequest) (*CreateResu
 	if err != nil {
 		return nil, fmt.Errorf("hitung antrean: %w", err)
 	}
-	if queued >= s.maxQueueDepth {
+	if queued >= settings.MaxQueueDepth {
 		return nil, domain.NewError(domain.CodeQueueFull, domain.ClassLocal,
 			fmt.Sprintf("antrean penuh (%d)", queued))
 	}
@@ -331,7 +323,7 @@ func (s *JobService) Queue(ctx context.Context) QueueStatus {
 	if err != nil {
 		s.log.Warn("hitung antrean gagal", "error", err)
 	}
-	return QueueStatus{Active: active, Queued: queued, Capacity: s.maxQueueDepth}
+	return QueueStatus{Active: active, Queued: queued, Capacity: s.live().MaxQueueDepth}
 }
 
 // PayloadJSON menyusun isi kolom job_events untuk event ini.

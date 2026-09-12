@@ -294,3 +294,32 @@ select {
   border-radius: 6px;
   padding: 0.45rem 0.6rem;
 }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+dd input[type="text"],
+dd input[type="number"],
+dd select {
+  width: 100%;
+  max-width: 22rem;
+  font: inherit;
+  color: var(--fg);
+  background: #0c0e14;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+}
+
+dd input[type="number"] {
+  max-width: 8rem;
+}
+
+dd.invalid input,
+dd.invalid select {
+  border-color: var(--danger);
+}

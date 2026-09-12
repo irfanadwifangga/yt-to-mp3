@@ -22,7 +22,6 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
-	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ffmpeg"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/fs"
@@ -171,13 +170,17 @@ func run() error {
 
 	scheduler := worker.New(jobs, pipeline, hub, cfg.MaxConcurrentJobs, log)
 
+	// Setelan dimuat setelah database terbuka, karena override tersimpan di
+	// sana sementara nilai bawaannya berasal dari config.json dan env.
+	settings := application.NewSettingsService(
+		db.NewSettingsRepository(database), presets, settingDefaults(cfg))
+	if err := settings.Load(ctx); err != nil {
+		return fmt.Errorf("muat setelan: %w", err)
+	}
+
 	jobService := application.NewJobService(
 		jobs, presets, mediaCache, resolver, hub, scheduler.Notify(),
-		application.JobServiceConfig{
-			MaxQueueDepth:   cfg.MaxQueueDepth,
-			DefaultPreset:   cfg.DefaultPresetID,
-			DefaultFilename: domain.FilenameMode(cfg.FilenameMode),
-		}, log)
+		settings.Live, log)
 
 	go scheduler.Run(ctx)
 
@@ -196,6 +199,7 @@ func run() error {
 		Canceller: scheduler,
 		Hub:       hub,
 		Files:     db.NewFileRepository(database),
+		Settings:  settings,
 		Revealer:  revealAdapter{},
 	})
 

@@ -154,3 +154,44 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, presetsResponse{Presets: presets})
 }
+
+type settingsResponse struct {
+	Settings []application.SettingView `json:"settings"`
+}
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	views, err := s.settings.List(r.Context())
+	if err != nil {
+		s.log.Error("baca setelan gagal", "error", err)
+		writeError(w, http.StatusInternalServerError, domain.CodeInternal,
+			"Tidak dapat membaca setelan.")
+		return
+	}
+	writeJSON(w, http.StatusOK, settingsResponse{Settings: views})
+}
+
+// handleUpdateSettings menyimpan perubahan setelan.
+//
+// Hanya kunci yang dikirim yang diubah, sehingga klien tidak perlu
+// mengirim ulang seluruh konfigurasi dan tidak berisiko menimpa setelan
+// yang baru saja diubah dari tempat lain.
+func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var req map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Body bukan JSON yang valid.")
+		return
+	}
+
+	if err := s.settings.Update(r.Context(), req); err != nil {
+		s.writeDomainError(w, err)
+		return
+	}
+
+	views, err := s.settings.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, domain.CodeInternal,
+			"Setelan tersimpan tetapi tidak dapat dibaca ulang.")
+		return
+	}
+	writeJSON(w, http.StatusOK, settingsResponse{Settings: views})
+}

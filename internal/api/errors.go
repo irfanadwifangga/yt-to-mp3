@@ -23,6 +23,7 @@ const (
 // terdaftar jatuh ke 500, yang merupakan default paling aman.
 var statusByCode = map[domain.ErrorCode]int{
 	domain.CodeInvalidURL:        http.StatusBadRequest,
+	domain.CodeInvalidSetting:    http.StatusBadRequest,
 	domain.CodeUnsupportedURL:    http.StatusBadRequest,
 	domain.CodeLiveNotSupported:  http.StatusUnprocessableEntity,
 	domain.CodeVideoUnavailable:  http.StatusNotFound,
@@ -79,9 +80,22 @@ func (s *Server) writeDomainError(w http.ResponseWriter, err error) {
 	if !ok {
 		status = http.StatusInternalServerError
 	}
-	// Detail hanya masuk log, tidak pernah ke UI.
+
+	// Detail berupa kalimat hanya masuk log, tidak pernah ke UI. Details
+	// yang terstruktur boleh ikut, karena isinya konteks yang dibutuhkan
+	// klien untuk merangkai pesannya sendiri, misalnya kunci setelan yang
+	// ditolak.
 	s.log.Warn("permintaan gagal", "code", derr.Code, "detail", derr.Detail, "cause", derr.Cause)
-	writeError(w, status, derr.Code, string(derr.Code))
+
+	details := map[string]any{}
+	for k, v := range derr.Details {
+		details[k] = v
+	}
+	writeJSON(w, status, errorBody{Error: errorDetail{
+		Code:    derr.Code,
+		Message: string(derr.Code),
+		Details: details,
+	}})
 }
 
 // writeJSON mengirim payload JSON dengan header yang benar.

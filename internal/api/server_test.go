@@ -46,12 +46,14 @@ func newHarness(t *testing.T) *harness {
 	log := newDiscardLogger()
 
 	hub := api.NewHub(jr, log)
-	jobService := application.NewJobService(jr, fp, fc, fr, hub, nil,
-		application.JobServiceConfig{
+	live := func() application.LiveSettings {
+		return application.LiveSettings{
+			DefaultPresetID: "mp3_standard",
+			FilenameMode:    domain.FilenameTitle,
 			MaxQueueDepth:   3,
-			DefaultPreset:   "mp3_standard",
-			DefaultFilename: domain.FilenameTitle,
-		}, log)
+		}
+	}
+	jobService := application.NewJobService(jr, fp, fc, fr, hub, nil, live, log)
 
 	return &harness{
 		srv: api.New(api.Options{

@@ -11,6 +11,7 @@ type ErrorCode string
 
 const (
 	CodeInvalidURL        ErrorCode = "INVALID_URL"
+	CodeInvalidSetting    ErrorCode = "INVALID_SETTING"
 	CodeUnsupportedURL    ErrorCode = "UNSUPPORTED_URL"
 	CodeLiveNotSupported  ErrorCode = "LIVE_NOT_SUPPORTED"
 	CodeVideoUnavailable  ErrorCode = "VIDEO_UNAVAILABLE"
@@ -54,7 +55,12 @@ type Error struct {
 	Code   ErrorCode
 	Class  ErrorClass
 	Detail string // untuk log dan job_events, tidak pernah untuk UI
-	Cause  error
+
+	// Details membawa konteks terstruktur yang boleh sampai ke UI, misalnya
+	// kunci setelan yang ditolak. Isinya tidak pernah berupa kalimat siap
+	// tampil: klien tetap merangkai teksnya sendiri dari Code (ADR-027).
+	Details map[string]string
+	Cause   error
 }
 
 func (e *Error) Error() string {

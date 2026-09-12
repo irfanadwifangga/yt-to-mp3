@@ -38,6 +38,7 @@ type Options struct {
 	Canceller JobCanceller
 	Hub       *Hub
 	Files     application.FileStore
+	Settings  *application.SettingsService
 	Revealer  Revealer
 }
 
@@ -69,6 +70,7 @@ type Server struct {
 	canceller JobCanceller
 	hub       *Hub
 	files     application.FileStore
+	settings  *application.SettingsService
 	revealer  Revealer
 
 	startedAt time.Time
@@ -101,6 +103,7 @@ func New(opts Options) *Server {
 		canceller:  opts.Canceller,
 		hub:        opts.Hub,
 		files:      opts.Files,
+		settings:   opts.Settings,
 		revealer:   opts.Revealer,
 		startedAt:  time.Now(),
 		shutdownCh: make(chan struct{}),
@@ -140,6 +143,8 @@ func New(opts Options) *Server {
 	protected.HandleFunc("DELETE /jobs/{id}", s.handleDeleteJob)
 	protected.HandleFunc("GET /files/{id}", s.handleDownloadFile)
 	protected.HandleFunc("POST /files/{id}/reveal", s.handleRevealFile)
+	protected.HandleFunc("GET /settings", s.handleGetSettings)
+	protected.HandleFunc("PUT /settings", s.handleUpdateSettings)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/ping", s.handlePing)

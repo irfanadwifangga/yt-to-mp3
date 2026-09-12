@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ffmpeg"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/fs"
@@ -68,3 +70,21 @@ func (namingAdapter) Build(mode domain.FilenameMode, info *domain.MediaInfo, ext
 type revealAdapter struct{}
 
 func (revealAdapter) Reveal(path string) error { return browser.Reveal(path) }
+
+// settingDefaults memetakan konfigurasi startup jadi nilai bawaan setelan.
+//
+// Nilai ini yang berlaku ketika pengguna belum pernah mengubah apa pun,
+// sehingga default baru di versi berikutnya tetap sampai ke pengguna yang
+// tidak menyentuh setelan tersebut.
+func settingDefaults(cfg config.Config) map[string]string {
+	return map[string]string{
+		application.KeyOutputDir:       cfg.OutputDir,
+		application.KeyMaxConcurrent:   strconv.Itoa(cfg.MaxConcurrentJobs),
+		application.KeyMaxQueueDepth:   strconv.Itoa(cfg.MaxQueueDepth),
+		application.KeyDefaultPreset:   cfg.DefaultPresetID,
+		application.KeyFilenameMode:    cfg.FilenameMode,
+		application.KeyToolUpdateCheck: strconv.FormatBool(cfg.ToolUpdateCheck),
+		application.KeyIdleShutdown:    strconv.Itoa(cfg.IdleShutdownMinutes),
+		application.KeyLogLevel:        cfg.LogLevel,
+	}
+}

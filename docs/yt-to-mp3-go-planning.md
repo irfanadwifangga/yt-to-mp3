@@ -238,7 +238,7 @@ Urutan subscribe yang benar (mendaftar listener sebelum membaca histori, agar ti
 
 Daftar `code` bersifat tertutup dan menjadi bagian kontrak:
 
-`INVALID_URL`, `UNSUPPORTED_URL`, `LIVE_NOT_SUPPORTED`, `VIDEO_UNAVAILABLE`, `VIDEO_PRIVATE`, `GEO_BLOCKED`, `AGE_RESTRICTED`, `RATE_LIMITED`, `TOOL_MISSING`, `TOOL_OUTDATED`, `TOOL_INSTALL_FAILED`, `TOOL_MANIFEST_INCOMPLETE`, `TOOL_CHECKSUM_MISMATCH`, `DOWNLOAD_FAILED`, `TRANSCODE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_WRITE_FAILED`, `JOB_NOT_FOUND`, `QUEUE_FULL`, `DUPLICATE_ACTIVE_JOB`, `INTERRUPTED`, `CANCELLED`, `TIMEOUT`, `INTERNAL`.
+`INVALID_URL`, `INVALID_SETTING`, `UNSUPPORTED_URL`, `LIVE_NOT_SUPPORTED`, `VIDEO_UNAVAILABLE`, `VIDEO_PRIVATE`, `GEO_BLOCKED`, `AGE_RESTRICTED`, `RATE_LIMITED`, `TOOL_MISSING`, `TOOL_OUTDATED`, `TOOL_INSTALL_FAILED`, `TOOL_MANIFEST_INCOMPLETE`, `TOOL_CHECKSUM_MISMATCH`, `DOWNLOAD_FAILED`, `TRANSCODE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_WRITE_FAILED`, `JOB_NOT_FOUND`, `QUEUE_FULL`, `DUPLICATE_ACTIVE_JOB`, `INTERRUPTED`, `CANCELLED`, `TIMEOUT`, `INTERNAL`.
 
 Lapisan HTTP menambahkan kode transport tersendiri yang tidak dimiliki domain: `FORBIDDEN_HOST`, `FORBIDDEN_ORIGIN`, `UNAUTHORIZED`, `UNSUPPORTED_MEDIA_TYPE`, `BAD_REQUEST`, `NOT_FOUND`.
 
@@ -246,6 +246,7 @@ Aturan (ADR-027):
 
 - **Client yang menerjemahkan**, berdasarkan `code`. Field `message` adalah fallback untuk developer dan log, bukan teks yang ditampilkan.
 - Pesan mentah dari yt-dlp/FFmpeg tidak pernah dikirim ke UI; disimpan di log dan `job_events`.
+- Field `details` boleh memuat konteks terstruktur yang dibutuhkan klien untuk menunjuk sumber masalah, misalnya `{"key": "max_concurrent_jobs"}` pada `INVALID_SETTING`. Isinya kunci dan nilai, tidak pernah kalimat siap tampil — itu tetap dirakit klien dari `code`.
 - Menambah `code` baru adalah perubahan kontrak: butuh entri terjemahan di SPA pada commit yang sama.
 - Bahasa UI MVP: Indonesia dan Inggris, dengan Inggris sebagai fallback.
 

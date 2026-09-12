@@ -10,6 +10,7 @@ import { ApiError } from "./api";
 const MESSAGES: Record<string, string> = {
   // Masukan
   INVALID_URL: "URL tidak valid.",
+  INVALID_SETTING: "Nilai setelan tidak valid.",
   UNSUPPORTED_URL: "URL ini bukan tautan video YouTube.",
   BAD_REQUEST: "Permintaan tidak dapat dibaca.",
   UNSUPPORTED_MEDIA_TYPE: "Format permintaan tidak didukung.",

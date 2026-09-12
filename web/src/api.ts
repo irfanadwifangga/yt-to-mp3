@@ -20,6 +20,11 @@ export class ApiError extends Error {
   constructor(
     readonly code: ErrorCode | string,
     readonly status: number,
+    /**
+     * Konteks terstruktur dari server, misalnya kunci setelan yang ditolak.
+     * Bukan kalimat siap tampil: teksnya tetap dirangkai klien dari `code`.
+     */
+    readonly details: Record<string, string> = {},
   ) {
     super(`${code} (${status})`);
     this.name = "ApiError";
@@ -53,14 +58,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     let code = "INTERNAL";
+    let details: Record<string, string> = {};
     try {
       const body = await res.json();
       code = body?.error?.code ?? code;
+      details = body?.error?.details ?? {};
     } catch {
       // Respons bukan JSON; pertahankan kode default.
     }
-    throw new ApiError(code, res.status);
+    throw new ApiError(code, res.status, details);
   }
+
+  // 204 No Content tidak punya body untuk diurai.
+  if (res.status === 204) return undefined as T;
 
   return (await res.json()) as T;
 }
@@ -75,6 +85,12 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
   presets: () => request<{ presets: Preset[] }>("/presets"),
+  settings: () => request<{ settings: Setting[] }>("/settings"),
+  updateSettings: (values: Record<string, string>) =>
+    request<{ settings: Setting[] }>("/settings", {
+      method: "PUT",
+      body: JSON.stringify(values),
+    }),
   jobs: (status?: JobStatus) =>
     request<{ jobs: Job[]; next_cursor?: string }>(
       status ? `/jobs?status=${status}` : "/jobs",
@@ -186,4 +202,12 @@ export async function downloadFile(fileId: string, filename: string): Promise<vo
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export interface Setting {
+  key: string;
+  value: string;
+  kind: "string" | "int" | "bool" | "enum";
+  options?: string[];
+  requires_restart: boolean;
 }
