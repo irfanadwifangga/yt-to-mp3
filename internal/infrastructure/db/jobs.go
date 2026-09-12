@@ -494,3 +494,69 @@ func (r *JobRepository) CountActive(ctx context.Context) (int, int, error) {
 	}
 	return active, queued, nil
 }
+
+// Complete menutup job sukses beserta berkas hasilnya dalam satu transaksi.
+//
+// Keduanya wajib menyatu: menulis berkas lalu gagal menutup job menyisakan
+// baris yatim, sedangkan menutup job lalu gagal menulis berkas menghasilkan
+// job "selesai" tanpa berkas. Lihat data-model "Invarian".
+func (r *JobRepository) Complete(
+	ctx context.Context, jobID string, from domain.JobStatus, f *domain.File, ev domain.Event,
+) error {
+	if !domain.CanTransition(from, domain.StatusCompleted) {
+		return domain.ErrInvalidTransition(from, domain.StatusCompleted)
+	}
+
+	now := r.now()
+	if f.CreatedAt.IsZero() {
+		f.CreatedAt = now
+	}
+
+	return r.db.InTx(ctx, func(tx *sql.Tx) error {
+		var current string
+		err := tx.QueryRowContext(ctx, `SELECT status FROM jobs WHERE id = ?`, jobID).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent,
+				fmt.Sprintf("job %s tidak ada", jobID))
+		}
+		if err != nil {
+			return fmt.Errorf("baca status: %w", err)
+		}
+		if domain.JobStatus(current) != from {
+			return domain.NewError(domain.CodeInternal, domain.ClassLocal,
+				fmt.Sprintf("job %s berstatus %s, bukan %s", jobID, current, from))
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO files (id, job_id, path, filename, mime, size_bytes, sha256, missing, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+			f.ID, f.JobID, f.Path, f.Filename, f.MIME, f.SizeBytes, f.SHA256,
+			formatTime(f.CreatedAt)); err != nil {
+			return fmt.Errorf("simpan berkas: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE jobs SET status = 'completed', progress = 100, phase = NULL, finished_at = ?
+			 WHERE id = ?`, formatTime(now), jobID); err != nil {
+			return fmt.Errorf("tutup job: %w", err)
+		}
+		return insertEvent(ctx, tx, jobID, ev, now)
+	})
+}
+
+// UpdateProgress menyimpan kemajuan pada batas fase.
+//
+// Hanya dipanggil saat fase berganti, bukan pada setiap pembaruan progress:
+// menulis empat kali per detik per job akan membuat database jadi titik
+// panas tanpa manfaat, sementara nilai live sudah mengalir lewat SSE.
+func (r *JobRepository) UpdateProgress(
+	ctx context.Context, jobID string, percent *float64, phase string,
+) error {
+	_, err := r.db.Write().ExecContext(ctx,
+		`UPDATE jobs SET progress = ?, phase = ? WHERE id = ?`,
+		percent, nullString(phase), jobID)
+	if err != nil {
+		return fmt.Errorf("simpan progress: %w", err)
+	}
+	return nil
+}

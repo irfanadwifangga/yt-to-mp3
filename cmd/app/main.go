@@ -24,6 +24,8 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ffmpeg"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/fs"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/tools"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ytdlp"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/instance"
@@ -139,9 +141,35 @@ func run() error {
 
 	hub := api.NewHub(jobs, log)
 
-	// Pipeline unduhan dan transcode menyusul pada tahap 5; sampai saat itu
-	// mesin antrean tetap utuh dan job berakhir gagal dengan sebab jelas.
-	scheduler := worker.New(jobs, pendingPipeline{}, hub, cfg.MaxConcurrentJobs, log)
+	store, err := fs.NewStore(cfg.OutputDir, cfg.Paths.TempDir)
+	if err != nil {
+		return fmt.Errorf("siapkan direktori keluaran: %w", err)
+	}
+
+	// Sisa berkas sementara dari sesi yang mati mendadak dibersihkan sebelum
+	// ada job baru yang menambahinya.
+	if removed, err := store.GCTemp(24*time.Hour, nil); err != nil {
+		log.Warn("bersihkan temp lama gagal", "error", err)
+	} else if removed > 0 {
+		log.Info("sisa berkas sementara dibersihkan", "jumlah", removed)
+	}
+
+	pipeline := application.NewPipeline(application.PipelineDeps{
+		Repo:       jobs,
+		Closer:     jobs,
+		Presets:    presets,
+		Cache:      mediaCache,
+		Resolver:   resolver,
+		Downloader: downloaderAdapter{inner: ytdlp.NewDownloader(toolManager, log)},
+		Transcoder: transcoderAdapter{inner: ffmpeg.NewTranscoder(toolManager, log)},
+		Verifier:   ffmpeg.NewProber(toolManager, log),
+		Store:      store,
+		Naming:     namingAdapter{},
+		Events:     hub,
+		Log:        log,
+	})
+
+	scheduler := worker.New(jobs, pipeline, hub, cfg.MaxConcurrentJobs, log)
 
 	jobService := application.NewJobService(
 		jobs, presets, mediaCache, resolver, hub, scheduler.Notify(),
@@ -239,18 +267,4 @@ func newLogger(level string) *slog.Logger {
 		lv = slog.LevelInfo
 	}
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lv}))
-}
-
-// pendingPipeline adalah JobRunner sementara untuk tahap 4.
-//
-// Mesin antrean sudah lengkap, tetapi isi pekerjaannya (yt-dlp dan FFmpeg)
-// baru hadir pada tahap 5. Sampai saat itu job berakhir gagal dengan sebab
-// yang jelas alih-alih menggantung, dan seluruh jalur transisi, pembatalan,
-// serta siaran event tetap berjalan sungguhan. Hapus tipe ini ketika
-// pipeline sudah ada.
-type pendingPipeline struct{}
-
-func (pendingPipeline) Run(context.Context, *domain.Job) error {
-	return domain.NewError(domain.CodeInternal, domain.ClassPermanent,
-		"pipeline unduhan belum tersedia pada versi ini")
 }

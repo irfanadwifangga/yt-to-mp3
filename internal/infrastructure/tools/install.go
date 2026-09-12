@@ -276,9 +276,11 @@ func (m *Manager) writeTool(r io.Reader, target string) error {
 			"tulis tool", err)
 	}
 
+	// Rename menimpa berkas lama secara atomik, termasuk di Windows (Go
+	// memakai MoveFileEx dengan MOVEFILE_REPLACE_EXISTING). Menghapus
+	// tujuan lebih dulu justru menciptakan jeda tanpa tool sama sekali bila
+	// proses mati di antara keduanya.
 	final := filepath.Join(m.dir, target)
-	// Windows menolak rename ke berkas yang sudah ada.
-	_ = os.Remove(final)
 	if err := os.Rename(tmpName, final); err != nil {
 		_ = os.Remove(tmpName)
 		return domain.WrapError(domain.CodeToolInstallFailed, domain.ClassLocal,
