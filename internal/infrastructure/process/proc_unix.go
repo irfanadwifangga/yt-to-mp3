@@ -60,10 +60,14 @@ func (g *guard) kill() error {
 	if g.pgid == 0 {
 		return nil
 	}
-	if err := syscall.Kill(-g.pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := syscall.Kill(-g.pgid, syscall.SIGKILL); err != nil && !isIgnorableKillError(err) {
 		return fmt.Errorf("kirim SIGKILL ke grup %d: %w", g.pgid, err)
 	}
 	return nil
+}
+
+func isIgnorableKillError(err error) bool {
+	return errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM)
 }
 
 // release tidak memegang sumber daya apa pun di Unix.
