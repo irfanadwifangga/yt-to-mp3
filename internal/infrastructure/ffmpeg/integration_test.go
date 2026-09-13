@@ -89,7 +89,9 @@ func (e env) fixture(t *testing.T) (audio, cover string) {
 	// Sumber sengaja 44,1 kHz supaya resampling ke 48 kHz ikut teruji.
 	run("-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=5",
 		"-ac", "2", "-c:a", "pcm_s16le", audio)
-	run("-f", "lavfi", "-i", "color=c=0x2e7d55:s=320x320", "-frames:v", "1", cover)
+	// Sampul 16:9 yang lebih besar dari batas, seperti thumbnail YouTube,
+	// supaya pemotongan persegi dan pengecilan ikut teruji.
+	run("-f", "lavfi", "-i", "color=c=0x2e7d55:s=1600x900", "-frames:v", "1", cover)
 	return audio, cover
 }
 
@@ -111,6 +113,8 @@ type streamInfo struct {
 		CodecName   string `json:"codec_name"`
 		SampleRate  string `json:"sample_rate"`
 		Channels    int    `json:"channels"`
+		Width       int    `json:"width"`
+		Height      int    `json:"height"`
 		Disposition struct {
 			AttachedPic int `json:"attached_pic"`
 		} `json:"disposition"`
@@ -190,6 +194,9 @@ func TestIntegrasiKonversiCBRLengkap(t *testing.T) {
 			}
 		case s.Disposition.AttachedPic == 1:
 			pictures++
+			if s.Width != 800 || s.Height != 800 {
+				t.Errorf("sampul = %dx%d, mau 800x800", s.Width, s.Height)
+			}
 		}
 	}
 	if audioStreams != 1 || pictures != 1 {
@@ -234,5 +241,31 @@ func TestIntegrasiVerifyMenolakDurasiMenyimpang(t *testing.T) {
 	var derr *domain.Error
 	if !errors.As(err, &derr) || derr.Code != domain.CodeVerifyFailed {
 		t.Errorf("Verify() error = %v, mau %s", err, domain.CodeVerifyFailed)
+	}
+}
+
+// Thumbnail rusak tidak boleh menggagalkan job: konversi diulang tanpa
+// sampul dan hasilnya tetap berkas audio yang sah.
+func TestIntegrasiSampulRusakTidakMenggagalkan(t *testing.T) {
+	e := setup(t)
+	audio, _ := e.fixture(t)
+	broken := filepath.Join(e.dir, "rusak.jpg")
+	if err := os.WriteFile(broken, []byte("bukan gambar"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _ := e.transcode(t, &domain.Preset{
+		ID: "mp3_standard", Format: "mp3", Codec: "libmp3lame", Mode: "cbr",
+		BitrateKbps: intPtr(192), SampleRate: intPtr(48000), Channels: 2,
+	}, audio, broken)
+
+	info := e.inspect(t, out)
+	for _, s := range info.Streams {
+		if s.Disposition.AttachedPic == 1 {
+			t.Error("sampul rusak seharusnya tidak ikut disematkan")
+		}
+	}
+	if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration); err != nil {
+		t.Errorf("Verify() error = %v", err)
 	}
 }

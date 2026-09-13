@@ -146,12 +146,22 @@ Request:
 
 Hasil di-cache di `media_items` berdasarkan `source_key` dengan TTL 24 jam. Respons menyertakan `is_live`; UI menonaktifkan tombol convert bila bernilai benar.
 
+Respons juga menyertakan `previous_conversions`, yaitu job `completed` untuk `source_key` yang sama yang berkasnya masih tercatat ada. Isinya `job_id`, `preset_id`, `file_id`, `file_name`, dan `finished_at`, terbaru lebih dulu; nilainya selalu array, tidak pernah null. Bila preset yang dipilih pernah dipakai, UI menampilkan peringatan dengan tombol **Tampilkan di folder** dan mengganti label tombol menjadi **Konversi lagi**, supaya konversi ulang tidak diam-diam menghasilkan `Judul (2).mp3`. Kegagalan membaca riwayat ini tidak menggagalkan analisis.
+
+Respons juga menyertakan `suggested_title` dan `suggested_artist`, tebakan tag yang rapi dari `domain.SuggestTags`: penanda jenis unggahan di dalam kurung atau setelah `|` dibuang (`(Official Video)`, `[MV]`, `| Official Lyric Video`), judul berbentuk `Artis - Judul` dengan tepat satu pemisah dipecah, dan akhiran kanal `- Topic` serta `VEVO` dibuang dari uploader. Sebuah kelompok hanya dibuang bila **setiap** katanya penanda dan minimal satu penanda kuat, sehingga `(4K Remaster)` dan `(Official Video Remastered)` dibuang, sedangkan `(Remix)`, `(Live)`, `(feat. X)`, `(2019 Remaster)`, dan `(Remastered)` membedakan rekaman dan tetap dipertahankan. Kasus ujinya diambil dari judul YouTube nyata. Saran ini hanya mengisi formulir Judul dan Artis di pratinjau; bila berbeda dari metadata asli, UI menampilkan judul asli dengan tombol **Pakai data asli**, karena tebakan seperti "Episode 5 - Penutup" bisa keliru.
+
 ### `POST /api/jobs`
 
 Request:
 
 ```json
-{ "url": "https://example.invalid/video", "preset_id": "mp3_standard", "filename_mode": "title" }
+{
+  "url": "https://example.invalid/video",
+  "preset_id": "mp3_standard",
+  "filename_mode": "title",
+  "title": "Bohemian Rhapsody",
+  "artist": "Queen"
+}
 ```
 
 Response `202`:
@@ -162,7 +172,8 @@ Response `202`:
 
 - Menolak dengan `DUPLICATE_ACTIVE_JOB` bila ada job non-terminal dengan `source_key` + `preset_id` yang sama.
 - Menolak dengan `QUEUE_FULL` bila antrean penuh.
-- Bila sudah ada job **completed** dengan kombinasi yang sama, request tetap diterima, tetapi respons menyertakan `existing_file_id` sehingga UI dapat menawarkan "sudah pernah diunduh, buka saja".
+- `title` dan `artist` opsional; kosong berarti memakai metadata sumber. Nilainya dirapikan `domain.CleanTag` (karakter kontrol dibuang, spasi diringkas), disimpan per job di `jobs.tag_title`/`tag_artist`, dan dipakai untuk tag ID3 **sekaligus** nama berkas. Lebih dari 200 karakter ditolak `BAD_REQUEST`, bukan dipotong diam-diam. `title` juga menjadi judul riwayat; retry manual mewarisi keduanya.
+- Konversi selesai sebelumnya tidak dilaporkan di sini, melainkan di `previous_conversions` saat analisis, supaya peringatannya muncul sebelum pengguna menekan Konversi.
 
 ### `GET /api/jobs/:id`
 
@@ -332,9 +343,10 @@ ffmpeg -hide_banner -nostdin -y
   -i <cover.jpg>                           # opsional
   -map 0:a:0 -map 1:v:0
   -c:a libmp3lame -b:a 192k -ar 48000 -ac 2
-  -c:v mjpeg -disposition:v:0 attached_pic
+  -filter:v:0 crop=min(iw\,ih):min(iw\,ih),scale=min(iw\,800):min(ih\,800)
+  -c:v mjpeg -q:v 2 -disposition:v:0 attached_pic
   -id3v2_version 3                         # v2.3 paling luas didukung player
-  -metadata title=<title> -metadata artist=<uploader> -metadata date=<year>
+  -metadata title=<title> -metadata artist=<artist> -metadata album=<artist>
   -metadata comment=<source_url>
   -progress pipe:1 -nostats
   <tmp_out>.mp3
@@ -342,7 +354,11 @@ ffmpeg -hide_banner -nostdin -y
 
 Preset VBR memakai `-q:a <vbr_quality>` menggantikan `-b:a`.
 
-Cover art: thumbnail hasil `--write-thumbnail` dibatasi 5 MB dan di-resize ke maksimum 800×800 sebelum disematkan, supaya setiap MP3 tidak membawa gambar berukuran megabyte. Kegagalan pada jalur cover art **tidak pernah** menggagalkan job — output tanpa sampul tetap output yang sah.
+`<title>` dan `<artist>` adalah suntingan pengguna bila ada (§7 `POST /api/jobs`), selain itu judul dan uploader dari metadata. Tag kosong dilewati, bukan ditulis kosong. Tag `date` belum ditulis karena metadata yang dinormalkan belum membawa tanggal unggah.
+
+Cover art: thumbnail hasil `--write-thumbnail` dipotong persegi di tengah lalu diperkecil ke maksimum 800×800 sebelum disematkan. Thumbnail YouTube berbentuk 16:9 sedangkan pemutar musik menampilkan sampul persegi, dan artwork unggahan musik hampir selalu di tengah bingkai; konsekuensinya, sisi kiri-kanan thumbnail video biasa ikut terpotong. `-q:v 2` dipakai karena bitrate bawaan mjpeg membuat sampul tampak pecah. Ukuran berkas thumbnail tidak dibatasi terpisah: hasil akhirnya selalu di-encode ulang ke ≤ 800×800.
+
+Kegagalan pada jalur cover art **tidak pernah** menggagalkan job. Bila FFmpeg gagal dengan `TRANSCODE_FAILED` saat sampul disertakan, `Transcoder` mengulang konversi sekali tanpa sampul dan mencatat peringatan; timeout dan pembatalan tidak diulang. Test integrasi `TestIntegrasiSampulRusakTidakMenggagalkan` memakai berkas `.jpg` yang bukan gambar.
 
 ### 12.3 Model progress
 
@@ -390,7 +406,7 @@ Batas lain:
 | Job konkuren        | 2                         |
 | Kedalaman antrean   | 50                        |
 | Koneksi SSE per job | 4                         |
-| Ukuran thumbnail    | 5 MB, resize maks 800×800 |
+| Ukuran sampul       | persegi, maks 800×800     |
 | Body request API    | 64 KB                     |
 | Panjang URL         | 2048 karakter             |
 
@@ -528,7 +544,7 @@ Ringkasan; urutan lengkap ada di [architecture.md §7–§9](architecture.md).
 | --- | --- | --- |
 | Transient | timeout, connection reset, DNS gagal, 5xx, interupsi | auto-retry maks 3×, backoff 2s/8s/30s |
 | Throttled | HTTP 429 | auto-retry maks 3×, backoff lebih panjang + jitter, turunkan concurrency sementara |
-| Tool outdated | ekstraksi signature gagal, format tidak ditemukan | tidak auto-retry; `TOOL_OUTDATED` dengan saran update |
+| Tool outdated | ekstraksi signature gagal, format tidak ditemukan | tidak auto-retry; `TOOL_OUTDATED` dengan tombol **Perbarui yt-dlp & coba lagi** di notifikasi dan riwayat, serta **Perbarui yt-dlp** saat analisis gagal |
 | Permanen | private, dihapus, geo-block, age-gate, livestream, 404 | tidak pernah retry; tombol retry di UI dinonaktifkan |
 | Lokal | disk penuh, permission denied, path invalid | tidak retry; pesan actionable |
 

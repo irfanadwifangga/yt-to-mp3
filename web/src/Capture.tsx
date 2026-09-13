@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Job, type Metadata, type Preset } from "./api";
+import { api, ApiError, MAX_TAG_LENGTH, type Job, type Metadata, type Preset } from "./api";
 import { Cover } from "./Cover";
-import { CloseIcon } from "./icons";
+import { CloseIcon, FolderIcon } from "./icons";
 import { t } from "./i18n";
-import { formatDuration, messageFor, presetLabel } from "./messages";
+import { formatDuration, formatTime, messageFor, presetLabel } from "./messages";
 
 /**
  * Pola longgar yang memicu analisis otomatis.
@@ -42,7 +42,14 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   const [presetId, setPresetId] = useState("");
   const [result, setResult] = useState<Metadata | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"analyze" | "queue" | null>(null);
+  // Kode error disimpan terpisah dari teksnya supaya kegagalan karena
+  // yt-dlp usang bisa menawarkan pembaruan, bukan sekadar "coba lagi".
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"analyze" | "queue" | "update" | null>(null);
+  // Judul dan artis yang akan ditulis ke tag dan nama berkas. Diisi saran
+  // server setiap kali analisis selesai, lalu bebas disunting.
+  const [tagTitle, setTagTitle] = useState("");
+  const [tagArtist, setTagArtist] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Tautan yang sedang atau terakhir dianalisis. Hasil untuk tautan lain
@@ -60,12 +67,20 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
     analyzed.current = link;
     setBusy("analyze");
     setError(null);
+    setErrorCode(null);
     setResult(null);
     try {
       const meta = await api.metadata(link);
-      if (analyzed.current === link) setResult(meta);
+      if (analyzed.current === link) {
+        setResult(meta);
+        setTagTitle(meta.suggested_title || meta.title);
+        setTagArtist(meta.suggested_artist || meta.uploader);
+      }
     } catch (err) {
-      if (analyzed.current === link) setError(messageFor(err, t("capture.failed")));
+      if (analyzed.current === link) {
+        setError(messageFor(err, t("capture.failed")));
+        setErrorCode(err instanceof ApiError ? err.code : null);
+      }
     } finally {
       if (analyzed.current === link) setBusy(null);
     }
@@ -101,6 +116,7 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
       analyzed.current = "";
       setResult(null);
       setError(null);
+      setErrorCode(null);
       setBusy((current) => (current === "analyze" ? null : current));
     }
   }
@@ -110,8 +126,9 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
     setBusy("queue");
     setError(null);
     try {
-      const job = await api.createJob(url, selected);
-      onQueued({ ...job, title: job.title || result.title });
+      const title = tagTitle.trim();
+      const job = await api.createJob(url, selected, { title, artist: tagArtist.trim() });
+      onQueued({ ...job, title: job.title || title || result.title });
       reset();
     } catch (err) {
       setError(messageFor(err, t("capture.queueFailed")));
@@ -126,13 +143,62 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
     setUrl("");
     setPresetId("");
     setError(null);
+    setErrorCode(null);
     inputRef.current?.focus();
+  }
+
+  /** Memperbarui yt-dlp lalu mengulang analisis tautan yang sama. */
+  async function updateAndAnalyze() {
+    setBusy("update");
+    setError(null);
+    try {
+      await api.updateTool("yt-dlp");
+    } catch (err) {
+      setError(messageFor(err, t("tools.updateFailed")));
+      setBusy(null);
+      return;
+    }
+    setBusy(null);
+    await analyze(url);
+  }
+
+  async function revealPrevious(fileId: string) {
+    try {
+      await api.revealFile(fileId);
+    } catch (err) {
+      setError(messageFor(err, t("history.actionFailed")));
+      setErrorCode(null);
+    }
+  }
+
+  // Konversi sebelumnya dengan preset yang sedang dipilih. Preset lain
+  // menghasilkan berkas berbeda, jadi bukan duplikat.
+  const previous = result?.previous_conversions?.find((p) => p.preset_id === selected);
+
+  // Saran atau suntingan yang berbeda dari metadata asli ditampilkan
+  // berdampingan dengan aslinya, supaya tebakan yang keliru mudah dikenali.
+  const edited =
+    result !== null && (tagTitle.trim() !== result.title || tagArtist.trim() !== result.uploader);
+
+  function restoreOriginal() {
+    if (!result) return;
+    setTagTitle(result.title);
+    setTagArtist(result.uploader);
+  }
+
+  function convertOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && busy === null) {
+      e.preventDefault();
+      void handleConvert();
+    }
   }
 
   const status =
     ready === false
       ? t("capture.needTool")
-      : busy === "analyze"
+      : busy === "update"
+        ? t("tools.updating")
+        : busy === "analyze"
         ? t("capture.busy")
         : ready === null
           ? t("capture.checkingTools")
@@ -191,9 +257,23 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
       {error && (
         <div className="alert capture-error" role="alert">
           <span>{error}</span>
-          <button type="button" className="btn small" onClick={() => void analyze(url)}>
-            {t("capture.retry")}
-          </button>
+          {errorCode === "TOOL_OUTDATED" ? (
+            <button
+              type="button"
+              className="btn small primary"
+              onClick={() => void updateAndAnalyze()}
+              disabled={busy !== null}>
+              {t("capture.updateYtdlp")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => void analyze(url)}
+              disabled={busy !== null}>
+              {t("capture.retry")}
+            </button>
+          )}
         </div>
       )}
 
@@ -204,7 +284,46 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
           <Cover sourceKey={result.source_key} state="done" size="lg" />
 
           <div className="preview-body">
-            <h2 className="preview-title">{result.title}</h2>
+            <div className="tag-fields">
+              <label className="tag-field tag-field-title">
+                <span className="tag-label">{t("capture.tagTitle")}</span>
+                <input
+                  type="text"
+                  value={tagTitle}
+                  maxLength={MAX_TAG_LENGTH}
+                  onChange={(e) => setTagTitle(e.target.value)}
+                  onKeyDown={convertOnEnter}
+                  placeholder={result.title}
+                  aria-describedby="tag-hint"
+                />
+              </label>
+              <label className="tag-field">
+                <span className="tag-label">{t("capture.tagArtist")}</span>
+                <input
+                  type="text"
+                  value={tagArtist}
+                  maxLength={MAX_TAG_LENGTH}
+                  onChange={(e) => setTagArtist(e.target.value)}
+                  onKeyDown={convertOnEnter}
+                  placeholder={result.uploader || t("capture.unknown")}
+                  aria-describedby="tag-hint"
+                />
+              </label>
+            </div>
+            <p id="tag-hint" className="tag-hint">
+              {edited ? (
+                <>
+                  <span className="tag-original" title={result.title}>
+                    {t("capture.tagOriginal", { title: result.title })}
+                  </span>
+                  <button type="button" className="link-btn" onClick={restoreOriginal}>
+                    {t("capture.tagRestore")}
+                  </button>
+                </>
+              ) : (
+                t("capture.tagHint")
+              )}
+            </p>
             <p className="preview-meta">
               <span>{result.uploader || t("capture.unknown")}</span>
               <span className="mono">{formatDuration(result.duration_ms)}</span>
@@ -215,6 +334,21 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
                 </span>
               )}
             </p>
+
+            {previous && (
+              <div className="capture-previous" role="note">
+                <span>
+                  {t("capture.previous", { time: formatTime(previous.finished_at ?? "") })}
+                </span>
+                <button
+                  type="button"
+                  className="btn small"
+                  onClick={() => void revealPrevious(previous.file_id)}>
+                  <FolderIcon />
+                  {t("history.reveal")}
+                </button>
+              </div>
+            )}
 
             <div className="preview-actions">
               <select
@@ -232,7 +366,11 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
                 className="btn primary"
                 onClick={() => void handleConvert()}
                 disabled={busy !== null || !selected}>
-                {busy === "queue" ? t("capture.queueing") : t("capture.convert")}
+                {busy === "queue"
+                  ? t("capture.queueing")
+                  : previous
+                    ? t("capture.convertAgain")
+                    : t("capture.convert")}
               </button>
               <button type="button" className="btn ghost" onClick={reset} disabled={busy !== null}>
                 {t("capture.clear")}

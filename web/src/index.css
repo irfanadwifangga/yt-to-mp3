@@ -507,14 +507,65 @@ select:focus-visible {
   gap: 0.35rem;
 }
 
-.preview-title {
-  font-size: 1.12rem;
+.tag-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 0.5rem;
+}
+
+.tag-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.tag-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Judul tetap tampil sebagai judul pratinjau, hanya kini bisa disunting. */
+.tag-field-title input {
+  font-size: 1.05rem;
   font-weight: 650;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+}
+
+.tag-hint {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.tag-original {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.link-btn {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--signal-ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-btn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .preview-meta,
@@ -995,6 +1046,10 @@ select:focus-visible {
     flex-direction: column;
   }
 
+  .tag-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .item {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -1214,4 +1269,20 @@ select:focus-visible {
   .toast-actions {
     grid-column: 2;
   }
+}
+
+/* Peringatan konversi sebelumnya ------------------------------------------ */
+
+.capture-previous {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  font-size: 0.87rem;
 }

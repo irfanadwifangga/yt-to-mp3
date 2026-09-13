@@ -423,3 +423,41 @@ func TestE2EBatalSaatMengunduh(t *testing.T) {
 	}
 	s.assertTempBersih(t, id)
 }
+
+// Judul dan artis suntingan menentukan tag sekaligus nama berkas, sementara
+// cache metadata tetap menyimpan judul aslinya.
+func TestE2ETagSuntingan(t *testing.T) {
+	s := newStack(t, "ok")
+	res, err := s.service.Create(context.Background(), application.CreateRequest{
+		URL: testURL, PresetID: "mp3_standard", Title: "Lagu Suntingan", Artist: "Artis Suntingan",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	s.wait(t, res.Job.ID, domain.StatusCompleted)
+
+	file, err := s.files.GetByJob(context.Background(), res.Job.ID)
+	if err != nil {
+		t.Fatalf("berkas hasil tidak tercatat: %v", err)
+	}
+	if file.Filename != "Lagu Suntingan.mp3" {
+		t.Errorf("nama berkas = %q", file.Filename)
+	}
+
+	out, err := exec.Command(s.ffprobe, "-v", "error", "-print_format", "json",
+		"-show_format", file.Path).Output()
+	if err != nil {
+		t.Fatalf("ffprobe: %v", err)
+	}
+	var probe struct {
+		Format struct {
+			Tags map[string]string `json:"tags"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(out, &probe); err != nil {
+		t.Fatalf("urai ffprobe: %v", err)
+	}
+	if probe.Format.Tags["title"] != "Lagu Suntingan" || probe.Format.Tags["artist"] != "Artis Suntingan" {
+		t.Errorf("tag = %v", probe.Format.Tags)
+	}
+}

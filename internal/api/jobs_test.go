@@ -417,3 +417,87 @@ func TestSSEDitutupSaatShutdown(t *testing.T) {
 		t.Fatal("stream tidak ditutup setelah CloseStreams")
 	}
 }
+
+// Analisis memberi tahu bila video yang sama pernah dikonversi, supaya
+// menekan Konversi lagi tidak diam-diam menghasilkan "Judul (2).mp3".
+func TestMetadataMenyertakanKonversiSebelumnya(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	finished := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+
+	for _, j := range []*domain.Job{
+		{ID: "job_ada", SourceKey: "youtube:dQw4w9WgXcQ", Status: domain.StatusCompleted, PresetID: "mp3_standard", FinishedAt: &finished},
+		{ID: "job_berkas_hilang", SourceKey: "youtube:dQw4w9WgXcQ", Status: domain.StatusCompleted, PresetID: "mp3_high", FinishedAt: &finished},
+		{ID: "job_gagal", SourceKey: "youtube:dQw4w9WgXcQ", Status: domain.StatusFailed, PresetID: "mp3_max"},
+		{ID: "job_video_lain", SourceKey: "youtube:aaaaaaaaaaa", Status: domain.StatusCompleted, PresetID: "mp3_standard"},
+	} {
+		if err := h.jobs.Create(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.files.add(&domain.File{ID: "file_ada", JobID: "job_ada", Filename: "Judul Contoh.mp3"})
+	h.files.add(&domain.File{ID: "file_lain", JobID: "job_video_lain", Filename: "Lain.mp3"})
+
+	rec := h.do(t, http.MethodPost, "/api/metadata", `{"url":"https://youtu.be/dQw4w9WgXcQ"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Previous []struct {
+			JobID    string `json:"job_id"`
+			PresetID string `json:"preset_id"`
+			FileID   string `json:"file_id"`
+			FileName string `json:"file_name"`
+		} `json:"previous_conversions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Previous) != 1 {
+		t.Fatalf("konversi sebelumnya = %+v, mau hanya job_ada", body.Previous)
+	}
+	got := body.Previous[0]
+	if got.JobID != "job_ada" || got.PresetID != "mp3_standard" || got.FileID != "file_ada" || got.FileName != "Judul Contoh.mp3" {
+		t.Errorf("konversi sebelumnya = %+v", got)
+	}
+}
+
+// Judul dan artis suntingan diteruskan ke job dan dipakai sebagai judul
+// riwayat.
+func TestCreateJobDenganTag(t *testing.T) {
+	h := newHarness(t)
+
+	rec := h.do(t, http.MethodPost, "/api/jobs",
+		`{"url":"https://youtu.be/dQw4w9WgXcQ","preset_id":"mp3_standard","title":"  Judul\nBaru ","artist":"Artis"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var view struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.Title != "Judul Baru" {
+		t.Errorf("title = %q, mau judul suntingan yang dirapikan", view.Title)
+	}
+
+	h.jobs.mu.Lock()
+	job := h.jobs.jobs[view.ID]
+	h.jobs.mu.Unlock()
+	if job == nil || job.TagTitle != "Judul Baru" || job.TagArtist != "Artis" {
+		t.Errorf("job tersimpan = %+v", job)
+	}
+}
+
+func TestCreateJobTagTerlaluPanjang(t *testing.T) {
+	h := newHarness(t)
+	long := strings.Repeat("a", domain.MaxTagRunes+1)
+
+	rec := h.do(t, http.MethodPost, "/api/jobs",
+		`{"url":"https://youtu.be/dQw4w9WgXcQ","title":"`+long+`"}`)
+	if rec.Code != http.StatusBadRequest || codeOf(t, rec) != "BAD_REQUEST" {
+		t.Errorf("status = %d kode = %s, mau 400 BAD_REQUEST", rec.Code, codeOf(t, rec))
+	}
+}

@@ -145,6 +145,15 @@ type metadataResponse struct {
 	ThumbnailURL string `json:"thumbnail_url"`
 	SourceCodec  string `json:"source_codec"`
 	SampleRate   int    `json:"sample_rate"`
+
+	// SuggestedTitle dan SuggestedArtist adalah tebakan tag yang rapi,
+	// misalnya tanpa "(Official Video)", untuk mengisi formulir awal.
+	SuggestedTitle  string `json:"suggested_title"`
+	SuggestedArtist string `json:"suggested_artist"`
+
+	// PreviousConversions berisi konversi selesai untuk video yang sama
+	// yang berkasnya masih ada. Selalu berupa array, tidak pernah null.
+	PreviousConversions []application.PreviousConversion `json:"previous_conversions"`
 }
 
 // handleMetadata menganalisis URL tanpa mengunduh apa pun.
@@ -163,15 +172,28 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Riwayat hanya pelengkap peringatan duplikat; kegagalannya tidak boleh
+	// menggagalkan analisis yang sudah berhasil.
+	previous, err := s.jobs.PreviousConversions(r.Context(), info.SourceKey)
+	if err != nil {
+		s.log.Warn("baca konversi sebelumnya gagal", "source_key", info.SourceKey, "error", err)
+		previous = []application.PreviousConversion{}
+	}
+
+	suggestedTitle, suggestedArtist := domain.SuggestTags(info.Title, info.Uploader)
+
 	writeJSON(w, http.StatusOK, metadataResponse{
-		SourceKey:    info.SourceKey,
-		SourceURL:    info.SourceURL,
-		Title:        info.Title,
-		Uploader:     info.Uploader,
-		DurationMS:   info.DurationMS,
-		ThumbnailURL: info.ThumbnailURL,
-		SourceCodec:  info.SourceCodec,
-		SampleRate:   info.SampleRate,
+		SourceKey:           info.SourceKey,
+		SourceURL:           info.SourceURL,
+		Title:               info.Title,
+		Uploader:            info.Uploader,
+		DurationMS:          info.DurationMS,
+		ThumbnailURL:        info.ThumbnailURL,
+		SourceCodec:         info.SourceCodec,
+		SampleRate:          info.SampleRate,
+		SuggestedTitle:      suggestedTitle,
+		SuggestedArtist:     suggestedArtist,
+		PreviousConversions: previous,
 	})
 }
 

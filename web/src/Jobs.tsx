@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { api, downloadFile, isTerminal, MAX_AUTO_RETRIES, type Job } from "./api";
+import {
+  api,
+  downloadFile,
+  isTerminal,
+  MAX_AUTO_RETRIES,
+  updateYtdlpAndRetry,
+  type Job
+} from "./api";
 import { Cover } from "./Cover";
 import { DownloadIcon, FolderIcon } from "./icons";
 import { t } from "./i18n";
@@ -183,7 +190,7 @@ const PERMANENT = new Set([
 /** Konfirmasi hapus kembali ke keadaan semula bila diabaikan. */
 const CONFIRM_TIMEOUT_MS = 5000;
 
-type Action = "download" | "reveal" | "retry" | "delete";
+type Action = "download" | "reveal" | "retry" | "update" | "delete";
 
 interface FinishedJobProps {
   job: Job;
@@ -334,14 +341,26 @@ function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
               </>
             )}
 
-            {retryable && (
+            {/* Mengulang tanpa memperbarui yt-dlp pasti gagal lagi, jadi
+                kegagalan karena yt-dlp usang menawarkan keduanya sekaligus. */}
+            {retryable && job.error_code === "TOOL_OUTDATED" ? (
               <button
                 type="button"
-                className="btn small"
+                className="btn small primary"
                 disabled={busy !== null}
-                onClick={() => void run("retry", () => api.retryJob(job.id))}>
-                {busy === "retry" ? t("history.retrying") : t("history.retry")}
+                onClick={() => void run("update", () => updateYtdlpAndRetry(job.id))}>
+                {busy === "update" ? t("tools.updating") : t("history.updateAndRetry")}
               </button>
+            ) : (
+              retryable && (
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={busy !== null}
+                  onClick={() => void run("retry", () => api.retryJob(job.id))}>
+                  {busy === "retry" ? t("history.retrying") : t("history.retry")}
+                </button>
+              )
             )}
 
             <button

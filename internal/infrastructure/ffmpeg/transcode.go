@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -44,6 +45,20 @@ type TranscodeInput struct {
 	Timeout    time.Duration
 }
 
+// maxCoverSide membatasi sisi sampul supaya setiap berkas tidak membawa
+// gambar berukuran megabyte. 800 piksel masih tajam di layar ponsel.
+const maxCoverSide = 800
+
+// coverFilter memotong thumbnail ke persegi di tengah lalu mengecilkannya.
+//
+// Thumbnail YouTube berbentuk 16:9, sedangkan pemutar musik menampilkan
+// sampul sebagai persegi: tanpa pemotongan, sampul tampil gepeng atau
+// dipotong sembarang oleh pemutarnya. Untuk unggahan musik, artwork persegi
+// hampir selalu berada di tengah bingkai. Koma dalam ekspresi di-escape
+// karena koma memisahkan filter pada filtergraph.
+var coverFilter = fmt.Sprintf(
+	`crop=min(iw\,ih):min(iw\,ih),scale=min(iw\,%[1]d):min(ih\,%[1]d)`, maxCoverSide)
+
 // BuildArgs menyusun argv FFmpeg untuk satu konversi.
 //
 // Dipisah sebagai fungsi murni supaya semantik preset dapat diuji tanpa
@@ -78,7 +93,11 @@ func BuildArgs(in TranscodeInput) []string {
 
 	if withCover {
 		args = append(args,
+			"-filter:v:0", coverFilter,
 			"-c:v", "mjpeg",
+			// Tanpa -q:v, mjpeg memakai bitrate bawaan yang membuat sampul
+			// tampak pecah di layar besar.
+			"-q:v", "2",
 			"-disposition:v:0", "attached_pic",
 		)
 	}
@@ -128,6 +147,10 @@ func metadataArgs(m *domain.MediaInfo) []string {
 }
 
 // Transcode menjalankan FFmpeg dan melaporkan kemajuannya.
+//
+// Bila konversi dengan sampul gagal, konversi diulang sekali tanpa sampul.
+// Thumbnail yang rusak atau berformat aneh tidak boleh menggagalkan job:
+// berkas tanpa sampul tetap keluaran yang sah.
 func (t *Transcoder) Transcode(
 	ctx context.Context, in TranscodeInput, onProgress func(Progress),
 ) error {
@@ -136,6 +159,23 @@ func (t *Transcoder) Transcode(
 		return err
 	}
 
+	err = t.run(ctx, bin, in, onProgress)
+	var derr *domain.Error
+	if err == nil || in.CoverPath == "" || ctx.Err() != nil ||
+		!errors.As(err, &derr) || derr.Code != domain.CodeTranscodeFailed {
+		return err
+	}
+
+	t.log.Warn("konversi dengan sampul gagal, diulang tanpa sampul", "error", err)
+	withoutCover := in
+	withoutCover.CoverPath = ""
+	return t.run(ctx, bin, withoutCover, onProgress)
+}
+
+// run menjalankan satu proses FFmpeg sampai selesai.
+func (t *Transcoder) run(
+	ctx context.Context, bin string, in TranscodeInput, onProgress func(Progress),
+) error {
 	runCtx := ctx
 	if in.Timeout > 0 {
 		var cancel context.CancelFunc

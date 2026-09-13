@@ -579,3 +579,57 @@ func TestJobListScope(t *testing.T) {
 		}
 	}
 }
+
+func TestJobListPerSumber(t *testing.T) {
+	d := migrated(t)
+	repo := db.NewJobRepository(d)
+	ctx := context.Background()
+
+	for id, key := range map[string]string{"job_a": "aaa", "job_b": "bbb"} {
+		if err := repo.Create(ctx, newJob(id, key)); err != nil {
+			t.Fatalf("Create(%s) error = %v", id, err)
+		}
+	}
+
+	jobs, _, err := repo.List(ctx, application.JobListQuery{SourceKey: "youtube:aaa", Limit: 10})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].ID != "job_a" {
+		t.Errorf("hasil = %d job, mau hanya job_a", len(jobs))
+	}
+}
+
+// Suntingan judul dan artis tersimpan per job; kosong kembali sebagai
+// string kosong, bukan NULL yang bocor ke domain.
+func TestJobTagSuntingan(t *testing.T) {
+	d := migrated(t)
+	repo := db.NewJobRepository(d)
+	ctx := context.Background()
+
+	edited := newJob("job_tag", "aaa")
+	edited.TagTitle = "Bohemian Rhapsody"
+	edited.TagArtist = "Queen"
+	plain := newJob("job_polos", "bbb")
+	for _, j := range []*domain.Job{edited, plain} {
+		if err := repo.Create(ctx, j); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+	}
+
+	got, err := repo.Get(ctx, "job_tag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TagTitle != "Bohemian Rhapsody" || got.TagArtist != "Queen" {
+		t.Errorf("tag = %q, %q", got.TagTitle, got.TagArtist)
+	}
+
+	got, err = repo.Get(ctx, "job_polos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TagTitle != "" || got.TagArtist != "" {
+		t.Errorf("job tanpa suntingan membawa tag %q, %q", got.TagTitle, got.TagArtist)
+	}
+}

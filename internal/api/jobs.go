@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
@@ -69,6 +70,10 @@ type createJobRequest struct {
 	URL          string `json:"url"`
 	PresetID     string `json:"preset_id"`
 	FilenameMode string `json:"filename_mode"`
+
+	// Title dan Artist opsional: suntingan pengguna untuk tag dan nama berkas.
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
 }
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
@@ -77,11 +82,21 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeBadRequest, "Body bukan JSON yang valid.")
 		return
 	}
+	// Ditolak, bukan dipotong diam-diam: judul yang terpotong di berkas
+	// tanpa pemberitahuan lebih buruk daripada pesan error.
+	if utf8.RuneCountInString(req.Title) > domain.MaxTagRunes ||
+		utf8.RuneCountInString(req.Artist) > domain.MaxTagRunes {
+		writeError(w, http.StatusBadRequest, CodeBadRequest,
+			fmt.Sprintf("Judul dan artis maksimal %d karakter.", domain.MaxTagRunes))
+		return
+	}
 
 	result, err := s.jobs.Create(r.Context(), application.CreateRequest{
 		URL:          req.URL,
 		PresetID:     req.PresetID,
 		FilenameMode: domain.FilenameMode(req.FilenameMode),
+		Title:        req.Title,
+		Artist:       req.Artist,
 	})
 	if err != nil {
 		s.writeDomainError(w, err)

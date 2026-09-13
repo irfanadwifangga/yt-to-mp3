@@ -31,7 +31,8 @@ func NewJobRepository(d *DB) *JobRepository {
 const jobColumns = `id, source_url, source_key, COALESCE(title, ''), status, preset_id,
 	filename_mode, progress, COALESCE(phase, ''), attempt_count,
 	COALESCE(error_code, ''), COALESCE(error_message, ''),
-	created_at, started_at, finished_at, retry_at`
+	created_at, started_at, finished_at, retry_at,
+	COALESCE(tag_title, ''), COALESCE(tag_artist, '')`
 
 // isUniqueViolation melaporkan apakah error berasal dari pelanggaran unik.
 //
@@ -67,11 +68,12 @@ func (r *JobRepository) Create(ctx context.Context, j *domain.Job) error {
 
 	_, err := r.db.Write().ExecContext(ctx, `
 		INSERT INTO jobs (id, source_url, source_key, title, status, preset_id,
-		                  filename_mode, progress, phase, attempt_count, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                  filename_mode, progress, phase, attempt_count, created_at,
+		                  tag_title, tag_artist)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID, j.SourceURL, j.SourceKey, nullString(j.Title), string(j.Status), j.PresetID,
 		string(j.FilenameMode), j.Progress, nullString(j.Phase), j.AttemptCount,
-		formatTime(j.CreatedAt))
+		formatTime(j.CreatedAt), nullString(j.TagTitle), nullString(j.TagArtist))
 
 	if isUniqueViolation(err) {
 		// Ditegakkan index unik parsial, bukan pengecekan di kode, sehingga
@@ -127,6 +129,10 @@ func (r *JobRepository) List(ctx context.Context, q application.JobListQuery) ([
 	if q.Status != "" {
 		where = append(where, "status = ?")
 		args = append(args, string(q.Status))
+	}
+	if q.SourceKey != "" {
+		where = append(where, "source_key = ?")
+		args = append(args, q.SourceKey)
 	}
 	switch q.Scope {
 	case application.ScopeActive:
@@ -531,7 +537,7 @@ func scanJob(s scanner) (*domain.Job, error) {
 
 	err := s.Scan(&j.ID, &j.SourceURL, &j.SourceKey, &j.Title, &status, &j.PresetID,
 		&mode, &progress, &j.Phase, &j.AttemptCount, &errorCode, &j.ErrorMessage,
-		&createdAt, &startedAt, &finishedAt, &retryAt)
+		&createdAt, &startedAt, &finishedAt, &retryAt, &j.TagTitle, &j.TagArtist)
 	if err != nil {
 		return nil, err
 	}

@@ -200,6 +200,9 @@ func (r *fakeJobRepo) List(_ context.Context, q application.JobListQuery) ([]*do
 		if q.Status != "" && j.Status != q.Status {
 			continue
 		}
+		if q.SourceKey != "" && j.SourceKey != q.SourceKey {
+			continue
+		}
 		if (q.Scope == application.ScopeActive && !j.Status.IsActive()) ||
 			(q.Scope == application.ScopeFinished && !j.Status.IsTerminal()) {
 			continue

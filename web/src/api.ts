@@ -111,10 +111,11 @@ export const api = {
     const qs = query.toString();
     return request<{ jobs: Job[]; next_cursor?: string }>(qs ? `/jobs?${qs}` : "/jobs");
   },
-  createJob: (url: string, presetId: string) =>
+  /** title dan artist kosong berarti memakai metadata sumber. */
+  createJob: (url: string, presetId: string, tags: { title?: string; artist?: string } = {}) =>
     request<Job>("/jobs", {
       method: "POST",
-      body: JSON.stringify({ url, preset_id: presetId }),
+      body: JSON.stringify({ url, preset_id: presetId, ...tags }),
     }),
   cancelJob: (id: string) =>
     request<{ status: string }>(`/jobs/${id}/cancel`, { method: "POST" }),
@@ -149,6 +150,30 @@ export interface Metadata {
   thumbnail_url: string;
   source_codec: string;
   sample_rate: number;
+  /** Tebakan tag yang rapi, misalnya tanpa "(Official Video)". */
+  suggested_title: string;
+  suggested_artist: string;
+  /** Konversi selesai sebelumnya untuk video ini yang berkasnya masih ada,
+   *  terbaru lebih dulu. */
+  previous_conversions: PreviousConversion[];
+}
+
+export interface PreviousConversion {
+  job_id: string;
+  preset_id: string;
+  file_id: string;
+  file_name: string;
+  finished_at?: string;
+}
+
+/**
+ * Memperbarui yt-dlp lalu mengantrekan ulang job yang gagal karena yt-dlp
+ * usang. Satu tindakan untuk pengguna, karena tanpa pembaruan percobaan
+ * ulang pasti gagal lagi.
+ */
+export async function updateYtdlpAndRetry(jobId: string): Promise<Job> {
+  await api.updateTool("yt-dlp");
+  return api.retryJob(jobId);
 }
 
 export interface ToolsPayload {
@@ -201,6 +226,9 @@ export interface Preset {
   sample_rate?: number;
   channels: number;
 }
+
+/** Sama dengan domain.MaxTagRunes di backend. */
+export const MAX_TAG_LENGTH = 200;
 
 /** Sama dengan application.MaxAutoRetries di backend. */
 export const MAX_AUTO_RETRIES = 3;

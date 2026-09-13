@@ -201,6 +201,9 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	if err != nil {
 		return err
 	}
+	// Suntingan pengguna berlaku untuk tag dan nama berkas sekaligus;
+	// cache tetap menyimpan metadata asli.
+	media = job.MediaWithTags(media)
 
 	// Job yang diantrekan tanpa analisis lebih dulu belum punya judul, dan
 	// tanpa ini riwayatnya selamanya menampilkan source key.

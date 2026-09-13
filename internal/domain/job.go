@@ -116,6 +116,12 @@ type Job struct {
 	PresetID     string
 	FilenameMode FilenameMode
 
+	// TagTitle dan TagArtist adalah suntingan pengguna sebelum konversi.
+	// Kosong berarti memakai metadata sumber. Keduanya ikut menentukan tag
+	// ID3 dan nama berkas, lihat MediaWithTags.
+	TagTitle  string
+	TagArtist string
+
 	// Progress bernilai nil ketika indeterminate, yaitu ukuran total atau
 	// durasi belum diketahui. Itu nilai yang sah, bukan data hilang.
 	Progress *float64
@@ -133,6 +139,24 @@ type Job struct {
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+}
+
+// MediaWithTags menerapkan suntingan judul dan artis pada metadata sumber.
+//
+// Hasilnya salinan: metadata yang sama tersimpan di cache dan dipakai job
+// lain untuk video yang sama, jadi tidak boleh dimutasi.
+func (j *Job) MediaWithTags(m *MediaInfo) *MediaInfo {
+	if j.TagTitle == "" && j.TagArtist == "" {
+		return m
+	}
+	c := *m
+	if j.TagTitle != "" {
+		c.Title = j.TagTitle
+	}
+	if j.TagArtist != "" {
+		c.Uploader = j.TagArtist
+	}
+	return &c
 }
 
 // EventType adalah jenis event yang dipersist ke job_events.

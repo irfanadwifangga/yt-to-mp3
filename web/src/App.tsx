@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Health, type Job, type Preset } from "./api";
+import { api, updateYtdlpAndRetry, type Health, type Job, type Preset } from "./api";
 import { Capture } from "./Capture";
 import { GearIcon } from "./icons";
 import { t } from "./i18n";
@@ -106,14 +106,26 @@ export function App() {
               body: job.file_name
                 ? t("toast.savedAs", { file: job.file_name })
                 : t("toast.savedGeneric"),
-              fileId: job.file_id
+              action: job.file_id
+                ? {
+                    label: t("history.reveal"),
+                    icon: "folder",
+                    run: () => api.revealFile(job.file_id!)
+                  }
+                : undefined
             });
           } else if (job.status === "failed") {
             pushToast({
               id: `fail-${job.id}`,
               tone: "bad",
               title: t("toast.failed", { title }),
-              body: messageForCode(job.error_code)
+              body: messageForCode(job.error_code),
+              // yt-dlp usang adalah penyebab kegagalan paling umum, dan
+              // solusinya ada di aplikasi ini sendiri.
+              action:
+                job.error_code === "TOOL_OUTDATED"
+                  ? { label: t("history.updateAndRetry"), run: () => updateYtdlpAndRetry(job.id) }
+                  : undefined
             });
           }
         }
@@ -326,11 +338,7 @@ export function App() {
         </footer>
       )}
 
-      <Toasts
-        toasts={toasts}
-        onDismiss={dismissToast}
-        onReveal={(fileId) => api.revealFile(fileId)}
-      />
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
 
       <SettingsDialog
         section={settingsSection}

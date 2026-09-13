@@ -149,3 +149,28 @@ func TestBuildArgsProgressKeStdout(t *testing.T) {
 		t.Error("-nostats tidak dipasang")
 	}
 }
+
+// Sampul dipotong persegi dan dibatasi ukurannya; lihat coverFilter.
+func TestBuildArgsSampulPersegi(t *testing.T) {
+	args := BuildArgs(TranscodeInput{
+		AudioPath: "in.webm", CoverPath: "cover.jpg",
+		OutputPath: "out.mp3", Preset: cbrPreset(),
+	})
+
+	filter, ok := argValue(args, "-filter:v:0")
+	if !ok {
+		t.Fatal("sampul tidak difilter")
+	}
+	if !strings.HasPrefix(filter, `crop=min(iw\,ih):min(iw\,ih),`) ||
+		!strings.Contains(filter, `scale=min(iw\,800):min(ih\,800)`) {
+		t.Errorf("filter sampul = %q", filter)
+	}
+	if q, _ := argValue(args, "-q:v"); q != "2" {
+		t.Errorf("-q:v = %q, mau 2", q)
+	}
+
+	noCover := BuildArgs(TranscodeInput{AudioPath: "in.webm", OutputPath: "out.mp3", Preset: cbrPreset()})
+	if slices.Contains(noCover, "-filter:v:0") {
+		t.Error("tanpa sampul tidak boleh ada filter video")
+	}
+}

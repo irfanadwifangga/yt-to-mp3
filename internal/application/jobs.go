@@ -26,10 +26,11 @@ const (
 
 // JobListQuery adalah parameter pagination history.
 type JobListQuery struct {
-	Status domain.JobStatus // kosong berarti seluruh status
-	Scope  JobScope
-	Limit  int
-	Cursor string
+	Status    domain.JobStatus // kosong berarti seluruh status
+	Scope     JobScope
+	SourceKey string // kosong berarti seluruh sumber
+	Limit     int
+	Cursor    string
 }
 
 // JobRepository adalah port penyimpanan job.
@@ -108,9 +109,10 @@ func NewJobID() (string, error) {
 	return "job_" + hex.EncodeToString(buf), nil
 }
 
-// JobFiles mencari berkas hasil sebuah job.
+// JobFiles mencari berkas hasil job.
 type JobFiles interface {
 	GetByJob(ctx context.Context, jobID string) (*domain.File, error)
+	RefsByJobs(ctx context.Context, jobIDs []string) (map[string]FileRef, error)
 }
 
 // JobService adalah use case pembuatan dan pengelolaan job.
@@ -152,15 +154,19 @@ type CreateRequest struct {
 	URL          string
 	PresetID     string
 	FilenameMode domain.FilenameMode
+
+	// Title dan Artist opsional; kosong berarti memakai metadata sumber.
+	Title  string
+	Artist string
 }
 
-// CreateResult memuat job baru beserta petunjuk berkas yang sudah ada.
+// CreateResult memuat job baru.
+//
+// Konversi sebelumnya untuk video yang sama tidak dilaporkan di sini,
+// melainkan saat analisis lewat PreviousConversions: peringatannya berguna
+// sebelum pengguna menekan Konversi, bukan sesudahnya.
 type CreateResult struct {
 	Job *domain.Job
-
-	// ExistingJobID terisi bila sumber dan preset yang sama pernah selesai.
-	// Job baru tetap dibuat; UI yang memutuskan menawarkan berkas lama.
-	ExistingJobID string
 }
 
 // Create memvalidasi permintaan lalu mengantrekan job baru.
@@ -206,7 +212,15 @@ func (s *JobService) Create(ctx context.Context, req CreateRequest) (*CreateResu
 			fmt.Sprintf("antrean penuh (%d)", queued))
 	}
 
-	title := s.knownTitle(ctx, sourceKey)
+	tagTitle := domain.CleanTag(req.Title)
+	tagArtist := domain.CleanTag(req.Artist)
+
+	// Riwayat menampilkan judul yang dipilih pengguna, sama dengan yang
+	// tertulis di berkasnya.
+	title := tagTitle
+	if title == "" {
+		title = s.knownTitle(ctx, sourceKey)
+	}
 
 	id, err := NewJobID()
 	if err != nil {
@@ -220,6 +234,8 @@ func (s *JobService) Create(ctx context.Context, req CreateRequest) (*CreateResu
 		Status:       domain.StatusQueued,
 		PresetID:     presetID,
 		FilenameMode: mode,
+		TagTitle:     tagTitle,
+		TagArtist:    tagArtist,
 		CreatedAt:    time.Now().UTC(),
 	}
 
@@ -261,6 +277,61 @@ func (s *JobService) Get(ctx context.Context, id string) (*domain.Job, error) {
 // List mengembalikan satu halaman history.
 func (s *JobService) List(ctx context.Context, q JobListQuery) ([]*domain.Job, string, error) {
 	return s.repo.List(ctx, q)
+}
+
+// previousConversionLimit membatasi konversi sebelumnya yang dilaporkan;
+// UI hanya memakai yang terbaru per preset.
+const previousConversionLimit = 20
+
+// PreviousConversion adalah konversi selesai sebelumnya untuk video yang
+// sama, dengan berkas yang masih ada di disk.
+type PreviousConversion struct {
+	JobID      string     `json:"job_id"`
+	PresetID   string     `json:"preset_id"`
+	FileID     string     `json:"file_id"`
+	FileName   string     `json:"file_name"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// PreviousConversions mengembalikan konversi selesai untuk sebuah sumber,
+// terbaru lebih dulu.
+//
+// Hanya job yang berkasnya masih tercatat ada yang dilaporkan: menawarkan
+// "sudah pernah dikonversi" untuk berkas yang sudah dihapus pengguna justru
+// mencegah konversi yang memang dibutuhkan.
+func (s *JobService) PreviousConversions(ctx context.Context, sourceKey string) ([]PreviousConversion, error) {
+	out := make([]PreviousConversion, 0)
+	if s.files == nil {
+		return out, nil
+	}
+
+	jobs, _, err := s.repo.List(ctx, JobListQuery{
+		Status: domain.StatusCompleted, SourceKey: sourceKey, Limit: previousConversionLimit,
+	})
+	if err != nil || len(jobs) == 0 {
+		return out, err
+	}
+
+	ids := make([]string, 0, len(jobs))
+	for _, j := range jobs {
+		ids = append(ids, j.ID)
+	}
+	refs, err := s.files.RefsByJobs(ctx, ids)
+	if err != nil {
+		return out, err
+	}
+
+	for _, j := range jobs {
+		ref, ok := refs[j.ID]
+		if !ok {
+			continue
+		}
+		out = append(out, PreviousConversion{
+			JobID: j.ID, PresetID: j.PresetID, FileID: ref.ID, FileName: ref.Filename,
+			FinishedAt: j.FinishedAt,
+		})
+	}
+	return out, nil
 }
 
 // Delete menghapus job dari history, dan bila diminta, berkas hasilnya.
@@ -346,6 +417,8 @@ func (s *JobService) Retry(ctx context.Context, id string) (*domain.Job, error) 
 		Status:       domain.StatusQueued,
 		PresetID:     job.PresetID,
 		FilenameMode: job.FilenameMode,
+		TagTitle:     job.TagTitle,
+		TagArtist:    job.TagArtist,
 		// Retry manual adalah keputusan pengguna, jadi job baru mendapat
 		// jatah auto-retry penuh alih-alih mewarisi jatah yang sudah habis.
 		AttemptCount: 0,
