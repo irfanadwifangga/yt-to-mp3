@@ -15,6 +15,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
@@ -40,6 +41,12 @@ type Options struct {
 	Files     application.FileStore
 	Settings  *application.SettingsService
 	Revealer  Revealer
+	Picker    FolderPicker
+
+	// OutputDir mengembalikan direktori keluaran yang sedang berlaku. Nilai
+	// di Config hanya bawaan startup dan menjadi basi begitu pengguna
+	// menggantinya dari UI.
+	OutputDir func() string
 }
 
 // JobCanceller membatalkan job yang sedang berjalan.
@@ -72,8 +79,13 @@ type Server struct {
 	files     application.FileStore
 	settings  *application.SettingsService
 	revealer  Revealer
+	picker    FolderPicker
+	outputDir func() string
 
-	startedAt time.Time
+	dialogMu sync.Mutex
+
+	startedAt    time.Time
+	lastActivity atomic.Int64 // UnixNano request terautentikasi terakhir
 
 	shutdownOnce sync.Once
 	shutdownCh   chan struct{}
@@ -105,9 +117,13 @@ func New(opts Options) *Server {
 		files:      opts.Files,
 		settings:   opts.Settings,
 		revealer:   opts.Revealer,
+		picker:     opts.Picker,
+		outputDir:  opts.OutputDir,
 		startedAt:  time.Now(),
 		shutdownCh: make(chan struct{}),
 	}
+
+	s.lastActivity.Store(s.startedAt.UnixNano())
 
 	s.allowedHosts = []string{
 		fmt.Sprintf("127.0.0.1:%d", opts.Port),
@@ -145,10 +161,11 @@ func New(opts Options) *Server {
 	protected.HandleFunc("POST /files/{id}/reveal", s.handleRevealFile)
 	protected.HandleFunc("GET /settings", s.handleGetSettings)
 	protected.HandleFunc("PUT /settings", s.handleUpdateSettings)
+	protected.HandleFunc("POST /dialogs/folder", s.handlePickFolder)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/ping", s.handlePing)
-	root.Handle("/api/", http.StripPrefix("/api", s.requireToken(protected)))
+	root.Handle("/api/", http.StripPrefix("/api", s.requireToken(s.trackActivity(protected))))
 	root.Handle("/", s.spaHandler())
 
 	s.handler = chain(root,
@@ -176,6 +193,31 @@ func (s *Server) requestShutdown() {
 		s.log.Info("shutdown diminta lewat API")
 		close(s.shutdownCh)
 	})
+}
+
+// trackActivity mencatat waktu request terautentikasi terakhir.
+//
+// Dipasang di balik requireToken dengan sengaja: situs web lain dapat
+// mengirim request ke 127.0.0.1 tanpa token, dan request semacam itu tidak
+// boleh bisa menjaga aplikasi tetap hidup selamanya.
+func (s *Server) trackActivity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.lastActivity.Store(time.Now().UnixNano())
+		next.ServeHTTP(w, r)
+	})
+}
+
+// LastActivity mengembalikan waktu request terautentikasi terakhir.
+func (s *Server) LastActivity() time.Time {
+	return time.Unix(0, s.lastActivity.Load())
+}
+
+// currentOutputDir mengembalikan direktori keluaran yang sedang berlaku.
+func (s *Server) currentOutputDir() string {
+	if s.outputDir != nil {
+		return s.outputDir()
+	}
+	return s.cfg.OutputDir
 }
 
 // spaHandler menyajikan SPA hasil embed, dengan fallback ke index.html untuk

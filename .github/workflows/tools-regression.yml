@@ -1,0 +1,53 @@
+name: Regresi tool
+
+# Menaikkan versi yt-dlp atau FFmpeg adalah perubahan yang dapat merusak
+# konversi tanpa satu baris kode pun berubah. Workflow ini memasang tool
+# persis dari manifest ter-pin di setiap OS rilis, lalu menjalankan test
+# integrasi FFmpeg dengan binary hasil pasang tersebut. Jadwal mingguan
+# menangkap URL hulu yang mati atau berubah isi walau manifest tidak disentuh.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - internal/infrastructure/tools/**
+      - internal/infrastructure/ffmpeg/**
+      - .github/workflows/tools-regression.yml
+  pull_request:
+    paths:
+      - internal/infrastructure/tools/**
+      - internal/infrastructure/ffmpeg/**
+      - .github/workflows/tools-regression.yml
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27"
+
+jobs:
+  install-and-convert:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest adalah arm64, macos-13 amd64; keduanya punya entri
+        # manifest sendiri.
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13]
+    runs-on: ${{ matrix.os }}
+    env:
+      YT2MP3_TEST_TOOLS_DIR: ${{ github.workspace }}/.tools-test
+      YT2MP3_REQUIRE_TOOLS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Pasang tool dari manifest
+        run: go test -tags toolinstall -run TestInstallDariManifest -v ./internal/infrastructure/tools/
+      - name: Konversi dengan tool hasil pasang
+        run: go test -tags integration -run Integrasi -v ./internal/infrastructure/ffmpeg/

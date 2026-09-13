@@ -294,6 +294,71 @@ func TestSweepNonTerminal(t *testing.T) {
 	}
 }
 
+// Event job yang lama selesai dipangkas; job itu sendiri, event job yang
+// baru selesai, dan event job yang masih aktif dibiarkan.
+func TestPruneEvents(t *testing.T) {
+	d := migrated(t)
+	repo := db.NewJobRepository(d)
+	ctx := context.Background()
+
+	countEvents := func(jobID string) int {
+		t.Helper()
+		var n int
+		if err := d.Read().QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM job_events WHERE job_id = ?`, jobID).Scan(&n); err != nil {
+			t.Fatalf("hitung event: %v", err)
+		}
+		return n
+	}
+
+	for id, key := range map[string]string{"job_lama": "aaa", "job_baru": "bbb", "job_aktif": "ccc"} {
+		if err := repo.Create(ctx, newJob(id, key)); err != nil {
+			t.Fatalf("Create(%s) error = %v", id, err)
+		}
+	}
+	for _, id := range []string{"job_lama", "job_baru"} {
+		if err := repo.Transition(ctx, id, domain.StatusQueued, domain.StatusCancelled,
+			domain.Event{Type: domain.EventDone}); err != nil {
+			t.Fatalf("Transition(%s) error = %v", id, err)
+		}
+	}
+	if err := repo.Transition(ctx, "job_aktif", domain.StatusQueued, domain.StatusResolving,
+		domain.Event{Type: domain.EventState}); err != nil {
+		t.Fatalf("Transition(job_aktif) error = %v", err)
+	}
+
+	old := time.Now().UTC().AddDate(0, 0, -45).Format(time.RFC3339Nano)
+	if _, err := d.Write().ExecContext(ctx,
+		`UPDATE jobs SET finished_at = ? WHERE id = 'job_lama'`, old); err != nil {
+		t.Fatalf("mundurkan finished_at: %v", err)
+	}
+
+	before := map[string]int{
+		"job_lama": countEvents("job_lama"), "job_baru": countEvents("job_baru"),
+		"job_aktif": countEvents("job_aktif"),
+	}
+
+	n, err := repo.PruneEvents(ctx, 30*24*time.Hour)
+	if err != nil {
+		t.Fatalf("PruneEvents() error = %v", err)
+	}
+	if n != before["job_lama"] || n == 0 {
+		t.Errorf("terpangkas %d event, mau %d", n, before["job_lama"])
+	}
+
+	if got := countEvents("job_lama"); got != 0 {
+		t.Errorf("event job lama tersisa %d", got)
+	}
+	for _, id := range []string{"job_baru", "job_aktif"} {
+		if got := countEvents(id); got != before[id] {
+			t.Errorf("event %s = %d, mau tetap %d", id, got, before[id])
+		}
+	}
+	if _, err := repo.Get(ctx, "job_lama"); err != nil {
+		t.Errorf("job lama ikut terhapus: %v", err)
+	}
+}
+
 func TestJobListPagination(t *testing.T) {
 	d := migrated(t)
 	repo := db.NewJobRepository(d)

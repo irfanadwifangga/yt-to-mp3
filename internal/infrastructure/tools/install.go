@@ -55,16 +55,30 @@ func (m *Manager) Install(ctx context.Context, name string) error {
 			"buat direktori tools", err)
 	}
 
-	m.log.Info("mengunduh tool", "tool", name, "url", build.URL)
+	// Seluruh unduhan diverifikasi sebelum satu pun diekstrak. Build yang
+	// terdiri dari beberapa arsip, seperti ffmpeg dan ffprobe yang diterbitkan
+	// terpisah, tidak boleh terpasang separuh karena arsip keduanya ternyata
+	// tidak cocok dengan manifest.
+	var archives []string
+	defer func() {
+		for _, p := range archives {
+			_ = os.Remove(p)
+		}
+	}()
 
-	archivePath, err := m.download(ctx, build)
-	if err != nil {
-		return err
+	for _, d := range build.Downloads {
+		m.log.Info("mengunduh tool", "tool", name, "url", d.URL)
+		p, err := m.download(ctx, d)
+		if err != nil {
+			return err
+		}
+		archives = append(archives, p)
 	}
-	defer func() { _ = os.Remove(archivePath) }()
 
-	if err := m.extract(archivePath, build); err != nil {
-		return err
+	for i, d := range build.Downloads {
+		if err := m.extract(archives[i], d); err != nil {
+			return err
+		}
 	}
 
 	m.Invalidate()
@@ -74,7 +88,7 @@ func (m *Manager) Install(ctx context.Context, name string) error {
 
 // download mengambil berkas ke temp sambil menghitung SHA-256, lalu
 // membandingkannya dengan manifest.
-func (m *Manager) download(ctx context.Context, build Build) (string, error) {
+func (m *Manager) download(ctx context.Context, build Download) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 
@@ -137,7 +151,7 @@ func (m *Manager) download(ctx context.Context, build Build) (string, error) {
 //
 // Pencocokan memakai basename dan tujuan penulisan selalu direktori tools
 // milik kita, sehingga path traversal dari dalam arsip tidak mungkin terjadi.
-func (m *Manager) extract(archivePath string, build Build) error {
+func (m *Manager) extract(archivePath string, build Download) error {
 	switch build.Archive {
 	case ArchiveNone:
 		if len(build.Extract) != 1 {

@@ -1,4 +1,4 @@
-import { ApiError } from "./api";
+import { ApiError, type Preset } from "./api";
 import { dateLocale, has, t } from "./i18n";
 
 /**
@@ -32,6 +32,11 @@ export function phaseLabel(phase?: string): string {
 export function statusLabel(status: string): string {
   const key = `status.${status}`;
   return has(key) ? t(key) : status;
+}
+
+/** Label preset beserta kualitasnya, dipakai kartu utama dan setelan. */
+export function presetLabel(p: Preset): string {
+  return `${p.label} — ${p.bitrate_kbps ? `${p.bitrate_kbps} kbps` : "VBR"}`;
 }
 
 export function formatDuration(ms: number): string {

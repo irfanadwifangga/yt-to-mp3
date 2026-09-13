@@ -11,6 +11,8 @@
     "check:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

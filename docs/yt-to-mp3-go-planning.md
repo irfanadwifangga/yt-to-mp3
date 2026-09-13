@@ -75,7 +75,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-028 | Tabel `presets` bersifat append-only | `preset_id` tersimpan permanen di history dan jadi kontrak selamanya |
 | ADR-029 | Reservasi nama file atomik dengan `O_EXCL` | Pengecekan "file ada?" yang naif membuat dua worker memenangkan nama yang sama |
 | ADR-030 | Sample rate output 48 kHz, bukan 44.1 kHz | Sumber YouTube didominasi Opus yang secara desain selalu 48 kHz; 44.1 memaksa resampling pada jalur paling umum. MPEG-1 Layer III mendukung 48 kHz secara native, jadi tidak ada kompromi kompatibilitas |
-| ADR-031 | Binary FFmpeg diunduh saat runtime dari BtbN (Windows/Linux) dan evermeet.cx (macOS) | Proyek FFmpeg tidak mendistribusikan build statis resmi. Mengunduh saat runtime membuat rilis kita tidak pernah menjadi distributor FFmpeg, sehingga kewajiban LGPL/GPL tidak menempel pada artifact rilis |
+| ADR-031 | Binary FFmpeg diunduh saat runtime dari rilis berversi: GyanD (Windows) dan martin-riedl.de (Linux, macOS) | Proyek FFmpeg tidak mendistribusikan build statis resmi. Mengunduh saat runtime membuat rilis kita tidak pernah menjadi distributor FFmpeg, sehingga kewajiban LGPL/GPL tidak menempel pada artifact rilis. Keduanya dirujuk halaman unduhan ffmpeg.org. Rencana awal (BtbN dan evermeet.cx) ditinggalkan: BtbN hanya menyediakan snapshot master yang dirotasi, sehingga checksum ter-pin basi, dan evermeet.cx tidak punya build arm64 |
 | ADR-032 | Dependensi pure-Go `github.com/ulikunitz/xz` | Build FFmpeg untuk Linux hanya tersedia sebagai `.tar.xz` dan stdlib tidak punya dekoder xz. Paket ini pure Go sehingga ADR-011 tetap terjaga |
 | ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi |
 
@@ -198,7 +198,22 @@ Membuka file manager pada lokasi file. Hanya menerima id yang terdaftar di tabel
 
 ### `GET /api/settings` / `PUT /api/settings`
 
-Output directory, concurrency, preset default, filename mode default, kebijakan update tool.
+Output directory, concurrency, preset default, filename mode default, kapasitas antrean, tingkat log. Setiap baris membawa `kind` (`path`, `int`, `enum`, `bool`, `string`) dan `requires_restart`.
+
+- `PUT` memvalidasi seluruh kunci lebih dulu, lalu **menerapkan** kunci yang punya applier (`output_dir`, `log_level`) sebelum menyimpan. Applier yang menolak — misalnya folder yang tidak dapat ditulisi — menghasilkan `INVALID_SETTING` dengan `details.key`, dan tidak ada yang tersimpan. Bila penyimpanan gagal setelah applier berjalan, nilai lama dipasang kembali.
+- `output_dir` wajib path absolut. Job mengambil snapshot direktori keluaran saat mulai, sehingga reservasi nama, berkas sementara, dan rename akhir tetap sevolume walau folder diganti di tengah konversi.
+- Hanya `max_concurrent_jobs` yang `requires_restart`. Nilai tersimpan dibaca **sebelum** store, scheduler, dan logger disusun saat startup; folder tersimpan yang tidak lagi dapat dipakai jatuh ke bawaan config dengan peringatan di log, bukan menggagalkan startup.
+- Kunci yang belum punya implementasi (`tool_update_check`) tidak dikembalikan.
+- `idle_shutdown_minutes` (0–1440, 0 mematikan) dibaca ulang setiap pemeriksaan idle. Aplikasi berhenti bila tidak ada job aktif atau antre, tidak ada stream SSE, dan tidak ada request **bertoken** selama batas itu; jam idle dihitung dari request terakhir atau saat terakhir aplikasi sibuk, mana yang lebih baru. Request tanpa token tidak dihitung, supaya situs lain tidak dapat menjaga aplikasi tetap hidup. Dimatikan pada mode `-dev`.
+
+### `POST /api/dialogs/folder`
+
+Body `{"title": "...", "start": "..."}` (keduanya opsional). Membuka dialog pemilih folder native di desktop pengguna dan menahan respons sampai dialog ditutup: `{"path": "C:\\Users\\...\\Music", "cancelled": false}` atau `{"cancelled": true}`.
+
+- Browser tidak pernah mengungkap path absolut folder ke halaman web, jadi dialog dibuka oleh proses server (`ncruces/zenity`, murni Go di Windows dan macOS; di Linux memanggil `zenity`/`kdialog`/`qarma`).
+- Endpoint ini tidak membaca atau menulis apa pun; path hasil pilihan baru berlaku setelah dikirim lewat `PUT /api/settings`, yang memvalidasinya.
+- Dijaga token dan Origin seperti endpoint lain: tanpa itu situs mana pun dapat memunculkan dialog di layar pengguna. Satu dialog pada satu waktu.
+- Tanpa implementasi dialog di sistem: `503 DIALOG_UNAVAILABLE`, dan UI jatuh ke input teks.
 
 ### `POST /api/shutdown`
 
@@ -238,7 +253,7 @@ Urutan subscribe yang benar (mendaftar listener sebelum membaca histori, agar ti
 
 Daftar `code` bersifat tertutup dan menjadi bagian kontrak:
 
-`INVALID_URL`, `INVALID_SETTING`, `UNSUPPORTED_URL`, `LIVE_NOT_SUPPORTED`, `VIDEO_UNAVAILABLE`, `VIDEO_PRIVATE`, `GEO_BLOCKED`, `AGE_RESTRICTED`, `RATE_LIMITED`, `TOOL_MISSING`, `TOOL_OUTDATED`, `TOOL_INSTALL_FAILED`, `TOOL_MANIFEST_INCOMPLETE`, `TOOL_CHECKSUM_MISMATCH`, `DOWNLOAD_FAILED`, `TRANSCODE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_WRITE_FAILED`, `JOB_NOT_FOUND`, `QUEUE_FULL`, `DUPLICATE_ACTIVE_JOB`, `INTERRUPTED`, `CANCELLED`, `TIMEOUT`, `INTERNAL`.
+`INVALID_URL`, `INVALID_SETTING`, `UNSUPPORTED_URL`, `LIVE_NOT_SUPPORTED`, `VIDEO_UNAVAILABLE`, `VIDEO_PRIVATE`, `GEO_BLOCKED`, `AGE_RESTRICTED`, `RATE_LIMITED`, `TOOL_MISSING`, `TOOL_OUTDATED`, `TOOL_INSTALL_FAILED`, `TOOL_MANIFEST_INCOMPLETE`, `TOOL_CHECKSUM_MISMATCH`, `DOWNLOAD_FAILED`, `TRANSCODE_FAILED`, `VERIFY_FAILED`, `DISK_FULL`, `OUTPUT_WRITE_FAILED`, `DIALOG_UNAVAILABLE`, `JOB_NOT_FOUND`, `QUEUE_FULL`, `DUPLICATE_ACTIVE_JOB`, `INTERRUPTED`, `CANCELLED`, `TIMEOUT`, `INTERNAL`.
 
 Lapisan HTTP menambahkan kode transport tersendiri yang tidak dimiliki domain: `FORBIDDEN_HOST`, `FORBIDDEN_ORIGIN`, `UNAUTHORIZED`, `UNSUPPORTED_MEDIA_TYPE`, `BAD_REQUEST`, `NOT_FOUND`.
 
@@ -423,7 +438,7 @@ Ancaman utama bukan shell injection, melainkan bahwa server HTTP di localhost da
 | URL input | Whitelist skema `http`/`https`; tolak `file://` dan sejenisnya sebelum mencapai yt-dlp |
 | Eksekusi | `exec.Command` dengan argv eksplisit; tidak pernah `sh -c`; `--` sebelum URL |
 | Config tool | `--ignore-config` agar `yt-dlp.conf` milik user tidak bisa menyuntikkan `--exec` |
-| Headers | `X-Content-Type-Options: nosniff`, CSP ketat untuk SPA |
+| Headers | `X-Content-Type-Options: nosniff`, CSP ketat untuk SPA; satu-satunya host luar adalah `img-src https://i.ytimg.com` untuk sampul, dan font dilayani dari origin sendiri |
 | Batas body | 64 KB, ditegakkan di middleware |
 
 ## 16. Tool acquisition dan versioning
@@ -440,19 +455,26 @@ Bila tidak ada satu pun, app tetap berjalan dan `GET /api/health` melaporkan `TO
 
 | Tool | Platform | Sumber | Bentuk |
 | --- | --- | --- | --- |
-| yt-dlp | semua | GitHub Releases resmi proyek | binary tunggal |
-| FFmpeg | windows/amd64 | `BtbN/FFmpeg-Builds` (GitHub Releases) | `.zip` |
-| FFmpeg | linux/amd64, linux/arm64 | `BtbN/FFmpeg-Builds` | `.tar.xz` |
-| FFmpeg | darwin/amd64, darwin/arm64 | `evermeet.cx` | `.zip` |
+| Tool | Platform | Sumber | Bentuk | Checksum |
+| --- | --- | --- | --- | --- |
+| yt-dlp | semua (`yt-dlp_macos` universal) | GitHub Releases resmi, per tag | binary tunggal | `SHA2-256SUMS` hulu, dicocokkan dengan digest aset GitHub |
+| FFmpeg | windows/amd64 | `GyanD/codexffmpeg`, rilis per versi | satu `.zip` essentials berisi ffmpeg dan ffprobe | digest aset GitHub |
+| FFmpeg | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 | `ffmpeg.martin-riedl.de`, direktori per versi rilis | `ffmpeg.zip` dan `ffprobe.zip` terpisah | berkas `.sha256` hulu |
 
-FFmpeg tidak punya distribusi binary statis resmi, jadi ketiga sumber di atas adalah pihak ketiga. Itu keputusan rantai pasok, bukan detail implementasi, karena itu dicatat sebagai ADR-031. Konsekuensi hukumnya justru menguntungkan: karena binary diunduh di mesin pengguna dan tidak pernah ikut dalam artifact rilis, proyek ini tidak mendistribusikan ulang FFmpeg dan tidak memikul kewajiban LGPL/GPL.
+Versi FFmpeg sama untuk seluruh platform dan mengikuti rilis GyanD. Versi yang belum tersedia di salah satu sumber menggagalkan pembaruan manifest, bukan menghasilkan manifest dengan versi campuran.
+
+Setiap URL menunjuk rilis berversi tetap. Tag bergulir seperti `latest` dilarang dan dijaga oleh test manifest: isinya berganti, sehingga checksum yang di-pin terhadapnya pasti basi.
+
+FFmpeg tidak punya distribusi binary statis resmi, jadi kedua sumber FFmpeg di atas adalah pihak ketiga. Itu keputusan rantai pasok, bukan detail implementasi, karena itu dicatat sebagai ADR-031. Konsekuensi hukumnya justru menguntungkan: karena binary diunduh di mesin pengguna dan tidak pernah ikut dalam artifact rilis, proyek ini tidak mendistribusikan ulang FFmpeg dan tidak memikul kewajiban LGPL/GPL.
 
 ### 16.2 Manifest
 
-`internal/infrastructure/tools/manifest.json` di-commit dan di-embed. Isinya versi ter-pin, URL, dan SHA-256 per platform.
+`internal/infrastructure/tools/manifest.json` di-commit dan di-embed. Skema 2: setiap build per platform berisi daftar `downloads` (URL, SHA-256, bentuk arsip, berkas yang diekstrak), karena sebagian sumber menerbitkan ffmpeg dan ffprobe sebagai arsip terpisah.
 
-- **Fail-closed (ADR-033).** Entri dengan `sha256` kosong menolak instalasi dengan `TOOL_MANIFEST_INCOMPLETE`. Verifikasi tidak pernah dilewati, termasuk saat pengembangan.
-- Checksum diisi lewat `scripts/update-tool-manifest.sh`, yang menyelesaikan rilis terbaru, mengambil checksum yang diterbitkan hulu bila tersedia, dan menghitung sendiri bila tidak. Hasilnya di-commit sebagai perubahan yang dapat direview.
+- **Fail-closed (ADR-033).** Build dengan satu saja unduhan tanpa `sha256` menolak instalasi dengan `TOOL_MANIFEST_INCOMPLETE`. Verifikasi tidak pernah dilewati, termasuk saat pengembangan.
+- Seluruh unduhan sebuah build diverifikasi sebelum satu pun diekstrak, sehingga ffmpeg tidak pernah terpasang tanpa ffprobe akibat arsip kedua yang tidak cocok.
+- Manifest dibuat oleh `make update-tools` (`go run ./scripts/toolmanifest`), bukan disunting manual. Program itu memakai checksum yang diterbitkan hulu dan menolak bila checksum hulu berbeda dengan digest GitHub. Opsi `-verify` mengunduh setiap berkas untuk mencocokkan checksum dan memastikan berkas yang akan diekstrak memang ada di dalam arsip. Hasilnya di-commit sebagai perubahan yang dapat direview.
+- Test manifest menuntut seluruh platform rilis ter-pin, URL https tanpa tag bergulir, dan checksum 64 karakter heksadesimal.
 - Menaikkan versi tool adalah commit tersendiri supaya regresi mudah di-bisect.
 
 ### 16.3 Instalasi
@@ -493,7 +515,8 @@ Ringkasan; urutan lengkap ada di [architecture.md §7–§9](architecture.md).
 - **Single instance** dijaga lock file. Launch kedua membaca `runtime.json`, membuka browser ke instance yang sudah jalan, lalu keluar (ADR-022).
 - **Cara keluar** ada tiga: tombol Quit di SPA (`POST /api/shutdown`), idle shutdown setelah 30 menit tanpa job dan tanpa koneksi, dan sinyal OS. Tidak ada tray icon (ADR-021).
 - **Crash recovery** berjalan sebelum listener dibuka: job non-terminal jadi `INTERRUPTED`, temp yatim dibersihkan, baris `files` yang filenya hilang ditandai.
-- **Housekeeping** per jam: pangkas `job_events`, GC temp, kedaluwarsa cache metadata, rotasi log.
+- **Housekeeping** saat startup lalu per jam: pangkas `job_events`, GC temp, kedaluwarsa cache metadata, rekonsiliasi `files.missing` dua arah. Rotasi log dikerjakan writer log saat hari berganti.
+- **Log** ditulis ke `<data_dir>/logs/app.log` dan terminal. URL bertoken hanya dicetak ke terminal, karena berkas log lazim dilampirkan pada laporan bug.
 
 ## 19. Klasifikasi error dan kebijakan retry
 
@@ -542,6 +565,25 @@ Tanpa angka, tidak ada dasar untuk menyebut sesuatu regresi:
 | Konversi lagu 5 menit @192 kbps, jaringan 20 Mbps | < 45 detik  |
 | Kapasitas history tanpa degradasi terasa          | 10.000 job  |
 
+### 22.1 Hasil pengukuran
+
+Diukur dengan `make nfr` (`go run ./scripts/nfr`) pada 2026-09-13, Windows 11 amd64, 16 CPU, Go 1.27, binary rilis (`-trimpath -ldflags "-s -w"`). Setiap pengukuran berjalan di direktori data sementara; riwayat 10.000 job disemai langsung ke SQLite sebagai job terminal.
+
+| Aspek | Target | Hasil |
+| --- | --- | --- |
+| Ukuran binary | < 25 MB | 13,5 MB |
+| Cold start sampai SPA tersaji (median 5×) | < 1,5 detik | 96 ms |
+| Memori idle (working set) | < 60 MB | 19,5 MB |
+| Latensi API non-download, p95 terburuk (`/api/health`) | < 50 ms | 3,5 ms |
+| Daftar riwayat berfilter status, 10.000 job, p95 | tanpa degradasi terasa | 1,7 ms |
+| Memori puncak proses aplikasi saat 2 job berjalan | < 200 MB | 30,8 MB |
+| CPU proses aplikasi di luar tool, rata-rata per satu core | < 5% | 1,3% |
+| Konversi lagu 3 menit 33 detik, dua preset paralel, jaringan rumah | < 45 detik untuk 5 menit | 15,9 detik |
+
+Tiga baris terakhir berasal dari `make nfr URL="<tautan>"`, yang butuh jaringan dan yt-dlp serta FFmpeg di `PATH`. Waktu konversi bergantung pada jaringan, jadi dicatat sebagai catatan, bukan lolos/gagal.
+
+Pengukuran pertama menemukan satu regresi: daftar riwayat berfilter status butuh p95 38 ms pada 10.000 job, karena indeks `status` saja memaksa SQLite mengurutkan seluruh baris di memori. Migrasi `00002` menggantinya dengan indeks komposit `(status, created_at DESC, id DESC)`, dan test memeriksa rencana query-nya supaya regresi yang sama tertangkap walau tidak terlihat pada database kecil.
+
 ## 23. Strategi testing
 
 ### Unit
@@ -568,10 +610,12 @@ Smoke test untuk Windows/Linux/macOS dan seluruh target arsitektur rilis. Khusus
 
 Layar:
 
-1. **Analyze** — input URL, preview metadata, pilih preset, mulai job
-2. **Queue** — job aktif, progress per fase, cancel
-3. **History** — daftar tersimpan, unduh, reveal, retry, hapus
-4. **Settings** — output dir, concurrency, preset default, status dan update tool, tombol Quit
+Satu halaman kerja dengan top bar (status tool, **Setelan**, **Keluar**) dan status bar (folder keluaran, ringkasan antrean):
+
+1. **Tangkap** — tempel URL (analisis otomatis saat paste), preview sampul dan metadata, pilih preset, mulai job
+2. **Sedang diproses** — job aktif; sampul abu-abu terisi warna dari bawah mengikuti progress, cancel
+3. **Selesai** — unduh, buka folder, retry, hapus dengan konfirmasi inline
+4. **Setelan** — dialog modal (`Ctrl+,`) dengan grup Penyimpanan (pemilih folder native), Konversi, Antrean, Tool, Tampilan (bahasa, tema), Lanjutan, Tentang
 
 Teknis:
 
@@ -586,7 +630,7 @@ Teknis:
 - **Chicken-and-egg `embed`**: `//go:embed web/dist` gagal compile bila folder belum ada, sehingga clone baru dan CI langsung merah. Commit `web/dist/.gitkeep` + `index.html` placeholder, dan pisahkan dua mode dengan build tag — `dev` memakai `os.DirFS` atau proxy ke Vite, `prod` memakai `embed.FS`.
 - `make dev` menjalankan Vite dan Go bersamaan; `make build` menjalankan `vite build` sebelum `go build`.
 - Matriks CI: `windows/amd64`, `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
-- Rilis dengan GoReleaser, artifact `yt-to-mp3_<version>_<os>_<arch>`, disertai checksum.
+- Rilis dengan GoReleaser (`.goreleaser.yaml`, workflow `release.yml`), artifact `yt-to-mp3_<version>_<os>_<arch>` (zip untuk Windows, tar.gz lainnya), disertai `checksums.txt` SHA-256. Hook `before` membangun SPA dan menjalankan `check:i18n` sebelum `go build`, karena SPA disematkan. Tag `v*` membuat rilis **draft**; pemicu manual menjalankan snapshot tanpa menerbitkan apa pun. windows/arm64 sengaja tidak dibangun karena tidak punya entri manifest tool.
 - **Signing**: macOS perlu codesign + notarization, kalau tidak Gatekeeper memblokir. Di Windows, binary Go tanpa signature yang men-spawn subprocess sering kena false positive SmartScreen/AV — anggarkan sertifikat atau dokumentasikan langkah bypass.
 - Logging `log/slog` terstruktur ke `<data_dir>/logs/app.log`, rotasi harian, retensi 7 hari.
 

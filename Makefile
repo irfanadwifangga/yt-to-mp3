@@ -63,6 +63,15 @@ dev-web: ## Jalankan Vite dev server (pasangan dev-api)
 test: ## Jalankan seluruh test Go
 	go test ./...
 
+.PHONY: test-integration
+test-integration: export YT2MP3_REQUIRE_TOOLS = 1
+test-integration: ## Test integrasi dengan FFmpeg sungguhan dan fixture sintetis
+	go test -count=1 -tags integration -run Integrasi ./internal/infrastructure/ffmpeg/
+
+.PHONY: nfr
+nfr: ## Ukur target NFR planning §22 (URL="<tautan>" untuk ikut mengukur konversi)
+	go run ./scripts/nfr $(if $(URL),-url "$(URL)")
+
 .PHONY: cover
 cover: ## Jalankan test dengan laporan coverage
 	go test -coverprofile=coverage.out ./...
@@ -74,11 +83,11 @@ vet: ## Jalankan go vet
 
 .PHONY: fmt
 fmt: ## Rapikan format kode Go
-	gofmt -w ./cmd ./internal ./web
+	gofmt -w ./cmd ./internal ./scripts ./web
 
 .PHONY: fmt-check
 fmt-check: ## Gagal bila ada file Go yang belum diformat
-	@out=$$(gofmt -l ./cmd ./internal ./web); \
+	@out=$$(gofmt -l ./cmd ./internal ./scripts ./web); \
 	if [ -n "$$out" ]; then echo "belum diformat:"; echo "$$out"; exit 1; fi
 
 .PHONY: typecheck
@@ -95,6 +104,18 @@ tidy: ## Rapikan go.mod
 .PHONY: clean
 clean: ## Hapus artefak build
 	rm -rf bin coverage.out web/dist/assets web/dist/index.html
+
+.PHONY: release-check
+release-check: ## Validasi .goreleaser.yaml (butuh goreleaser v2)
+	goreleaser check
+
+.PHONY: release-snapshot
+release-snapshot: ## Bangun arsip rilis lima target ke dist/ tanpa menerbitkan (butuh goreleaser v2)
+	goreleaser release --snapshot --clean
+
+.PHONY: update-tools
+update-tools: ## Pin yt-dlp dan FFmpeg ke rilis terbaru di manifest (ARGS="-verify" untuk ikut unduh)
+	go run ./scripts/toolmanifest $(ARGS)
 
 .PHONY: check-i18n
 check-i18n: ## Pastikan setiap kode error dan kunci UI punya terjemahan id dan en

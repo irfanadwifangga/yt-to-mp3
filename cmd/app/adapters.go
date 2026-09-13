@@ -7,6 +7,7 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/dialog"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ffmpeg"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/fs"
@@ -70,6 +71,12 @@ func (namingAdapter) Build(mode domain.FilenameMode, info *domain.MediaInfo, ext
 type revealAdapter struct{}
 
 func (revealAdapter) Reveal(path string) error { return browser.Reveal(path) }
+
+type pickerAdapter struct{}
+
+func (pickerAdapter) PickFolder(ctx context.Context, title, start string) (string, bool, error) {
+	return dialog.PickFolder(ctx, title, start)
+}
 
 // settingDefaults memetakan konfigurasi startup jadi nilai bawaan setelan.
 //

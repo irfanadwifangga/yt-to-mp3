@@ -29,6 +29,7 @@ const (
 	CodeVerifyFailed      ErrorCode = "VERIFY_FAILED"
 	CodeDiskFull          ErrorCode = "DISK_FULL"
 	CodeOutputWriteFailed ErrorCode = "OUTPUT_WRITE_FAILED"
+	CodeDialogUnavailable ErrorCode = "DIALOG_UNAVAILABLE"
 	CodeJobNotFound       ErrorCode = "JOB_NOT_FOUND"
 	CodeQueueFull         ErrorCode = "QUEUE_FULL"
 	CodeDuplicateActive   ErrorCode = "DUPLICATE_ACTIVE_JOB"

@@ -30,6 +30,10 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Subset font yang kecil jangan di-inline sebagai data: URI. CSP server
+    // hanya mengizinkan font-src 'self', dan melonggarkannya demi beberapa
+    // kilobyte tidak sepadan.
+    assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined),
   },
   server: {
     port: 5173,

@@ -1,13 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, downloadFile, isTerminal, type Job } from "./api";
+import { Cover } from "./Cover";
+import { DownloadIcon, FolderIcon } from "./icons";
 import { t } from "./i18n";
-import {
-  formatTime,
-  messageFor,
-  messageForCode,
-  phaseLabel,
-  statusLabel,
-} from "./messages";
+import { formatTime, messageFor, messageForCode, phaseLabel, statusLabel } from "./messages";
 import { useJobStream } from "./useJobStream";
 
 interface Props {
@@ -15,25 +11,23 @@ interface Props {
   onChanged: () => void;
 }
 
-/** Antrean: job yang masih berjalan atau menunggu. */
-export function Queue({ jobs, onChanged }: Props) {
-  if (jobs.length === 0) {
-    return (
-      <section>
-        <h2>{t("queue.title")}</h2>
-        <p className="muted">{t("queue.empty")}</p>
-      </section>
-    );
-  }
-
+/** Job yang masih berjalan atau menunggu giliran. */
+export function ActiveList({ jobs, onChanged }: Props) {
   return (
-    <section>
-      <h2>{t("queue.title")}</h2>
-      <ul className="jobs">
-        {jobs.map((job) => (
-          <ActiveJob key={job.id} job={job} onChanged={onChanged} />
-        ))}
-      </ul>
+    <section className="block" aria-labelledby="active-title">
+      <h2 id="active-title" className="block-title">
+        {t("queue.title")}
+        {jobs.length > 0 && <span className="count">{jobs.length}</span>}
+      </h2>
+      {jobs.length === 0 ? (
+        <p className="empty">{t("queue.empty")}</p>
+      ) : (
+        <ul className="list">
+          {jobs.map((job) => (
+            <ActiveJob key={job.id} job={job} onChanged={onChanged} />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -48,6 +42,13 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
   const percent = stream.percent !== undefined ? stream.percent : job.progress;
   const phase = stream.phase ?? job.phase;
   const status = stream.status ?? job.status;
+  const title = job.title || job.source_key;
+
+  // Job yang selesai langsung dipindah ke daftar selesai, tanpa menunggu
+  // polling berikutnya.
+  useEffect(() => {
+    if (stream.done) onChanged();
+  }, [stream.done, onChanged]);
 
   async function handleCancel() {
     setBusy(true);
@@ -62,54 +63,67 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
     }
   }
 
+  const waiting = status === "queued";
+
   return (
-    <li className="job">
-      <div className="job-head">
-        <span className="job-title">{job.title || job.source_key}</span>
-        <span className="muted">{phaseLabel(phase) || statusLabel(status)}</span>
+    <li className="item">
+      <Cover
+        sourceKey={job.source_key}
+        state={waiting ? "waiting" : "active"}
+        percent={percent}
+        label={t("queue.progressLabel", { title })}
+      />
+
+      <div className="item-body">
+        <p className="item-title" title={title}>
+          {title}
+        </p>
+        <p className="item-meta">
+          <span>{phaseLabel(phase) || statusLabel(status)}</span>
+          {!waiting && (
+            <span className="mono">
+              {percent == null ? t("queue.calculating") : `${percent.toFixed(0)}%`}
+            </span>
+          )}
+        </p>
+        {error && (
+          <p className="alert small" role="alert">
+            {error}
+          </p>
+        )}
       </div>
 
-      <div className="bar" role="progressbar" aria-valuenow={percent ?? undefined}>
-        {/* Progress null berarti indeterminate: total belum diketahui, bukan nol. */}
-        <div
-          className={percent == null ? "bar-fill indeterminate" : "bar-fill"}
-          style={percent == null ? undefined : { width: `${percent}%` }}
-        />
-      </div>
-
-      <div className="job-foot">
-        <span className="muted">
-          {percent == null ? t("queue.calculating") : `${percent.toFixed(0)}%`}
-        </span>
-        <button type="button" onClick={() => void handleCancel()} disabled={busy}>
-          {busy ? t("queue.cancelling") : t("queue.cancel")}
+      <div className="item-actions">
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={() => void handleCancel()}
+          disabled={busy || status === "cancelling"}
+        >
+          {busy || status === "cancelling" ? t("queue.cancelling") : t("queue.cancel")}
         </button>
       </div>
-
-      {error && <p className="error">{error}</p>}
     </li>
   );
 }
 
-/** Riwayat: job yang sudah selesai, gagal, atau dibatalkan. */
-export function History({ jobs, onChanged }: Props) {
-  if (jobs.length === 0) {
-    return (
-      <section>
-        <h2>{t("history.title")}</h2>
-        <p className="muted">{t("history.empty")}</p>
-      </section>
-    );
-  }
-
+/** Job yang sudah selesai, gagal, atau dibatalkan. */
+export function FinishedList({ jobs, onChanged }: Props) {
   return (
-    <section>
-      <h2>{t("history.title")}</h2>
-      <ul className="jobs">
-        {jobs.map((job) => (
-          <HistoryRow key={job.id} job={job} onChanged={onChanged} />
-        ))}
-      </ul>
+    <section className="block" aria-labelledby="finished-title">
+      <h2 id="finished-title" className="block-title">
+        {t("history.title")}
+        {jobs.length > 0 && <span className="count">{jobs.length}</span>}
+      </h2>
+      {jobs.length === 0 ? (
+        <p className="empty">{t("history.empty")}</p>
+      ) : (
+        <ul className="list">
+          {jobs.map((job) => (
+            <FinishedJob key={job.id} job={job} onChanged={onChanged} />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -125,11 +139,21 @@ const PERMANENT = new Set([
   "INVALID_URL",
 ]);
 
+/** Konfirmasi hapus kembali ke keadaan semula bila diabaikan. */
+const CONFIRM_TIMEOUT_MS = 5000;
+
 type Action = "download" | "reveal" | "retry" | "delete";
 
-function HistoryRow({ job, onChanged }: { job: Job; onChanged: () => void }) {
+function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
   const [busy, setBusy] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(false), CONFIRM_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [confirming]);
 
   async function run(action: Action, fn: () => Promise<unknown>) {
     setBusy(action);
@@ -141,68 +165,103 @@ function HistoryRow({ job, onChanged }: { job: Job; onChanged: () => void }) {
       setError(messageFor(err, t("history.actionFailed")));
     } finally {
       setBusy(null);
+      setConfirming(false);
     }
   }
 
+  const title = job.title || job.source_key;
   const done = job.status === "completed";
-  const filename = `${job.title || job.source_key}.mp3`;
-  const retryable = job.status !== "completed" && !PERMANENT.has(job.error_code ?? "");
+  const retryable = !done && !PERMANENT.has(job.error_code ?? "");
+  const tone = done ? "ok" : job.status === "failed" ? "bad" : "off";
 
   return (
-    <li className="job">
-      <div className="job-head">
-        <span className="job-title">{job.title || job.source_key}</span>
-        <span className={done ? "tag ok" : "tag off"}>{statusLabel(job.status)}</span>
+    <li className="item">
+      <Cover sourceKey={job.source_key} state={done ? "done" : "dim"} />
+
+      <div className="item-body">
+        <p className="item-title" title={title}>
+          {title}
+        </p>
+        <p className="item-meta">
+          <span className={`tag tag-${tone}`}>{statusLabel(job.status)}</span>
+          <span className="mono">{formatTime(job.finished_at ?? job.created_at)}</span>
+        </p>
+        {job.error_code && job.status === "failed" && (
+          <p className="item-error">{messageForCode(job.error_code)}</p>
+        )}
+        {done && !job.file_id && <p className="item-error">{t("history.missing")}</p>}
+        {error && (
+          <p className="alert small" role="alert">
+            {error}
+          </p>
+        )}
       </div>
 
-      <div className="muted small">
-        {formatTime(job.finished_at ?? job.created_at)}
-        {job.error_code && ` — ${messageForCode(job.error_code)}`}
-      </div>
-
-      <div className="actions">
-        {done && job.file_id && (
+      <div className="item-actions">
+        {confirming ? (
           <>
+            <span className="confirm-text">{t("history.confirmDelete")}</span>
             <button
               type="button"
+              className="btn danger small"
               disabled={busy !== null}
-              onClick={() => void run("download", () => downloadFile(job.file_id!, filename))}
+              onClick={() => void run("delete", () => api.deleteJob(job.id))}
             >
-              {busy === "download" ? t("history.preparing") : t("history.download")}
+              {t("history.confirmYes")}
             </button>
+            <button type="button" className="btn ghost small" onClick={() => setConfirming(false)}>
+              {t("history.confirmNo")}
+            </button>
+          </>
+        ) : (
+          <>
+            {done && job.file_id && (
+              <>
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void run("download", () => downloadFile(job.file_id!, `${title}.mp3`))
+                  }
+                >
+                  <DownloadIcon />
+                  {busy === "download" ? t("history.preparing") : t("history.download")}
+                </button>
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={busy !== null}
+                  onClick={() => void run("reveal", () => api.revealFile(job.file_id!))}
+                >
+                  <FolderIcon />
+                  {t("history.reveal")}
+                </button>
+              </>
+            )}
+
+            {retryable && (
+              <button
+                type="button"
+                className="btn small"
+                disabled={busy !== null}
+                onClick={() => void run("retry", () => api.retryJob(job.id))}
+              >
+                {busy === "retry" ? t("history.retrying") : t("history.retry")}
+              </button>
+            )}
+
             <button
               type="button"
+              className="btn ghost small quiet-danger"
               disabled={busy !== null}
-              onClick={() => void run("reveal", () => api.revealFile(job.file_id!))}
+              onClick={() => setConfirming(true)}
             >
-              {t("history.reveal")}
+              {t("history.delete")}
             </button>
           </>
         )}
-
-        {done && !job.file_id && <span className="muted small">{t("history.missing")}</span>}
-
-        {retryable && (
-          <button
-            type="button"
-            disabled={busy !== null}
-            onClick={() => void run("retry", () => api.retryJob(job.id))}
-          >
-            {busy === "retry" ? t("history.retrying") : t("history.retry")}
-          </button>
-        )}
-
-        <button
-          type="button"
-          className="danger"
-          disabled={busy !== null}
-          onClick={() => void run("delete", () => api.deleteJob(job.id))}
-        >
-          {t("history.delete")}
-        </button>
       </div>
-
-      {error && <p className="error">{error}</p>}
     </li>
   );
 }

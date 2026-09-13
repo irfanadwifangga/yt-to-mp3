@@ -1,78 +1,169 @@
 {
-  "schema": 1,
-  "note": "Checksum kosong menolak instalasi (ADR-033). Isi lewat scripts/update-tool-manifest.sh, lalu commit hasilnya sebagai perubahan yang bisa direview.",
+  "schema": 2,
+  "note": "Dibuat oleh scripts/toolmanifest; jangan disunting manual. Checksum kosong menolak instalasi (ADR-033).",
   "tools": {
-    "yt-dlp": {
-      "version": "",
-      "source": "https://github.com/yt-dlp/yt-dlp",
+    "ffmpeg": {
+      "version": "9.0.1",
+      "source": "https://github.com/GyanD/codexffmpeg (Windows); https://ffmpeg.martin-riedl.de (Linux, macOS)",
       "builds": {
-        "windows/amd64": {
-          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
-          "sha256": "",
-          "archive": "none",
-          "extract": ["yt-dlp.exe"]
-        },
-        "linux/amd64": {
-          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux",
-          "sha256": "",
-          "archive": "none",
-          "extract": ["yt-dlp"]
-        },
-        "linux/arm64": {
-          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64",
-          "sha256": "",
-          "archive": "none",
-          "extract": ["yt-dlp"]
-        },
         "darwin/amd64": {
-          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos",
-          "sha256": "",
-          "archive": "none",
-          "extract": ["yt-dlp"]
+          "downloads": [
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1787081194_9.0.1/ffmpeg.zip",
+              "sha256": "5bdead62ff504ab9b447cc72b212c4fb481e3f7de5877d427a51bee8136dda40",
+              "archive": "zip",
+              "extract": [
+                "ffmpeg"
+              ]
+            },
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1787081194_9.0.1/ffprobe.zip",
+              "sha256": "34511bbcf1988ad2886023bf5ace4f44cf62e6defeb3d194d6f7619e5b061f7f",
+              "archive": "zip",
+              "extract": [
+                "ffprobe"
+              ]
+            }
+          ]
         },
         "darwin/arm64": {
-          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos",
-          "sha256": "",
-          "archive": "none",
-          "extract": ["yt-dlp"]
+          "downloads": [
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1787073674_9.0.1/ffmpeg.zip",
+              "sha256": "8287a1b2229e05eb41859f073e18e6c52c60a778f2f5e6881070fe51b79407fe",
+              "archive": "zip",
+              "extract": [
+                "ffmpeg"
+              ]
+            },
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1787073674_9.0.1/ffprobe.zip",
+              "sha256": "102a26b8940a053298d9929bfaae71e4b6ef65ba5f19a99a88c433108560741a",
+              "archive": "zip",
+              "extract": [
+                "ffprobe"
+              ]
+            }
+          ]
+        },
+        "linux/amd64": {
+          "downloads": [
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/linux/amd64/1787074600_9.0.1/ffmpeg.zip",
+              "sha256": "18bec7d5c2ab3b24d277466b758394e109b0479133b98d155c5540ed3013fa74",
+              "archive": "zip",
+              "extract": [
+                "ffmpeg"
+              ]
+            },
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/linux/amd64/1787074600_9.0.1/ffprobe.zip",
+              "sha256": "227c122cabb36444d7dee7f5c9c9db9e36e15ab7a9b43eb2196936fb177f9ad3",
+              "archive": "zip",
+              "extract": [
+                "ffprobe"
+              ]
+            }
+          ]
+        },
+        "linux/arm64": {
+          "downloads": [
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/linux/arm64/1787072884_9.0.1/ffmpeg.zip",
+              "sha256": "92cff3dec20d996bb5b8a918b156b64301338e7c28046053c82d0935cf7c6eb2",
+              "archive": "zip",
+              "extract": [
+                "ffmpeg"
+              ]
+            },
+            {
+              "url": "https://ffmpeg.martin-riedl.de/download/linux/arm64/1787072884_9.0.1/ffprobe.zip",
+              "sha256": "208379f31219f52333ed769e9159ca2964355b7c7c4420233bcca769b5edef62",
+              "archive": "zip",
+              "extract": [
+                "ffprobe"
+              ]
+            }
+          ]
+        },
+        "windows/amd64": {
+          "downloads": [
+            {
+              "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip",
+              "sha256": "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
+              "archive": "zip",
+              "extract": [
+                "ffmpeg.exe",
+                "ffprobe.exe"
+              ]
+            }
+          ]
         }
       }
     },
-    "ffmpeg": {
-      "version": "",
-      "source": "https://github.com/BtbN/FFmpeg-Builds",
+    "yt-dlp": {
+      "version": "2026.08.19",
+      "source": "https://github.com/yt-dlp/yt-dlp",
       "builds": {
-        "windows/amd64": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
-          "sha256": "",
-          "archive": "zip",
-          "extract": ["ffmpeg.exe", "ffprobe.exe"]
-        },
-        "linux/amd64": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz",
-          "sha256": "",
-          "archive": "tar.xz",
-          "extract": ["ffmpeg", "ffprobe"]
-        },
-        "linux/arm64": {
-          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
-          "sha256": "",
-          "archive": "tar.xz",
-          "extract": ["ffmpeg", "ffprobe"]
-        },
         "darwin/amd64": {
-          "url": "",
-          "sha256": "",
-          "archive": "zip",
-          "extract": ["ffmpeg", "ffprobe"],
-          "note": "evermeet.cx menerbitkan ffmpeg dan ffprobe sebagai zip terpisah; belum di-pin."
+          "downloads": [
+            {
+              "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos",
+              "sha256": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202",
+              "archive": "none",
+              "extract": [
+                "yt-dlp"
+              ]
+            }
+          ]
         },
         "darwin/arm64": {
-          "url": "",
-          "sha256": "",
-          "archive": "zip",
-          "extract": ["ffmpeg", "ffprobe"],
-          "note": "Belum ada sumber build statis arm64 yang mapan. Sampai ada, aplikasi memakai FFmpeg dari PATH (brew install ffmpeg)."
+          "downloads": [
+            {
+              "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos",
+              "sha256": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202",
+              "archive": "none",
+              "extract": [
+                "yt-dlp"
+              ]
+            }
+          ]
+        },
+        "linux/amd64": {
+          "downloads": [
+            {
+              "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux",
+              "sha256": "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a",
+              "archive": "none",
+              "extract": [
+                "yt-dlp"
+              ]
+            }
+          ]
+        },
+        "linux/arm64": {
+          "downloads": [
+            {
+              "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux_aarch64",
+              "sha256": "b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc",
+              "archive": "none",
+              "extract": [
+                "yt-dlp"
+              ]
+            }
+          ]
+        },
+        "windows/amd64": {
+          "downloads": [
+            {
+              "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+              "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+              "archive": "none",
+              "extract": [
+                "yt-dlp.exe"
+              ]
+            }
+          ]
         }
       }
     }

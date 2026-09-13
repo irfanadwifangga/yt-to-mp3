@@ -46,7 +46,8 @@ CREATE TABLE jobs (
   finished_at    TEXT
 );
 
-CREATE INDEX idx_jobs_status  ON jobs(status);
+-- Migrasi 00002: riwayat berfilter status dilayani indeks tanpa sort di memori.
+CREATE INDEX idx_jobs_status_created ON jobs(status, created_at DESC, id DESC);
 CREATE INDEX idx_jobs_created ON jobs(created_at DESC);
 
 -- Menegakkan DUPLICATE_ACTIVE_JOB di level database, bukan hanya di kode.
@@ -194,9 +195,11 @@ Ditegakkan oleh skema jika memungkinkan, sisanya oleh test integrasi:
 | Data | Kebijakan |
 | --- | --- |
 | `jobs` | Disimpan sampai user menghapus |
-| `job_events` | Dipangkas untuk job terminal yang lebih tua dari 30 hari |
+| `job_events` | Dipangkas untuk job terminal yang `finished_at`-nya lebih tua dari 30 hari; baris `jobs` tidak disentuh |
 | `media_items` | TTL 24 jam untuk pemakaian sebagai cache; baris kedaluwarsa dan tak dirujuk dibuang housekeeper |
-| `files` | Baris tetap ada walau file hilang di disk, ditandai `missing = 1` |
+| `files` | Baris tetap ada walau file hilang di disk, ditandai `missing = 1`. Penanda disamakan dengan disk saat startup dan setiap jam, dua arah: file yang muncul kembali mendapat `missing = 0`. Hanya "tidak ada" yang menandai hilang; error lain seperti izin ditolak membiarkan penanda |
+
+Seluruh kebijakan di atas dijalankan `application.Housekeeper`: satu putaran sebelum scheduler dan listener dimulai, lalu setiap jam. Setiap tugas berdiri sendiri, jadi kegagalan satu tugas dicatat tanpa menghentikan yang lain.
 
 ## 5. Migrasi
 
@@ -204,3 +207,10 @@ Ditegakkan oleh skema jika memungkinkan, sisanya oleh test integrasi:
 - Maju saja. Tidak ada rollback otomatis di runtime; penurunan versi ditangani oleh penjagaan `schema_version`.
 - Seed `presets` adalah bagian dari migrasi, bukan kode aplikasi, supaya database baru dan lama sampai ke keadaan yang sama.
 - Setiap migrasi wajib punya test yang menjalankannya di atas database kosong dan di atas snapshot versi sebelumnya.
+
+| Versi | Berkas | Isi |
+| --- | --- | --- |
+| 1 | `00001_init.sql` | Skema awal dan seed preset |
+| 2 | `00002_jobs_status_created_index.sql` | Indeks `(status, created_at DESC, id DESC)` menggantikan `idx_jobs_status`. Diukur: p95 daftar riwayat berfilter status pada 10.000 job turun dari 38 ms menjadi 1,7 ms |
+
+`TestMigrateDariSkemaVersi1` membangun database lewat `goose UpTo(1)`, mengisinya dengan SQL mentah, lalu menjalankan `Migrate` penuh dan memeriksa data tetap utuh. `TestRiwayatBerfilterStatusMemakaiIndeks` memeriksa `EXPLAIN QUERY PLAN` supaya regresi indeks tertangkap walau tidak terlihat pada database kecil.

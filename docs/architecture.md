@@ -336,9 +336,12 @@ Satu goroutine dengan tick per jam:
 | Tugas | Kebijakan |
 | --- | --- |
 | Pangkas `job_events` | Buang event job terminal yang lebih tua dari 30 hari |
-| GC temp yatim | Hapus direktori temp tanpa job aktif yang berumur > 24 jam |
+| GC temp yatim | Hapus temp berumur > 24 jam yang bukan milik job aktif; direktori kerja bernama id job dan berkas commit `<id>-*` dikenali sebagai milik job |
 | Kedaluwarsa cache metadata | Buang baris `media_items` yang `fetched_at`-nya lewat TTL dan tidak dirujuk job |
-| Rotasi log | Harian, retensi 7 hari |
+| Rekonsiliasi berkas | Samakan `files.missing` dengan disk, dua arah |
+| Rotasi log | Dikerjakan writer log sendiri saat hari berganti (`logs/app.log` → `app-YYYY-MM-DD.log`), retensi 7 hari |
+
+Putaran pertama berjalan saat startup sebelum scheduler dan listener, sehingga langkah 2 dan 3 crash recovery di atas dikerjakan oleh housekeeper yang sama.
 | Cek update tool | Mingguan, opsional, tidak pernah otomatis memasang |
 
 ## 10. Invarian yang tidak boleh dilanggar

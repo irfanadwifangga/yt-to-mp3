@@ -367,6 +367,33 @@ func (r *JobRepository) SweepNonTerminal(ctx context.Context) (int, error) {
 	return affected, err
 }
 
+// PruneEvents membuang event milik job terminal yang selesai lebih lama dari
+// olderThan.
+//
+// Event hanya dipakai untuk melanjutkan stream SSE lewat Last-Event-ID, dan
+// job yang sudah lama selesai tidak punya stream untuk dilanjutkan. Job dan
+// berkasnya tetap ada; yang dibuang hanya jejak transisinya. Lihat
+// data-model "Retensi".
+func (r *JobRepository) PruneEvents(ctx context.Context, olderThan time.Duration) (int, error) {
+	cutoff := formatTime(r.now().Add(-olderThan))
+
+	res, err := r.db.Write().ExecContext(ctx, `
+		DELETE FROM job_events
+		WHERE job_id IN (
+			SELECT id FROM jobs
+			WHERE status IN ('completed','failed','cancelled')
+			  AND finished_at IS NOT NULL
+			  AND finished_at < ?)`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("pangkas event: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("hitung event terpangkas: %w", err)
+	}
+	return int(n), nil
+}
+
 // Delete menghapus job beserta baris turunannya.
 func (r *JobRepository) Delete(ctx context.Context, id string) error {
 	res, err := r.db.Write().ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, id)

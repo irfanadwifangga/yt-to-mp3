@@ -107,6 +107,16 @@ export const api = {
     request<void>(`/jobs/${id}?delete_file=false`, { method: "DELETE" }),
   revealFile: (id: string) =>
     request<void>(`/files/${id}/reveal`, { method: "POST" }),
+  /**
+   * Membuka dialog pemilih folder native di komputer pengguna. Browser tidak
+   * pernah memberi tahu halaman path absolut sebuah folder, jadi dialognya
+   * dibuka oleh server lokal. Respons tertahan sampai dialog ditutup.
+   */
+  pickFolder: (title: string, start: string) =>
+    request<{ path?: string; cancelled: boolean }>("/dialogs/folder", {
+      method: "POST",
+      body: JSON.stringify({ title, start }),
+    }),
   metadata: (url: string) =>
     request<Metadata>("/metadata", {
       method: "POST",
@@ -207,7 +217,7 @@ export async function downloadFile(fileId: string, filename: string): Promise<vo
 export interface Setting {
   key: string;
   value: string;
-  kind: "string" | "int" | "bool" | "enum";
+  kind: "string" | "int" | "bool" | "enum" | "path";
   options?: string[];
   requires_restart: boolean;
 }

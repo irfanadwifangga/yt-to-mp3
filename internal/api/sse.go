@@ -119,6 +119,17 @@ func (h *Hub) Count(jobID string) int {
 	return len(h.subs[jobID])
 }
 
+// Streams mengembalikan jumlah seluruh koneksi SSE yang sedang terbuka.
+func (h *Hub) Streams() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var n int
+	for _, set := range h.subs {
+		n += len(set)
+	}
+	return n
+}
+
 // Subscribe mendaftarkan pelanggan baru dan mengalirkan event yang terlewat.
 //
 // Urutan operasinya penting dan sengaja tidak intuitif: listener live

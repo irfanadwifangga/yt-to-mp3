@@ -16,6 +16,12 @@ import (
 //go:embed manifest.json
 var manifestRaw []byte
 
+// manifestSchema adalah versi skema manifest yang dipahami kode ini.
+//
+// Skema 2 memperkenalkan beberapa unduhan per build: sebagian sumber
+// menerbitkan ffmpeg dan ffprobe sebagai arsip terpisah.
+const manifestSchema = 2
+
 // Archive adalah bentuk berkas unduhan.
 type Archive string
 
@@ -25,22 +31,35 @@ const (
 	ArchiveTarXZ Archive = "tar.xz"
 )
 
-// Build adalah satu entri unduhan untuk satu platform.
-type Build struct {
+// Download adalah satu berkas yang diunduh dan diverifikasi.
+type Download struct {
 	URL     string   `json:"url"`
 	SHA256  string   `json:"sha256"`
 	Archive Archive  `json:"archive"`
 	Extract []string `json:"extract"`
-	Note    string   `json:"note,omitempty"`
+}
+
+// Build adalah seluruh unduhan untuk satu tool pada satu platform.
+type Build struct {
+	Downloads []Download `json:"downloads"`
+	Note      string     `json:"note,omitempty"`
 }
 
 // Installable melaporkan apakah entri ini siap dipasang.
 //
-// Checksum kosong berarti belum di-pin, dan instalasi ditolak. Lebih baik
+// Satu unduhan saja tanpa checksum membuat seluruh build ditolak. Lebih baik
 // fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa
 // verifikasi. Lihat ADR-033.
 func (b Build) Installable() bool {
-	return b.URL != "" && b.SHA256 != "" && len(b.Extract) > 0
+	if len(b.Downloads) == 0 {
+		return false
+	}
+	for _, d := range b.Downloads {
+		if d.URL == "" || d.SHA256 == "" || len(d.Extract) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // Tool adalah satu perkakas beserta seluruh buildnya.
@@ -68,7 +87,7 @@ func LoadManifest() (Manifest, error) {
 	if err := json.Unmarshal(manifestRaw, &m); err != nil {
 		return Manifest{}, fmt.Errorf("parse manifest: %w", err)
 	}
-	if m.Schema != 1 {
+	if m.Schema != manifestSchema {
 		return Manifest{}, fmt.Errorf("skema manifest %d tidak didukung", m.Schema)
 	}
 	if len(m.Tools) == 0 {

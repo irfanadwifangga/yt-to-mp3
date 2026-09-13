@@ -37,7 +37,6 @@ type healthResponse struct {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	// Antrean masih nol sampai job engine hadir pada tahap 4 roadmap.
 	writeJSON(w, http.StatusOK, healthResponse{
 		App:           version.AppName,
 		Version:       version.Version,
@@ -45,7 +44,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Status:        "ok",
 		UptimeSeconds: int64(time.Since(s.startedAt).Seconds()),
 		SPABuilt:      s.spaBuilt,
-		OutputDir:     s.cfg.OutputDir,
+		OutputDir:     s.currentOutputDir(),
 		Tools:         s.tools.StatusAll(r.Context()),
 		Queue:         s.jobs.Queue(r.Context()),
 	})

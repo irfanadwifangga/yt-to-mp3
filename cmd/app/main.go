@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -28,12 +29,16 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/tools"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ytdlp"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/instance"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/logging"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/version"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/worker"
 	"github.com/irfanadwifangga/yt-to-mp3/web"
 )
 
 const shutdownGrace = 10 * time.Second
+
+// logRetentionDays adalah jumlah arsip log harian yang disimpan.
+const logRetentionDays = 7
 
 func main() {
 	if err := run(); err != nil {
@@ -66,7 +71,13 @@ func run() error {
 		return fmt.Errorf("muat konfigurasi: %w", err)
 	}
 
-	log := newLogger(cfg.LogLevel)
+	// Tingkat log dipegang LevelVar supaya bisa diganti selagi berjalan,
+	// termasuk setelah setelan tersimpan dibaca dari database.
+	var logLevel slog.LevelVar
+	if err := applyLogLevel(&logLevel, cfg.LogLevel); err != nil {
+		logLevel.Set(slog.LevelInfo)
+	}
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: &logLevel}))
 
 	// Single instance: bila instance lama masih menjawab, cukup buka
 	// browsernya dan keluar. Lihat ADR-022.
@@ -78,6 +89,18 @@ func run() error {
 			}
 		}
 		return nil
+	}
+
+	// Berkas log baru dibuka setelah dipastikan tidak ada instance lain.
+	// Instance kedua hanya hidup sekejap, dan membiarkannya ikut merotasi
+	// app.log milik instance pertama tidak memberi apa pun.
+	logFile, err := logging.OpenDaily(cfg.Paths.LogDir, logRetentionDays, nil)
+	if err != nil {
+		log.Warn("berkas log tidak dapat dibuka, log hanya ke terminal", "error", err)
+	} else {
+		defer func() { _ = logFile.Close() }()
+		log = slog.New(slog.NewTextHandler(logging.Tee(logFile, os.Stderr),
+			&slog.HandlerOptions{Level: &logLevel}))
 	}
 
 	token, err := api.NewToken()
@@ -138,20 +161,37 @@ func run() error {
 	mediaCache := db.NewMediaRepository(database)
 	resolver := ytdlp.NewResolver(toolManager, log)
 
-	hub := api.NewHub(jobs, log)
-
-	store, err := fs.NewStore(cfg.OutputDir, cfg.Paths.TempDir)
+	// Setelan dimuat sebelum komponen yang membacanya disusun. Sebelumnya
+	// store, scheduler, dan logger dibentuk dari config.json lebih dulu,
+	// sehingga nilai yang disimpan pengguna lewat UI tidak pernah berlaku,
+	// bahkan setelah restart.
+	settings := application.NewSettingsService(
+		db.NewSettingsRepository(database), presets, settingDefaults(cfg))
+	if err := settings.Load(ctx); err != nil {
+		return fmt.Errorf("muat setelan: %w", err)
+	}
+	effective, err := settings.Effective(ctx)
 	if err != nil {
-		return fmt.Errorf("siapkan direktori keluaran: %w", err)
+		return fmt.Errorf("baca setelan: %w", err)
 	}
 
-	// Sisa berkas sementara dari sesi yang mati mendadak dibersihkan sebelum
-	// ada job baru yang menambahinya.
-	if removed, err := store.GCTemp(24*time.Hour, nil); err != nil {
-		log.Warn("bersihkan temp lama gagal", "error", err)
-	} else if removed > 0 {
-		log.Info("sisa berkas sementara dibersihkan", "jumlah", removed)
+	if err := applyLogLevel(&logLevel, effective[application.KeyLogLevel]); err != nil {
+		log.Warn("tingkat log tersimpan tidak dikenal, memakai bawaan", "error", err)
 	}
+
+	store, err := openStore(effective[application.KeyOutputDir], cfg, log)
+	if err != nil {
+		return err
+	}
+
+	// Direktori keluaran dan tingkat log diterapkan seketika saat diubah.
+	settings.SetApplier(application.KeyOutputDir, store.SetOutputDir)
+	settings.SetApplier(application.KeyLogLevel, func(v string) error {
+		return applyLogLevel(&logLevel, v)
+	})
+
+	hub := api.NewHub(jobs, log)
+	files := db.NewFileRepository(database)
 
 	pipeline := application.NewPipeline(application.PipelineDeps{
 		Repo:       jobs,
@@ -168,21 +208,31 @@ func run() error {
 		Log:        log,
 	})
 
-	scheduler := worker.New(jobs, pipeline, hub, cfg.MaxConcurrentJobs, log)
-
-	// Setelan dimuat setelah database terbuka, karena override tersimpan di
-	// sana sementara nilai bawaannya berasal dari config.json dan env.
-	settings := application.NewSettingsService(
-		db.NewSettingsRepository(database), presets, settingDefaults(cfg))
-	if err := settings.Load(ctx); err != nil {
-		return fmt.Errorf("muat setelan: %w", err)
+	concurrency, err := strconv.Atoi(effective[application.KeyMaxConcurrent])
+	if err != nil {
+		concurrency = cfg.MaxConcurrentJobs
 	}
+	scheduler := worker.New(jobs, pipeline, hub, concurrency, log)
 
 	jobService := application.NewJobService(
 		jobs, presets, mediaCache, resolver, hub, scheduler.Notify(),
 		settings.Live, log)
 
+	// Putaran pertama berjalan sebelum scheduler dan listener: sisa temp dari
+	// sesi yang mati mendadak dibersihkan, dan berkas yang dihapus selagi
+	// aplikasi tertutup sudah ditandai sebelum riwayat pertama kali dibaca.
+	housekeeper := application.NewHousekeeper(application.HousekeepingDeps{
+		Events:     jobs,
+		Media:      mediaCache,
+		Files:      files,
+		Temp:       store,
+		ActiveJobs: scheduler.RunningIDs,
+		Log:        log,
+	})
+	housekeeper.RunOnce(ctx)
+
 	go scheduler.Run(ctx)
+	go housekeeper.Run(ctx)
 
 	srv := api.New(api.Options{
 		Config:    cfg,
@@ -198,10 +248,29 @@ func run() error {
 		Jobs:      jobService,
 		Canceller: scheduler,
 		Hub:       hub,
-		Files:     db.NewFileRepository(database),
+		Files:     files,
 		Settings:  settings,
 		Revealer:  revealAdapter{},
+		Picker:    pickerAdapter{},
+		OutputDir: store.OutputDir,
 	})
+
+	idle := application.NewIdleMonitor(application.IdleDeps{
+		LastActivity: srv.LastActivity,
+		OpenStreams:  hub.Streams,
+		Jobs:         jobs,
+		Timeout: func() time.Duration {
+			return time.Duration(settings.Live().IdleShutdownMinutes) * time.Minute
+		},
+		Log: log,
+	})
+	// Mode dev menjalankan backend tanpa tab yang terus polling selama
+	// frontend dikembangkan; berhenti sendiri di sana hanya mengganggu.
+	if *devMode {
+		log.Info("idle shutdown dimatikan pada mode dev")
+	} else {
+		go idle.Run(ctx)
+	}
 
 	info := instance.Info{
 		PID:       os.Getpid(),
@@ -236,9 +305,15 @@ func run() error {
 
 	log.Info("siap",
 		"version", version.Version,
-		"url", info.URL(),
+		"port", actualPort,
 		"data_dir", cfg.Paths.DataDir,
-		"output_dir", cfg.OutputDir)
+		"output_dir", store.OutputDir(),
+		"job_paralel", concurrency)
+
+	// URL bertoken hanya dicetak ke terminal, tidak pernah ke berkas log:
+	// berkas log lazim dilampirkan pada laporan bug, sedangkan token itu
+	// memberi akses penuh ke API selama proses hidup.
+	fmt.Fprintln(os.Stderr, "buka:", info.URL())
 
 	if !*noBrowser {
 		if err := browser.Open(info.URL()); err != nil {
@@ -255,6 +330,7 @@ func run() error {
 		log.Info("sinyal diterima, mematikan")
 	case <-srv.ShutdownRequested():
 		log.Info("permintaan shutdown dari UI")
+	case <-idle.Done():
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
@@ -266,11 +342,36 @@ func run() error {
 	return nil
 }
 
-// newLogger menyiapkan structured logging ke stderr.
-func newLogger(level string) *slog.Logger {
-	var lv slog.Level
-	if err := lv.UnmarshalText([]byte(level)); err != nil {
-		lv = slog.LevelInfo
+// openStore memakai direktori keluaran tersimpan, dengan bawaan config
+// sebagai cadangan.
+//
+// Folder yang dipilih pengguna bisa saja hilang di antara dua sesi, misalnya
+// drive eksternal yang dilepas. Aplikasi yang menolak start karena itu tidak
+// memberi pengguna jalan untuk memilih folder baru.
+func openStore(dir string, cfg config.Config, log *slog.Logger) (*fs.Store, error) {
+	store, err := fs.NewStore(dir, cfg.Paths.TempDir)
+	if err == nil {
+		return store, nil
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lv}))
+	if dir == cfg.OutputDir {
+		return nil, fmt.Errorf("siapkan direktori keluaran: %w", err)
+	}
+
+	log.Warn("direktori keluaran tersimpan tidak dapat dipakai, memakai bawaan",
+		"tersimpan", dir, "bawaan", cfg.OutputDir, "error", err)
+	store, err = fs.NewStore(cfg.OutputDir, cfg.Paths.TempDir)
+	if err != nil {
+		return nil, fmt.Errorf("siapkan direktori keluaran: %w", err)
+	}
+	return store, nil
+}
+
+// applyLogLevel memasang tingkat log dari teks seperti "info" atau "debug".
+func applyLogLevel(lv *slog.LevelVar, value string) error {
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(value)); err != nil {
+		return fmt.Errorf("tingkat log %q tidak dikenal", value)
+	}
+	lv.Set(level)
+	return nil
 }

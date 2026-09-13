@@ -36,8 +36,14 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
+		// img-src membuka satu host saja, yaitu CDN sampul YouTube. Sampul itu
+		// gambar yang sama dengan yang tersemat di MP3 hasil, dan mesin ini
+		// memang sudah menghubungi YouTube lewat yt-dlp, jadi tidak ada pihak
+		// baru yang mengetahui aktivitas pengguna. Referrer-Policy di atas
+		// memastikan alamat aplikasi tidak ikut terkirim.
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
+			"default-src 'self'; img-src 'self' data: https://i.ytimg.com; "+
+				"style-src 'self' 'unsafe-inline'; font-src 'self'; "+
 				"connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})

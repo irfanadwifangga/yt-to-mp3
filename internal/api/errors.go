@@ -41,6 +41,7 @@ var statusByCode = map[domain.ErrorCode]int{
 	domain.CodeDuplicateActive:   http.StatusConflict,
 	domain.CodeTimeout:           http.StatusGatewayTimeout,
 	domain.CodeDiskFull:          http.StatusInsufficientStorage,
+	domain.CodeDialogUnavailable: http.StatusServiceUnavailable,
 }
 
 // errorBody adalah amplop error yang dipakai seluruh endpoint.

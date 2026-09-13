@@ -76,9 +76,18 @@ func (r *FileRepository) Get(ctx context.Context, id string) (*domain.File, erro
 // Barisnya sengaja dipertahankan: history tetap menunjukkan bahwa konversi
 // pernah berhasil, hanya berkasnya yang hilang. Lihat data-model "Retensi".
 func (r *FileRepository) MarkMissing(ctx context.Context, id string) error {
-	_, err := r.db.Write().ExecContext(ctx, `UPDATE files SET missing = 1 WHERE id = ?`, id)
+	return r.SetMissing(ctx, id, true)
+}
+
+// SetMissing menyetel penanda keberadaan berkas.
+//
+// Penanda bisa dibalik: berkas di drive eksternal yang dicabut lalu dicolok
+// kembali harus tersedia lagi di riwayat.
+func (r *FileRepository) SetMissing(ctx context.Context, id string, missing bool) error {
+	_, err := r.db.Write().ExecContext(ctx,
+		`UPDATE files SET missing = ? WHERE id = ?`, boolToInt(missing), id)
 	if err != nil {
-		return fmt.Errorf("tandai berkas hilang: %w", err)
+		return fmt.Errorf("setel penanda berkas hilang: %w", err)
 	}
 	return nil
 }

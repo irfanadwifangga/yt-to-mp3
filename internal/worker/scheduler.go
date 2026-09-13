@@ -267,6 +267,17 @@ func (s *Scheduler) Running() int {
 	return len(s.running)
 }
 
+// RunningIDs mengembalikan id job yang sedang berjalan.
+func (s *Scheduler) RunningIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, 0, len(s.running))
+	for id := range s.running {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // shutdown membatalkan seluruh job aktif dan menunggu mereka berhenti.
 func (s *Scheduler) shutdown() {
 	s.mu.Lock()

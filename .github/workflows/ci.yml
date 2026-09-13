@@ -50,10 +50,45 @@ jobs:
           path: web/dist
       - name: Periksa format
         run: |
-          out=$(gofmt -l ./cmd ./internal ./web)
+          out=$(gofmt -l ./cmd ./internal ./scripts ./web)
           if [ -n "$out" ]; then echo "belum diformat:"; echo "$out"; exit 1; fi
       - run: go vet ./...
       - run: go test -race ./...
+      # Test integrasi memakai FFmpeg sungguhan dengan fixture sintetis.
+      # YT2MP3_REQUIRE_TOOLS membuat test gagal alih-alih dilewati bila
+      # ffmpeg tidak ditemukan, supaya CI tidak hijau tanpa menguji apa pun.
+      - name: Pasang FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Test integrasi FFmpeg
+        env:
+          YT2MP3_REQUIRE_TOOLS: "1"
+        run: go test -tags integration -run Integrasi -v ./internal/infrastructure/ffmpeg/
+
+  test-os:
+    name: Test Go ${{ matrix.os }}
+    needs: web
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux sudah diuji dengan -race di job check. Windows dan macOS
+        # diuji terpisah karena terminasi process tree dan rename atomik
+        # punya implementasi berbeda per OS; acceptance criteria menuntut
+        # cancel terbukti membersihkan seluruh tree di Windows.
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: web/dist
+      # Tanpa -race: detektor race butuh cgo, sedangkan build proyek ini
+      # dijaga CGO_ENABLED=0.
+      - run: go test ./...
 
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}

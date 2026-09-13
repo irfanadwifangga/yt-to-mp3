@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, isTerminal, type Health, type Job, type Metadata, type Preset } from "./api";
-import { locale, setLocale, t, type Locale } from "./i18n";
-import { History, Queue } from "./Jobs";
-import { formatDuration, messageFor } from "./messages";
-import { Settings } from "./Settings";
+import { api, isTerminal, type Health, type Job, type Preset } from "./api";
+import { Capture } from "./Capture";
+import { GearIcon } from "./icons";
+import { t } from "./i18n";
+import { ActiveList, FinishedList } from "./Jobs";
+import { messageFor } from "./messages";
+import { SettingsDialog, type SettingsSection } from "./SettingsDialog";
 
 /** Antrean disegarkan cukup sering untuk terasa hidup, tetapi progress
  *  halus datang lewat SSE sehingga polling tidak perlu rapat. */
@@ -13,8 +15,10 @@ export function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [defaultPreset, setDefaultPreset] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [quitting, setQuitting] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -27,6 +31,18 @@ export function App() {
     }
   }, []);
 
+  // Preset adalah product contract yang hidup di database, dan preset bawaan
+  // bisa diganti pengguna; keduanya dibaca dari server, bukan di-hardcode.
+  const loadPresets = useCallback(async () => {
+    try {
+      const [p, s] = await Promise.all([api.presets(), api.settings()]);
+      setPresets(p.presets);
+      setDefaultPreset(s.settings.find((x) => x.key === "default_preset_id")?.value ?? "");
+    } catch {
+      // Kartu tetap bisa dipakai dengan preset pertama.
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), POLL_MS);
@@ -34,13 +50,28 @@ export function App() {
   }, [refresh]);
 
   useEffect(() => {
-    // Preset adalah product contract yang hidup di database; SPA tidak
-    // boleh meng-hardcode-nya.
-    api
-      .presets()
-      .then((res) => setPresets(res.presets))
-      .catch(() => setPresets([]));
+    void loadPresets();
+  }, [loadPresets]);
+
+  // Ctrl+, membuka setelan, mengikuti kebiasaan aplikasi desktop.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsSection("storage");
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  const active = jobs.filter((j) => !isTerminal(j.status));
+  const finished = jobs.filter((j) => isTerminal(j.status));
+
+  // Jumlah job berjalan tampil di judul tab, terlihat walau tab di belakang.
+  useEffect(() => {
+    document.title = active.length > 0 ? `(${active.length}) yt-to-mp3` : "yt-to-mp3";
+  }, [active.length]);
 
   async function handleQuit() {
     setQuitting(true);
@@ -53,212 +84,111 @@ export function App() {
 
   if (quitting) {
     return (
-      <main className="shell">
+      <main className="stopped">
+        <span className="brand-mark" aria-hidden="true" />
         <h1>{t("app.stopped.title")}</h1>
-        <p className="muted">{t("app.stopped.hint")}</p>
+        <p>{t("app.stopped.hint")}</p>
       </main>
     );
   }
 
-  const ready = health?.tools["yt-dlp"]?.available ?? false;
-  const active = jobs.filter((j) => !isTerminal(j.status));
-  const finished = jobs.filter((j) => isTerminal(j.status));
+  const tools = health ? Object.values(health.tools) : [];
+  const toolsReady = tools.length > 0 && tools.every((tool) => tool.available);
+  const canAnalyze = health?.tools["yt-dlp"]?.available ?? false;
 
   return (
-    <main className="shell">
-      <header>
-        <h1>yt-to-mp3</h1>
-        {health && <span className="badge">v{health.version}</span>}
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          yt-to-mp3
+        </div>
+
+        <div className="topbar-actions">
+          {health && (
+            <button
+              type="button"
+              className={`chip ${toolsReady ? "ok" : "warn"}`}
+              onClick={() => setSettingsSection("tools")}>
+              <span className={toolsReady ? "dot ok" : "dot warn"} />
+              {toolsReady ? t("app.toolsReady") : t("app.toolsMissing")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setSettingsSection("storage")}
+            aria-keyshortcuts="Control+Comma">
+            <GearIcon />
+            {t("app.settings")}
+          </button>
+          <button type="button" className="btn ghost" onClick={() => void handleQuit()}>
+            {t("app.quit")}
+          </button>
+        </div>
       </header>
 
-      {error && <p className="error">{error}</p>}
+      <main className="content">
+        {error && (
+          <p className="alert" role="alert">
+            {error}
+          </p>
+        )}
 
-      <Analyze ready={ready} presets={presets} onQueued={refresh} />
-      <Queue jobs={active} onChanged={refresh} />
-      <History jobs={finished} onChanged={refresh} />
-      <Tools health={health} onChanged={refresh} />
-      <Settings />
+        {health && !toolsReady && (
+          <div className="setup">
+            <div>
+              <p className="setup-title">{t("app.setupTitle")}</p>
+              <p className="hint">{t("app.setupHint")}</p>
+            </div>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setSettingsSection("tools")}>
+              {t("app.setupAction")}
+            </button>
+          </div>
+        )}
+
+        <Capture
+          ready={canAnalyze}
+          presets={presets}
+          defaultPreset={defaultPreset}
+          onQueued={refresh}
+        />
+        <ActiveList jobs={active} onChanged={refresh} />
+        <FinishedList jobs={finished} onChanged={refresh} />
+      </main>
 
       {health && (
-        <dl className="grid">
-          <dt>{t("app.output")}</dt>
-          <dd className="path">{health.output_dir}</dd>
-          <dt>{t("app.queue")}</dt>
-          <dd>
+        <footer className="statusbar">
+          <span className="statusbar-label">{t("app.savedTo")}</span>
+          <code className="path" title={health.output_dir}>
+            {health.output_dir}
+          </code>
+          <button type="button" className="link" onClick={() => setSettingsSection("storage")}>
+            {t("app.change")}
+          </button>
+          <span className="statusbar-queue mono">
             {t("app.queueSummary", {
               active: health.queue.active,
               queued: health.queue.queued,
-              capacity: health.queue.capacity,
+              capacity: health.queue.capacity
             })}
-          </dd>
-        </dl>
+          </span>
+        </footer>
       )}
 
-      <footer className="footer">
-        <button type="button" onClick={() => void handleQuit()}>
-          {t("app.quit")}
-        </button>
-        <label className="lang">
-          <span className="muted small">{t("app.language")}</span>
-          {/* Nama bahasa sengaja ditulis dalam bahasanya sendiri, supaya tetap
-              terbaca oleh orang yang tidak memahami bahasa yang sedang aktif. */}
-          <select
-            value={locale}
-            onChange={(e) => setLocale(e.target.value as Locale)}
-            aria-label={t("app.language")}
-          >
-            <option value="id">Bahasa Indonesia</option>
-            <option value="en">English</option>
-          </select>
-        </label>
-      </footer>
-    </main>
-  );
-}
-
-interface AnalyzeProps {
-  ready: boolean;
-  presets: Preset[];
-  onQueued: () => void;
-}
-
-function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
-  const [url, setUrl] = useState("");
-  const [presetId, setPresetId] = useState("");
-  const [result, setResult] = useState<Metadata | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"analyze" | "queue" | null>(null);
-
-  const selected = presetId || presets.find((p) => p.id === "mp3_standard")?.id || presets[0]?.id;
-
-  async function handleAnalyze(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy("analyze");
-    setError(null);
-    setResult(null);
-    try {
-      setResult(await api.metadata(url));
-    } catch (err) {
-      setError(messageFor(err, t("analyze.failed")));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function handleConvert() {
-    if (!selected) return;
-    setBusy("queue");
-    setError(null);
-    try {
-      await api.createJob(url, selected);
-      setResult(null);
-      setUrl("");
-      onQueued();
-    } catch (err) {
-      setError(messageFor(err, t("analyze.queueFailed")));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <section>
-      <h2>{t("analyze.title")}</h2>
-      <form onSubmit={(e) => void handleAnalyze(e)} className="row">
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://www.youtube.com/watch?v=..."
-          required
-        />
-        <button type="submit" disabled={busy !== null || !ready}>
-          {busy === "analyze" ? t("analyze.busy") : t("analyze.submit")}
-        </button>
-      </form>
-
-      {!ready && <p className="muted">{t("analyze.needTool")}</p>}
-      {error && <p className="error">{error}</p>}
-
-      {result && (
-        <>
-          <dl className="grid">
-            <dt>{t("analyze.field.title")}</dt>
-            <dd>{result.title}</dd>
-            <dt>{t("analyze.field.channel")}</dt>
-            <dd>{result.uploader || t("analyze.unknown")}</dd>
-            <dt>{t("analyze.field.duration")}</dt>
-            <dd>{formatDuration(result.duration_ms)}</dd>
-            <dt>{t("analyze.field.codec")}</dt>
-            <dd>
-              {result.source_codec || t("analyze.unknown")}
-              {result.sample_rate > 0 && ` @ ${result.sample_rate} Hz`}
-            </dd>
-          </dl>
-
-          <div className="row">
-            <select
-              value={selected ?? ""}
-              onChange={(e) => setPresetId(e.target.value)}
-              aria-label={t("analyze.preset")}
-            >
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                  {p.bitrate_kbps ? ` — ${p.bitrate_kbps} kbps` : " — VBR"}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={() => void handleConvert()} disabled={busy !== null}>
-              {busy === "queue" ? t("analyze.queueing") : t("analyze.convert")}
-            </button>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-function Tools({ health, onChanged }: { health: Health | null; onChanged: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function install(name: string) {
-    setBusy(name);
-    setError(null);
-    try {
-      await api.installTool(name);
-      onChanged();
-    } catch (err) {
-      setError(messageFor(err, t("tools.installFailed")));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  if (!health) return null;
-
-  return (
-    <section>
-      <h2>{t("tools.title")}</h2>
-      {error && <p className="error">{error}</p>}
-      <ul className="tools">
-        {Object.entries(health.tools).map(([name, tool]) => (
-          <li key={name}>
-            <span className={tool.available ? "dot ok" : "dot off"} />
-            <span>{name}</span>
-            <span className="muted">
-              {tool.available ? tool.version || t("tools.installed") : t("tools.unavailable")}
-            </span>
-            {/* ffprobe ikut terpasang bersama ffmpeg dari arsip yang sama. */}
-            {!tool.available && name !== "ffprobe" && (
-              <button type="button" onClick={() => void install(name)} disabled={busy !== null}>
-                {busy === name ? t("tools.installing") : t("tools.install")}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
+      <SettingsDialog
+        section={settingsSection}
+        health={health}
+        presets={presets}
+        onClose={() => setSettingsSection(null)}
+        onChanged={() => {
+          void refresh();
+          void loadPresets();
+        }}
+      />
+    </div>
   );
 }

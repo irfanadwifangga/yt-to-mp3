@@ -85,17 +85,29 @@ type Verifier interface {
 	Verify(ctx context.Context, path string, expected time.Duration) error
 }
 
-// OutputStore mengelola direktori keluaran dan berkas sementara.
+// OutputStore mengelola berkas sementara dan memberi akses ke direktori
+// keluaran.
 //
 // Antarmuka ini hanya memakai tipe dasar supaya layer application tidak
 // perlu mengenal paket filesystem mana pun.
 type OutputStore interface {
 	TempDirFor(jobID string) (string, error)
 	RemoveTempDir(jobID string) error
+
+	// Output mengembalikan snapshot direktori keluaran saat ini. Direktori
+	// itu dapat diganti pengguna kapan saja, jadi sebuah job wajib mengambil
+	// snapshot sekali di awal dan memakainya sampai commit.
+	Output() OutputTarget
+}
+
+// OutputTarget adalah satu direktori keluaran yang dipakai sebuah job dari
+// awal sampai commit.
+type OutputTarget interface {
+	Dir() string
 	CommitTempFile(jobID, ext string) (string, error)
 	ReservePath(filename string) (path, name string, release func(), err error)
 	CommitPath(tmpPath, finalPath string) error
-	FreeOutputSpace() (uint64, error)
+	FreeSpace() (uint64, error)
 }
 
 // FilenameBuilder menyusun nama berkas keluaran.
@@ -171,6 +183,11 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 		}
 	}()
 
+	// Satu snapshot untuk seluruh job: reservasi nama, berkas sementara, dan
+	// commit harus berada di direktori yang sama walau pengguna mengganti
+	// folder keluaran di tengah jalan.
+	out := p.store.Output()
+
 	preset, err := p.presets.Get(ctx, job.PresetID)
 	if err != nil {
 		return domain.NewError(domain.CodeInternal, domain.ClassPermanent,
@@ -183,7 +200,7 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	}
 	p.setPhase(ctx, job.ID, pctResolved, phaseResolving)
 
-	if err := p.preflightDisk(media, preset); err != nil {
+	if err := p.preflightDisk(out, media, preset); err != nil {
 		return err
 	}
 
@@ -210,7 +227,7 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 
 	ext := "." + preset.Format
 	filename := p.naming.Build(job.FilenameMode, media, ext)
-	finalPath, finalName, release, err := p.store.ReservePath(filename)
+	finalPath, finalName, release, err := out.ReservePath(filename)
 	if err != nil {
 		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
 			"pesan nama berkas", err)
@@ -224,7 +241,7 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 		}
 	}()
 
-	outTmp, err := p.store.CommitTempFile(job.ID, ext)
+	outTmp, err := out.CommitTempFile(job.ID, ext)
 	if err != nil {
 		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
 			"siapkan berkas sementara", err)
@@ -269,7 +286,7 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 
 	// Commit terakhir: sebelum titik ini tidak ada apa pun di direktori
 	// keluaran selain penanda kosong.
-	if err := p.store.CommitPath(outTmp, finalPath); err != nil {
+	if err := out.CommitPath(outTmp, finalPath); err != nil {
 		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
 			"pindahkan hasil", err)
 	}
@@ -325,8 +342,8 @@ func (p *Pipeline) resolveMedia(ctx context.Context, job *domain.Job) (*domain.M
 //
 // Gagal di awal jauh lebih baik daripada gagal pada 95 persen setelah
 // menghabiskan bandwidth dan waktu pengguna.
-func (p *Pipeline) preflightDisk(media *domain.MediaInfo, preset *domain.Preset) error {
-	free, err := p.store.FreeOutputSpace()
+func (p *Pipeline) preflightDisk(out OutputTarget, media *domain.MediaInfo, preset *domain.Preset) error {
+	free, err := out.FreeSpace()
 	if err != nil {
 		p.log.Warn("baca ruang kosong gagal, preflight dilewati", "error", err)
 		return nil // jangan menggagalkan job hanya karena tidak bisa mengukur
