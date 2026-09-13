@@ -28,7 +28,7 @@ DEV_PORT := 8799
 
 .PHONY: help
 help: ## Tampilkan daftar target
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: install-web
@@ -95,3 +95,7 @@ tidy: ## Rapikan go.mod
 .PHONY: clean
 clean: ## Hapus artefak build
 	rm -rf bin coverage.out web/dist/assets web/dist/index.html
+
+.PHONY: check-i18n
+check-i18n: ## Pastikan setiap kode error dan kunci UI punya terjemahan id dan en
+	npm --prefix web run check:i18n

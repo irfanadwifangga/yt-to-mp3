@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, isTerminal, type Health, type Job, type Metadata, type Preset } from "./api";
-import { formatDuration, messageFor } from "./messages";
+import { locale, setLocale, t, type Locale } from "./i18n";
 import { History, Queue } from "./Jobs";
+import { formatDuration, messageFor } from "./messages";
 import { Settings } from "./Settings";
 
 /** Antrean disegarkan cukup sering untuk terasa hidup, tetapi progress
@@ -22,7 +23,7 @@ export function App() {
       setJobs(j.jobs);
       setError(null);
     } catch (err) {
-      setError(messageFor(err, "Gagal memuat status"));
+      setError(messageFor(err, t("app.loadFailed")));
     }
   }, []);
 
@@ -53,8 +54,8 @@ export function App() {
   if (quitting) {
     return (
       <main className="shell">
-        <h1>Aplikasi dihentikan</h1>
-        <p className="muted">Tab ini sudah boleh ditutup.</p>
+        <h1>{t("app.stopped.title")}</h1>
+        <p className="muted">{t("app.stopped.hint")}</p>
       </main>
     );
   }
@@ -80,20 +81,36 @@ export function App() {
 
       {health && (
         <dl className="grid">
-          <dt>Output</dt>
+          <dt>{t("app.output")}</dt>
           <dd className="path">{health.output_dir}</dd>
-          <dt>Antrean</dt>
+          <dt>{t("app.queue")}</dt>
           <dd>
-            {health.queue.active} aktif / {health.queue.queued} menunggu (kapasitas{" "}
-            {health.queue.capacity})
+            {t("app.queueSummary", {
+              active: health.queue.active,
+              queued: health.queue.queued,
+              capacity: health.queue.capacity,
+            })}
           </dd>
         </dl>
       )}
 
-      <footer>
+      <footer className="footer">
         <button type="button" onClick={() => void handleQuit()}>
-          Keluar
+          {t("app.quit")}
         </button>
+        <label className="lang">
+          <span className="muted small">{t("app.language")}</span>
+          {/* Nama bahasa sengaja ditulis dalam bahasanya sendiri, supaya tetap
+              terbaca oleh orang yang tidak memahami bahasa yang sedang aktif. */}
+          <select
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as Locale)}
+            aria-label={t("app.language")}
+          >
+            <option value="id">Bahasa Indonesia</option>
+            <option value="en">English</option>
+          </select>
+        </label>
       </footer>
     </main>
   );
@@ -110,19 +127,19 @@ function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
   const [presetId, setPresetId] = useState("");
   const [result, setResult] = useState<Metadata | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"analisis" | "antre" | null>(null);
+  const [busy, setBusy] = useState<"analyze" | "queue" | null>(null);
 
   const selected = presetId || presets.find((p) => p.id === "mp3_standard")?.id || presets[0]?.id;
 
   async function handleAnalyze(e: React.FormEvent) {
     e.preventDefault();
-    setBusy("analisis");
+    setBusy("analyze");
     setError(null);
     setResult(null);
     try {
       setResult(await api.metadata(url));
     } catch (err) {
-      setError(messageFor(err, "Analisis gagal"));
+      setError(messageFor(err, t("analyze.failed")));
     } finally {
       setBusy(null);
     }
@@ -130,7 +147,7 @@ function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
 
   async function handleConvert() {
     if (!selected) return;
-    setBusy("antre");
+    setBusy("queue");
     setError(null);
     try {
       await api.createJob(url, selected);
@@ -138,7 +155,7 @@ function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
       setUrl("");
       onQueued();
     } catch (err) {
-      setError(messageFor(err, "Tidak dapat mengantre"));
+      setError(messageFor(err, t("analyze.queueFailed")));
     } finally {
       setBusy(null);
     }
@@ -146,7 +163,7 @@ function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
 
   return (
     <section>
-      <h2>Analisis</h2>
+      <h2>{t("analyze.title")}</h2>
       <form onSubmit={(e) => void handleAnalyze(e)} className="row">
         <input
           type="url"
@@ -156,25 +173,25 @@ function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
           required
         />
         <button type="submit" disabled={busy !== null || !ready}>
-          {busy === "analisis" ? "Menganalisis..." : "Analisis"}
+          {busy === "analyze" ? t("analyze.busy") : t("analyze.submit")}
         </button>
       </form>
 
-      {!ready && <p className="muted">Pasang yt-dlp dulu untuk mengaktifkan analisis.</p>}
+      {!ready && <p className="muted">{t("analyze.needTool")}</p>}
       {error && <p className="error">{error}</p>}
 
       {result && (
         <>
           <dl className="grid">
-            <dt>Judul</dt>
+            <dt>{t("analyze.field.title")}</dt>
             <dd>{result.title}</dd>
-            <dt>Channel</dt>
-            <dd>{result.uploader || "tidak diketahui"}</dd>
-            <dt>Durasi</dt>
+            <dt>{t("analyze.field.channel")}</dt>
+            <dd>{result.uploader || t("analyze.unknown")}</dd>
+            <dt>{t("analyze.field.duration")}</dt>
             <dd>{formatDuration(result.duration_ms)}</dd>
-            <dt>Codec sumber</dt>
+            <dt>{t("analyze.field.codec")}</dt>
             <dd>
-              {result.source_codec || "tidak diketahui"}
+              {result.source_codec || t("analyze.unknown")}
               {result.sample_rate > 0 && ` @ ${result.sample_rate} Hz`}
             </dd>
           </dl>
@@ -183,7 +200,7 @@ function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
             <select
               value={selected ?? ""}
               onChange={(e) => setPresetId(e.target.value)}
-              aria-label="Preset"
+              aria-label={t("analyze.preset")}
             >
               {presets.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -193,7 +210,7 @@ function Analyze({ ready, presets, onQueued }: AnalyzeProps) {
               ))}
             </select>
             <button type="button" onClick={() => void handleConvert()} disabled={busy !== null}>
-              {busy === "antre" ? "Mengantre..." : "Konversi"}
+              {busy === "queue" ? t("analyze.queueing") : t("analyze.convert")}
             </button>
           </div>
         </>
@@ -213,7 +230,7 @@ function Tools({ health, onChanged }: { health: Health | null; onChanged: () => 
       await api.installTool(name);
       onChanged();
     } catch (err) {
-      setError(messageFor(err, "Instalasi gagal"));
+      setError(messageFor(err, t("tools.installFailed")));
     } finally {
       setBusy(null);
     }
@@ -223,7 +240,7 @@ function Tools({ health, onChanged }: { health: Health | null; onChanged: () => 
 
   return (
     <section>
-      <h2>Tool</h2>
+      <h2>{t("tools.title")}</h2>
       {error && <p className="error">{error}</p>}
       <ul className="tools">
         {Object.entries(health.tools).map(([name, tool]) => (
@@ -231,12 +248,12 @@ function Tools({ health, onChanged }: { health: Health | null; onChanged: () => 
             <span className={tool.available ? "dot ok" : "dot off"} />
             <span>{name}</span>
             <span className="muted">
-              {tool.available ? tool.version || "terpasang" : "belum tersedia"}
+              {tool.available ? tool.version || t("tools.installed") : t("tools.unavailable")}
             </span>
             {/* ffprobe ikut terpasang bersama ffmpeg dari arsip yang sama. */}
             {!tool.available && name !== "ffprobe" && (
               <button type="button" onClick={() => void install(name)} disabled={busy !== null}>
-                {busy === name ? "Memasang..." : "Pasang"}
+                {busy === name ? t("tools.installing") : t("tools.install")}
               </button>
             )}
           </li>

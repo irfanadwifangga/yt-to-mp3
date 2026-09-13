@@ -323,3 +323,17 @@ dd.invalid input,
 dd.invalid select {
   border-color: var(--danger);
 }
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lang {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

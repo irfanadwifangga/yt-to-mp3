@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, downloadFile, isTerminal, type Job } from "./api";
+import { t } from "./i18n";
 import {
   formatTime,
   messageFor,
@@ -19,15 +20,15 @@ export function Queue({ jobs, onChanged }: Props) {
   if (jobs.length === 0) {
     return (
       <section>
-        <h2>Antrean</h2>
-        <p className="muted">Tidak ada job berjalan.</p>
+        <h2>{t("queue.title")}</h2>
+        <p className="muted">{t("queue.empty")}</p>
       </section>
     );
   }
 
   return (
     <section>
-      <h2>Antrean</h2>
+      <h2>{t("queue.title")}</h2>
       <ul className="jobs">
         {jobs.map((job) => (
           <ActiveJob key={job.id} job={job} onChanged={onChanged} />
@@ -55,7 +56,7 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
       await api.cancelJob(job.id);
       onChanged();
     } catch (err) {
-      setError(messageFor(err, "Pembatalan gagal"));
+      setError(messageFor(err, t("queue.cancelFailed")));
     } finally {
       setBusy(false);
     }
@@ -78,10 +79,10 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
 
       <div className="job-foot">
         <span className="muted">
-          {percent == null ? "menghitung..." : `${percent.toFixed(0)}%`}
+          {percent == null ? t("queue.calculating") : `${percent.toFixed(0)}%`}
         </span>
         <button type="button" onClick={() => void handleCancel()} disabled={busy}>
-          {busy ? "Membatalkan..." : "Batalkan"}
+          {busy ? t("queue.cancelling") : t("queue.cancel")}
         </button>
       </div>
 
@@ -95,15 +96,15 @@ export function History({ jobs, onChanged }: Props) {
   if (jobs.length === 0) {
     return (
       <section>
-        <h2>Riwayat</h2>
-        <p className="muted">Belum ada konversi yang selesai.</p>
+        <h2>{t("history.title")}</h2>
+        <p className="muted">{t("history.empty")}</p>
       </section>
     );
   }
 
   return (
     <section>
-      <h2>Riwayat</h2>
+      <h2>{t("history.title")}</h2>
       <ul className="jobs">
         {jobs.map((job) => (
           <HistoryRow key={job.id} job={job} onChanged={onChanged} />
@@ -124,18 +125,20 @@ const PERMANENT = new Set([
   "INVALID_URL",
 ]);
 
+type Action = "download" | "reveal" | "retry" | "delete";
+
 function HistoryRow({ job, onChanged }: { job: Job; onChanged: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(action: string, fn: () => Promise<unknown>) {
+  async function run(action: Action, fn: () => Promise<unknown>) {
     setBusy(action);
     setError(null);
     try {
       await fn();
       onChanged();
     } catch (err) {
-      setError(messageFor(err, "Gagal"));
+      setError(messageFor(err, t("history.actionFailed")));
     } finally {
       setBusy(null);
     }
@@ -163,21 +166,21 @@ function HistoryRow({ job, onChanged }: { job: Job; onChanged: () => void }) {
             <button
               type="button"
               disabled={busy !== null}
-              onClick={() => void run("unduh", () => downloadFile(job.file_id!, filename))}
+              onClick={() => void run("download", () => downloadFile(job.file_id!, filename))}
             >
-              {busy === "unduh" ? "Menyiapkan..." : "Unduh"}
+              {busy === "download" ? t("history.preparing") : t("history.download")}
             </button>
             <button
               type="button"
               disabled={busy !== null}
               onClick={() => void run("reveal", () => api.revealFile(job.file_id!))}
             >
-              Buka lokasi
+              {t("history.reveal")}
             </button>
           </>
         )}
 
-        {done && !job.file_id && <span className="muted small">Berkas tidak ada di disk</span>}
+        {done && !job.file_id && <span className="muted small">{t("history.missing")}</span>}
 
         {retryable && (
           <button
@@ -185,7 +188,7 @@ function HistoryRow({ job, onChanged }: { job: Job; onChanged: () => void }) {
             disabled={busy !== null}
             onClick={() => void run("retry", () => api.retryJob(job.id))}
           >
-            {busy === "retry" ? "Mengantre..." : "Coba lagi"}
+            {busy === "retry" ? t("history.retrying") : t("history.retry")}
           </button>
         )}
 
@@ -193,9 +196,9 @@ function HistoryRow({ job, onChanged }: { job: Job; onChanged: () => void }) {
           type="button"
           className="danger"
           disabled={busy !== null}
-          onClick={() => void run("hapus", () => api.deleteJob(job.id))}
+          onClick={() => void run("delete", () => api.deleteJob(job.id))}
         >
-          Hapus
+          {t("history.delete")}
         </button>
       </div>
 

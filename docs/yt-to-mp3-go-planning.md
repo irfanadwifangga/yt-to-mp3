@@ -247,7 +247,7 @@ Aturan (ADR-027):
 - **Client yang menerjemahkan**, berdasarkan `code`. Field `message` adalah fallback untuk developer dan log, bukan teks yang ditampilkan.
 - Pesan mentah dari yt-dlp/FFmpeg tidak pernah dikirim ke UI; disimpan di log dan `job_events`.
 - Field `details` boleh memuat konteks terstruktur yang dibutuhkan klien untuk menunjuk sumber masalah, misalnya `{"key": "max_concurrent_jobs"}` pada `INVALID_SETTING`. Isinya kunci dan nilai, tidak pernah kalimat siap tampil — itu tetap dirakit klien dari `code`.
-- Menambah `code` baru adalah perubahan kontrak: butuh entri terjemahan di SPA pada commit yang sama.
+- Menambah `code` baru adalah perubahan kontrak: butuh entri terjemahan di SPA pada commit yang sama. Aturan ini ditegakkan `npm --prefix web run check:i18n`, yang membaca daftar kode langsung dari sumber Go dan menggagalkan CI bila ada kode tanpa terjemahan `id` maupun `en`, bila kunci kedua bahasa tidak setara, atau bila komponen memakai kunci yang tidak ada.
 - Bahasa UI MVP: Indonesia dan Inggris, dengan Inggris sebagai fallback.
 
 ## 10. Model data

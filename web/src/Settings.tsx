@@ -1,26 +1,27 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, type Setting } from "./api";
+import { has, t } from "./i18n";
 import { messageFor } from "./messages";
 
 /** Label yang lebih ramah daripada nama kuncinya. */
-const LABELS: Record<string, string> = {
-  output_dir: "Direktori keluaran",
-  default_preset_id: "Preset bawaan",
-  filename_mode: "Pola nama berkas",
-  max_concurrent_jobs: "Job paralel",
-  max_queue_depth: "Kapasitas antrean",
-  idle_shutdown_minutes: "Berhenti otomatis (menit)",
-  tool_update_check: "Cek pembaruan tool",
-  log_level: "Tingkat log",
-};
+function labelFor(key: string): string {
+  const k = `settings.label.${key}`;
+  return has(k) ? t(k) : key;
+}
 
 /** Penjelasan hanya untuk setelan yang pilihannya tidak jelas dengan
  *  sendirinya. */
-const HINTS: Record<string, string> = {
-  max_concurrent_jobs:
-    "Lebih dari 2–3 unduhan paralel dari satu IP memicu pembatasan dari sisi sumber.",
-  idle_shutdown_minutes: "Nol berarti aplikasi tidak berhenti sendiri.",
-};
+function hintFor(key: string): string | undefined {
+  const k = `settings.hint.${key}`;
+  return has(k) ? t(k) : undefined;
+}
+
+/** Pilihan teknis seperti id preset dan tingkat log ditampilkan apa adanya;
+ *  hanya yang punya padanan ramah yang diterjemahkan. */
+function optionLabel(settingKey: string, option: string): string {
+  const k = `settings.option.${settingKey}.${option}`;
+  return has(k) ? t(k) : option;
+}
 
 export function Settings() {
   const [settings, setSettings] = useState<Setting[]>([]);
@@ -34,7 +35,7 @@ export function Settings() {
     api
       .settings()
       .then((res) => setSettings(res.settings))
-      .catch((err) => setError(messageFor(err, "Gagal memuat setelan")));
+      .catch((err) => setError(messageFor(err, t("settings.loadFailed"))));
   }, []);
 
   function change(key: string, value: string) {
@@ -53,7 +54,7 @@ export function Settings() {
       setSaved(true);
       setBadKey(null);
     } catch (err) {
-      setError(messageFor(err, "Penyimpanan gagal"));
+      setError(messageFor(err, t("settings.saveFailed")));
       // Server menyebutkan kunci mana yang ditolak, sehingga kesalahan bisa
       // ditunjukkan tepat di fieldnya alih-alih sebagai pesan umum.
       setBadKey(err instanceof ApiError ? (err.details.key ?? null) : null);
@@ -66,13 +67,11 @@ export function Settings() {
 
   const changed = Object.keys(draft);
   // Restart hanya diberitahukan bila setelan yang bersangkutan memang diubah.
-  const needsRestart = settings.some(
-    (s) => changed.includes(s.key) && s.requires_restart,
-  );
+  const needsRestart = settings.some((s) => changed.includes(s.key) && s.requires_restart);
 
   return (
     <section>
-      <h2>Setelan</h2>
+      <h2>{t("settings.title")}</h2>
       {error && <p className="error">{error}</p>}
 
       <dl className="grid">
@@ -89,17 +88,15 @@ export function Settings() {
 
       <div className="actions">
         <button type="button" onClick={() => void save()} disabled={busy || changed.length === 0}>
-          {busy ? "Menyimpan..." : "Simpan"}
+          {busy ? t("settings.saving") : t("settings.save")}
         </button>
         {changed.length > 0 && (
           <button type="button" onClick={() => setDraft({})} disabled={busy}>
-            Batalkan perubahan
+            {t("settings.discard")}
           </button>
         )}
-        {saved && <span className="muted small">Tersimpan.</span>}
-        {needsRestart && (
-          <span className="muted small">Sebagian perubahan berlaku setelah aplikasi dibuka ulang.</span>
-        )}
+        {saved && <span className="muted small">{t("settings.saved")}</span>}
+        {needsRestart && <span className="muted small">{t("settings.restartNotice")}</span>}
       </div>
     </section>
   );
@@ -113,21 +110,23 @@ interface RowProps {
 }
 
 function SettingRow({ setting, value, invalid, onChange }: RowProps) {
-  const label = LABELS[setting.key] ?? setting.key;
-  const hint = HINTS[setting.key];
+  const label = labelFor(setting.key);
+  const hint = hintFor(setting.key);
 
   return (
     <>
       <dt>
         {label}
-        {setting.requires_restart && <span className="muted small"> · perlu restart</span>}
+        {setting.requires_restart && (
+          <span className="muted small"> · {t("settings.restartBadge")}</span>
+        )}
       </dt>
       <dd className={invalid ? "invalid" : undefined}>
         {setting.kind === "enum" ? (
           <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
             {setting.options?.map((opt) => (
               <option key={opt} value={opt}>
-                {opt}
+                {optionLabel(setting.key, opt)}
               </option>
             ))}
           </select>
@@ -138,7 +137,7 @@ function SettingRow({ setting, value, invalid, onChange }: RowProps) {
               checked={value === "true"}
               onChange={(e) => onChange(String(e.target.checked))}
             />
-            <span>{value === "true" ? "aktif" : "nonaktif"}</span>
+            <span>{value === "true" ? t("settings.on") : t("settings.off")}</span>
           </label>
         ) : (
           <input
