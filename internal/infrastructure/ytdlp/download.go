@@ -49,7 +49,7 @@ type DownloadResult struct {
 //
 // Flag hardening sama dengan jalur metadata: tanpa --ignore-config, berkas
 // yt-dlp.conf milik pengguna dapat menyuntikkan --exec.
-func downloadArgs(url, tempDir string) []string {
+func downloadArgs(url, tempDir, ffmpegPath string) []string {
 	return []string{
 		"--ignore-config",
 		"--no-exec",
@@ -57,6 +57,14 @@ func downloadArgs(url, tempDir string) []string {
 		"--no-warnings",
 		"--newline",
 		"--progress-template", progressTemplate,
+
+		// yt-dlp mencari FFmpeg sendiri, dan hasilnya tidak selalu sama dengan
+		// FFmpeg yang ditemukan aplikasi. Terbukti pada aplikasi yang dibuka
+		// dari installer: FFmpeg ada di PATH dan aplikasi melaporkan tool
+		// siap, tetapi yt-dlp terkelola gagal dengan "ffmpeg not found" dan
+		// setiap unduhan gagal. Menunjuk langsung ke FFmpeg yang sama
+		// menyamakan keduanya.
+		"--ffmpeg-location", ffmpegPath,
 
 		// Hanya trek audio yang diunduh. Tanpa ini yt-dlp mengambil stream
 		// video lengkap lalu membuangnya, sepuluh kali lipat bandwidth
@@ -81,6 +89,12 @@ func (d *Downloader) Download(
 	if err != nil {
 		return nil, err
 	}
+	// Konversi tidak mungkin berhasil tanpa FFmpeg, jadi ketiadaannya
+	// dilaporkan sebelum satu byte pun diunduh.
+	ffmpegBin, _, err := d.tools.Resolve(ctx, tools.FFmpeg)
+	if err != nil {
+		return nil, err
+	}
 
 	runCtx := ctx
 	if in.Timeout > 0 {
@@ -91,7 +105,7 @@ func (d *Downloader) Download(
 
 	h, err := process.Start(runCtx, process.Spec{
 		Bin:  bin,
-		Args: downloadArgs(CanonicalURL(in.SourceKey), in.TempDir),
+		Args: downloadArgs(CanonicalURL(in.SourceKey), in.TempDir, ffmpegBin),
 	})
 	if err != nil {
 		return nil, domain.WrapError(domain.CodeDownloadFailed, domain.ClassTransient,

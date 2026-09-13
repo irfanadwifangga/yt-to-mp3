@@ -38,6 +38,11 @@ var patterns = []pattern{
 	{"live event will begin", domain.CodeLiveNotSupported, domain.ClassPermanent},
 	{"this live stream", domain.CodeLiveNotSupported, domain.ClassPermanent},
 
+	// yt-dlp tidak menemukan FFmpeg. Mengulang tidak akan menolong, dan
+	// sebelum pola ini ada, setiap job diulang tiga kali dengan pesan
+	// "unduhan gagal" yang menyesatkan.
+	{"ffmpeg not found", domain.CodeToolMissing, domain.ClassLocal},
+
 	{"http error 429", domain.CodeRateLimited, domain.ClassThrottled},
 	{"too many requests", domain.CodeRateLimited, domain.ClassThrottled},
 

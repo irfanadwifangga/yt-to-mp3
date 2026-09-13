@@ -73,15 +73,29 @@ func fakeYTDLP(args []string) int {
 		return 0
 	}
 
-	var template string
+	var template, ffmpegLocation string
 	for i, a := range args {
-		if a == "-o" && i+1 < len(args) {
+		if i+1 >= len(args) {
+			break
+		}
+		switch a {
+		case "-o":
 			template = args[i+1]
+		case "--ffmpeg-location":
+			ffmpegLocation = args[i+1]
 		}
 	}
 	if template == "" {
 		fmt.Fprintln(os.Stderr, "ERROR: argumen -o tidak ada")
 		return 2
+	}
+	// Meniru yt-dlp sungguhan: --convert-thumbnail membutuhkan FFmpeg, dan
+	// yt-dlp tidak selalu menemukan FFmpeg yang sama dengan aplikasi lewat
+	// PATH. Aplikasi wajib menunjuknya langsung.
+	if _, err := os.Stat(ffmpegLocation); ffmpegLocation == "" || err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR: Preprocessing: ffmpeg not found. "+
+			"Please install or provide the path using --ffmpeg-location")
+		return 1
 	}
 
 	switch os.Getenv(modeEnv) {

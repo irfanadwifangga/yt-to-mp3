@@ -325,6 +325,7 @@ Argumen yt-dlp dibangun sebagai argv, tidak pernah lewat shell:
 --newline
 --progress-template "download:PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes_estimate)s"
 -f "bestaudio/best"      # ADR-015, jangan unduh stream video
+--ffmpeg-location <ffmpeg>  # FFmpeg yang sama dengan hasil discovery aplikasi
 --write-thumbnail --convert-thumbnail jpg
 --retries 2
 --socket-timeout 30
@@ -332,6 +333,16 @@ Argumen yt-dlp dibangun sebagai argv, tidak pernah lewat shell:
 --                       # akhiri parsing flag sebelum URL
 <url>
 ```
+
+`--ffmpeg-location` wajib, karena yt-dlp mencari FFmpeg sendiri dan hasilnya bisa berbeda dari discovery aplikasi.
+
+Kasus ini muncul pada build rilis pertama yang dibuka langsung dari langkah terakhir installer:
+- Aplikasi memakai FFmpeg dari PATH, yaitu build `N-…` milik paket winget `yt-dlp.FFmpeg`, bukan FFmpeg 9.0.1 yang ditemukan terminal. Artinya environment-nya berbeda.
+- Health melaporkan tool siap, tetapi yt-dlp terkelola gagal dengan `ffmpeg not found`, sehingga setiap unduhan gagal.
+
+Penyebab pasti di environment itu **belum berhasil direproduksi**. Dengan PATH yang hanya memuat FFmpeg yang sama, versi lama pun berhasil. Yang terbukti hanya dua hal: yt-dlp terkelola yang sama menerima FFmpeg yang ditunjuk langsung, dan pesan `ffmpeg not found` kini dipetakan ke `TOOL_MISSING` tanpa auto-retry, bukan `DOWNLOAD_FAILED` yang diulang tiga kali. Validasi akhir perbaikan ini harus dilakukan dengan installer baru di mesin tempat masalah muncul.
+
+yt-dlp palsu pada E2E menolak unduhan tanpa flag ini, meniru perilaku aslinya.
 
 Metadata diambil dengan `--dump-single-json --skip-download` memakai flag hardening yang sama. Field `is_live` diperiksa di sini; bernilai benar berarti job ditolak `LIVE_NOT_SUPPORTED` sebelum ada byte yang diunduh (ADR-026).
 
