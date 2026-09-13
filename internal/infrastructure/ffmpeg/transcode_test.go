@@ -174,3 +174,29 @@ func TestBuildArgsSampulPersegi(t *testing.T) {
 		t.Error("tanpa sampul tidak boleh ada filter video")
 	}
 }
+
+// Album dan tahun hanya ditulis dari data rilis. Nama kanal sebagai album
+// mengelompokkan lagu tak berkaitan jadi satu album di pemutar.
+func TestBuildArgsDataRilis(t *testing.T) {
+	withRelease := strings.Join(BuildArgs(TranscodeInput{
+		AudioPath: "in.webm", OutputPath: "out.mp3", Preset: cbrPreset(),
+		Media: &domain.MediaInfo{Title: "Kiss the Rain", Uploader: "YIRUMA place",
+			Artist: "Yiruma", Album: "The Best", ReleaseYear: 2011},
+	}), "\n")
+	for _, want := range []string{"artist=Yiruma", "album=The Best", "date=2011"} {
+		if !strings.Contains(withRelease, want) {
+			t.Errorf("argv tidak memuat %q", want)
+		}
+	}
+
+	plain := strings.Join(BuildArgs(TranscodeInput{
+		AudioPath: "in.webm", OutputPath: "out.mp3", Preset: cbrPreset(),
+		Media: &domain.MediaInfo{Title: "Bohemian Rhapsody", Uploader: "Queen Official"},
+	}), "\n")
+	if !strings.Contains(plain, "artist=Queen Official") {
+		t.Error("tanpa data katalog, artist seharusnya jatuh ke uploader")
+	}
+	if strings.Contains(plain, "album=") || strings.Contains(plain, "date=") {
+		t.Error("tanpa data rilis tidak boleh ada tag album maupun tahun")
+	}
+}

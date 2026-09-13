@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
@@ -76,6 +77,15 @@ type rawMetadata struct {
 	IsLive    bool    `json:"is_live"`
 	LiveNow   bool    `json:"live_status_is_live"`
 	LiveState string  `json:"live_status"`
+
+	// Data katalog YouTube Music; kosong untuk unggahan biasa. yt-dlp
+	// mengirim null untuk release_year yang tidak diketahui, yang terurai
+	// menjadi 0.
+	Track       string   `json:"track"`
+	Artist      string   `json:"artist"`
+	Artists     []string `json:"artists"`
+	Album       string   `json:"album"`
+	ReleaseYear int      `json:"release_year"`
 }
 
 // Resolve mengambil metadata untuk satu source key.
@@ -112,6 +122,24 @@ func (r *Resolver) Resolve(ctx context.Context, sourceKey string) (*domain.Media
 			"sumber adalah siaran langsung")
 	}
 
+	return mediaFromRaw(sourceKey, url, raw), nil
+}
+
+// mediaFromRaw menormalkan keluaran JSON yt-dlp menjadi MediaInfo.
+func mediaFromRaw(sourceKey, url string, raw rawMetadata) *domain.MediaInfo {
+	// "artists" adalah daftar resmi; "artist" lama dipakai bila daftar itu
+	// tidak ada.
+	artist := strings.Join(raw.Artists, ", ")
+	if artist == "" {
+		artist = raw.Artist
+	}
+	// Tahun di luar rentang wajar dibuang: lebih baik tanpa tag tahun
+	// daripada tahun yang jelas salah.
+	year := raw.ReleaseYear
+	if year < 1900 || year > 2100 {
+		year = 0
+	}
+
 	return &domain.MediaInfo{
 		SourceKey:    sourceKey,
 		SourceURL:    url,
@@ -122,7 +150,11 @@ func (r *Resolver) Resolve(ctx context.Context, sourceKey string) (*domain.Media
 		ThumbnailURL: raw.Thumbnail,
 		SourceCodec:  raw.ACodec,
 		SampleRate:   raw.ASR,
-	}, nil
+		Track:        raw.Track,
+		Artist:       artist,
+		Album:        raw.Album,
+		ReleaseYear:  year,
+	}
 }
 
 // durationOf mengubah detik pecahan jadi Duration, menolak nilai tak wajar.

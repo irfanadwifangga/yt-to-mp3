@@ -340,7 +340,7 @@ Kasus ini muncul pada build rilis pertama yang dibuka langsung dari langkah tera
 - Aplikasi memakai FFmpeg dari PATH, yaitu build `N-…` milik paket winget `yt-dlp.FFmpeg`, bukan FFmpeg 9.0.1 yang ditemukan terminal. Artinya environment-nya berbeda.
 - Health melaporkan tool siap, tetapi yt-dlp terkelola gagal dengan `ffmpeg not found`, sehingga setiap unduhan gagal.
 
-Penyebab pasti di environment itu **belum berhasil direproduksi**. Dengan PATH yang hanya memuat FFmpeg yang sama, versi lama pun berhasil. Yang terbukti hanya dua hal: yt-dlp terkelola yang sama menerima FFmpeg yang ditunjuk langsung, dan pesan `ffmpeg not found` kini dipetakan ke `TOOL_MISSING` tanpa auto-retry, bukan `DOWNLOAD_FAILED` yang diulang tiga kali. Validasi akhir perbaikan ini harus dilakukan dengan installer baru di mesin tempat masalah muncul.
+Penyebab pasti di environment itu **belum berhasil direproduksi**. Dengan PATH yang hanya memuat FFmpeg yang sama, versi lama pun berhasil. Yang terbukti hanya dua hal: yt-dlp terkelola yang sama menerima FFmpeg yang ditunjuk langsung, dan pesan `ffmpeg not found` kini dipetakan ke `TOOL_MISSING` tanpa auto-retry, bukan `DOWNLOAD_FAILED` yang diulang tiga kali. Perbaikan ini kemudian terverifikasi dengan installer berikutnya di mesin yang sama: exe terpasang memuat flag tersebut, dan lagu yang sebelumnya selalu gagal berhasil dikonversi.
 
 yt-dlp palsu pada E2E menolak unduhan tanpa flag ini, meniru perilaku aslinya.
 
@@ -357,7 +357,8 @@ ffmpeg -hide_banner -nostdin -y
   -filter:v:0 crop=min(iw\,ih):min(iw\,ih),scale=min(iw\,800):min(ih\,800)
   -c:v mjpeg -q:v 2 -disposition:v:0 attached_pic
   -id3v2_version 3                         # v2.3 paling luas didukung player
-  -metadata title=<title> -metadata artist=<artist> -metadata album=<artist>
+  -metadata title=<title> -metadata artist=<artist>
+  -metadata album=<album> -metadata date=<release_year>   # hanya dari data rilis
   -metadata comment=<source_url>
   -progress pipe:1 -nostats
   <tmp_out>.mp3
@@ -365,7 +366,13 @@ ffmpeg -hide_banner -nostdin -y
 
 Preset VBR memakai `-q:a <vbr_quality>` menggantikan `-b:a`.
 
-`<title>` dan `<artist>` adalah suntingan pengguna bila ada (§7 `POST /api/jobs`), selain itu judul dan uploader dari metadata. Tag kosong dilewati, bukan ditulis kosong. Tag `date` belum ditulis karena metadata yang dinormalkan belum membawa tanggal unggah.
+`<title>` dan `<artist>` adalah suntingan pengguna bila ada (§7 `POST /api/jobs`). Tanpa suntingan, judul diambil dari judul video; artis dari katalog YouTube Music (`artists` yt-dlp), atau nama kanal bila katalog tidak ada. Tag kosong dilewati, bukan ditulis kosong.
+
+`album` dan `date` **hanya** ditulis dari data rilis katalog (`album`, `release_year`), yang tersedia untuk video yang terhubung ke YouTube Music. Dua keputusan yang disengaja:
+- **Nama kanal tidak lagi dipakai sebagai album.** Implementasi awal melakukannya, sehingga lagu-lagu tak berkaitan dari satu kanal terkumpul menjadi satu "album" di pemutar.
+- **Tahun unggah tidak dipakai sebagai tahun.** Video lagu rilisan 1975 yang diunggah pada 2008 akan tertulis 2008.
+
+Tahun di luar 1900–2100 dibuang. Data rilis ikut disimpan di cache `media_items` (migrasi `00005`), karena pipeline membaca metadata dari cache. Saran judul dan artis di formulir memakai `track` dan `artists` katalog bila ada (`domain.SuggestTagsFor`), dan baru jatuh ke tebakan dari judul video bila tidak ada.
 
 Cover art: thumbnail hasil `--write-thumbnail` dipotong persegi di tengah lalu diperkecil ke maksimum 800×800 sebelum disematkan. Thumbnail YouTube berbentuk 16:9 sedangkan pemutar musik menampilkan sampul persegi, dan artwork unggahan musik hampir selalu di tengah bingkai; konsekuensinya, sisi kiri-kanan thumbnail video biasa ikut terpotong. `-q:v 2` dipakai karena bitrate bawaan mjpeg membuat sampul tampak pecah. Ukuran berkas thumbnail tidak dibatasi terpisah: hasil akhirnya selalu di-encode ulang ke ≤ 800×800.
 

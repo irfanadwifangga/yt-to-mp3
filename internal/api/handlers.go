@@ -191,7 +191,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		previous = []application.PreviousConversion{}
 	}
 
-	suggestedTitle, suggestedArtist := domain.SuggestTags(info.Title, info.Uploader)
+	suggestedTitle, suggestedArtist := domain.SuggestTagsFor(info)
 
 	writeJSON(w, http.StatusOK, metadataResponse{
 		SourceKey:           info.SourceKey,

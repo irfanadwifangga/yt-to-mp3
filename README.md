@@ -11,7 +11,7 @@ Konverter audio YouTube menjadi MP3 berbentuk aplikasi desktop-lokal: satu binar
 - **Daftar selesai** — unduh hasil, buka foldernya di file manager, coba lagi yang gagal, atau hapus dari daftar (dengan atau tanpa berkasnya). Riwayat panjang dimuat bertahap.
 - **Auto-retry** — kegagalan jaringan sementara diulang otomatis hingga 3 kali dengan jeda bertambah. Bila YouTube membatasi permintaan (HTTP 429), jedanya lebih panjang dan job paralel diturunkan ke satu selama beberapa menit.
 - **Lima preset MP3**: 128, 192, 256, 320 kbps CBR, dan VBR V0. Keluaran 48 kHz stereo dengan tag ID3v2.3 dan sampul persegi tersemat.
-- **Judul dan artis bisa disunting sebelum konversi**, terisi saran yang sudah dirapikan (tanpa `(Official Video)` dan sejenisnya). Keduanya dipakai untuk tag dan nama berkas.
+- **Judul dan artis bisa disunting sebelum konversi**, terisi saran yang sudah dirapikan (tanpa `(Official Video)` dan sejenisnya). Keduanya dipakai untuk tag dan nama berkas. Untuk video yang terhubung ke YouTube Music, saran diambil dari katalog, dan tag album serta tahun rilis ikut ditulis.
 - **Peringatan konversi ganda** bila video yang sama pernah dikonversi dengan preset yang sama.
 - **Setelan dalam dialog** (tombol **Setelan** atau `Ctrl+,`), dengan folder keluaran dipilih lewat dialog folder bawaan sistem operasi.
 - **Bahasa Indonesia dan Inggris**, serta tema terang, gelap, atau mengikuti sistem.

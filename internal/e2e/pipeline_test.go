@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/adapters"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
@@ -142,47 +143,19 @@ func (p provider) Resolve(ctx context.Context, name string) (string, string, err
 	return p.real.Resolve(ctx, name)
 }
 
-// Adapter di bawah mencerminkan cmd/app/adapters.go. Paket main tidak dapat
-// diimpor, jadi bentuknya disalin; perbedaan di antara keduanya berarti
-// test ini tidak lagi menguji wiring yang sama dengan aplikasi.
-
-type downloader struct{ inner *ytdlp.Downloader }
-
-func (a downloader) Download(
-	ctx context.Context, req application.DownloadRequest, onProgress func(*float64),
-) (*application.DownloadOutcome, error) {
-	res, err := a.inner.Download(ctx, ytdlp.DownloadInput{
-		SourceKey: req.SourceKey, TempDir: req.TempDir, Timeout: req.Timeout,
-	}, func(p ytdlp.Progress) { onProgress(p.Percent()) })
-	if err != nil {
-		return nil, err
-	}
-	return &application.DownloadOutcome{AudioPath: res.AudioPath, CoverPath: res.ThumbnailPath}, nil
-}
-
-type transcoder struct {
-	inner *ffmpeg.Transcoder
-	// observe hanya ada di test: dipanggil tepat sebelum FFmpeg berjalan
-	// untuk memotret isi folder hasil di tengah job.
+// observedTranscoder membungkus adapter aplikasi yang asli dan memotret
+// folder hasil tepat sebelum FFmpeg berjalan. Pipeline tetap dirakit dengan
+// adapter dari internal/adapters, sama persis dengan cmd/app.
+type observedTranscoder struct {
+	application.Transcoder
 	observe func()
 }
 
-func (a transcoder) Transcode(
+func (t observedTranscoder) Transcode(
 	ctx context.Context, req application.TranscodeRequest, onProgress func(*float64),
 ) error {
-	if a.observe != nil {
-		a.observe()
-	}
-	return a.inner.Transcode(ctx, ffmpeg.TranscodeInput{
-		AudioPath: req.AudioPath, CoverPath: req.CoverPath, OutputPath: req.OutputPath,
-		Preset: req.Preset, Media: req.Media, Timeout: req.Timeout,
-	}, func(p ffmpeg.Progress) { onProgress(p.Percent(req.Media.Duration)) })
-}
-
-type naming struct{}
-
-func (naming) Build(mode domain.FilenameMode, info *domain.MediaInfo, ext string) string {
-	return fs.BuildFilename(mode, info, ext)
+	t.observe()
+	return t.Transcoder.Transcode(ctx, req, onProgress)
 }
 
 type events struct {
@@ -284,10 +257,13 @@ func newStack(t *testing.T, mode string) *stack {
 
 	pipeline := application.NewPipeline(application.PipelineDeps{
 		Repo: s.jobs, Closer: s.jobs, Presets: presets, Cache: media, Resolver: resolver,
-		Downloader: downloader{inner: ytdlp.NewDownloader(prov, log)},
-		Transcoder: transcoder{inner: ffmpeg.NewTranscoder(prov, log), observe: s.snapshotOutput},
-		Verifier:   ffmpeg.NewProber(prov, log),
-		Store:      store, Naming: naming{}, Events: pub, Log: log,
+		Downloader: adapters.Downloader{Inner: ytdlp.NewDownloader(prov, log)},
+		Transcoder: observedTranscoder{
+			Transcoder: adapters.Transcoder{Inner: ffmpeg.NewTranscoder(prov, log)},
+			observe:    s.snapshotOutput,
+		},
+		Verifier: ffmpeg.NewProber(prov, log),
+		Store:    store, Naming: adapters.Naming{}, Events: pub, Log: log,
 	})
 
 	s.sched = worker.New(s.jobs, pipeline, pub, 2, log)

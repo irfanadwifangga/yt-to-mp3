@@ -73,3 +73,28 @@ func TestMediaWithTags(t *testing.T) {
 		t.Error("metadata sumber ikut berubah")
 	}
 }
+
+func TestSuggestTagsForMengutamakanKatalog(t *testing.T) {
+	catalog := &MediaInfo{
+		Title: "Yiruma - Kiss the Rain (Piano Cover) [HD]", Uploader: "YIRUMA place / 이루마 official",
+		Track: "Kiss the Rain", Artist: "Yiruma",
+	}
+	if title, artist := SuggestTagsFor(catalog); title != "Kiss the Rain" || artist != "Yiruma" {
+		t.Errorf("dengan katalog = %q, %q", title, artist)
+	}
+
+	// Tanpa data katalog, tebakan dari judul tetap dipakai.
+	plain := &MediaInfo{Title: "Queen – Bohemian Rhapsody (Official Video Remastered)", Uploader: "Queen Official"}
+	if title, artist := SuggestTagsFor(plain); title != "Bohemian Rhapsody" || artist != "Queen" {
+		t.Errorf("tanpa katalog = %q, %q", title, artist)
+	}
+}
+
+// Suntingan artis pengguna harus menang atas artis dari katalog.
+func TestMediaWithTagsMenimpaArtisKatalog(t *testing.T) {
+	job := &Job{TagArtist: "Pilihan Pengguna"}
+	got := job.MediaWithTags(&MediaInfo{Uploader: "Kanal", Artist: "Katalog"})
+	if got.Artist != "Pilihan Pengguna" || got.Uploader != "Pilihan Pengguna" {
+		t.Errorf("hasil = %+v", got)
+	}
+}

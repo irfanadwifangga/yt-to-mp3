@@ -76,7 +76,11 @@ CREATE TABLE media_items (
   source_codec  TEXT,
   is_live       INTEGER NOT NULL DEFAULT 0,
   raw_json      TEXT,
-  fetched_at    TEXT NOT NULL
+  fetched_at    TEXT NOT NULL,
+  track         TEXT,    -- migrasi 00005: data katalog YouTube Music,
+  artist        TEXT,    -- NULL untuk unggahan biasa
+  album         TEXT,
+  release_year  INTEGER
 );
 
 CREATE INDEX idx_media_fetched ON media_items(fetched_at);
@@ -218,5 +222,6 @@ Seluruh kebijakan di atas dijalankan `application.Housekeeper`: satu putaran seb
 | 2 | `00002_jobs_status_created_index.sql` | Indeks `(status, created_at DESC, id DESC)` menggantikan `idx_jobs_status`. Diukur: p95 daftar riwayat berfilter status pada 10.000 job turun dari 38 ms menjadi 1,7 ms |
 | 3 | `00003_jobs_retry_at.sql` | Kolom `jobs.retry_at` untuk jeda auto-retry (planning §19). Indeks `(created_at DESC, id DESC)` menggantikan `idx_jobs_created`, sehingga riwayat tanpa filter status tidak lagi mengurutkan ulang baris bertimestamp sama |
 | 4 | `00004_jobs_tags.sql` | Kolom `jobs.tag_title` dan `jobs.tag_artist` untuk suntingan tag sebelum konversi (planning §7). Disimpan per job, bukan di `media_items`, karena cache metadata dibagi semua job untuk video yang sama dan dapat diambil ulang |
+| 5 | `00005_media_release.sql` | Kolom `media_items.track`, `artist`, `album`, `release_year` dari katalog YouTube Music, dipakai untuk saran tag serta tag album dan tahun (planning §12.2). Baris cache lama tidak diisi ulang; TTL 24 jam membuatnya terisi pada analisis berikutnya |
 
 `TestMigrateDariSkemaVersi1` membangun database lewat `goose UpTo(1)`, mengisinya dengan SQL mentah, lalu menjalankan `Migrate` penuh dan memeriksa data tetap utuh. `TestRiwayatBerfilterStatusMemakaiIndeks` memeriksa `EXPLAIN QUERY PLAN` supaya regresi indeks tertangkap walau tidak terlihat pada database kecil.

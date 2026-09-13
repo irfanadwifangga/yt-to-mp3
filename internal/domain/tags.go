@@ -123,3 +123,19 @@ func cleanUploader(uploader string) string {
 	}
 	return strings.TrimSpace(u)
 }
+
+// SuggestTagsFor memilih saran judul dan artis dari metadata sumber.
+//
+// Video yang terhubung ke YouTube Music membawa judul lagu dan artis dari
+// katalog, yang jauh lebih bisa dipercaya daripada menebak dari judul video.
+// Tebakan dari judul hanya dipakai untuk bagian yang tidak tersedia.
+func SuggestTagsFor(m *MediaInfo) (title, artist string) {
+	title, artist = SuggestTags(m.Title, m.Uploader)
+	if t := CleanTag(m.Track); t != "" {
+		title = t
+	}
+	if a := CleanTag(m.Artist); a != "" {
+		artist = a
+	}
+	return title, artist
+}

@@ -130,3 +130,22 @@ func TestDurationOf(t *testing.T) {
 		})
 	}
 }
+
+func TestMediaFromRawDataRilis(t *testing.T) {
+	info := mediaFromRaw("youtube:I0et_hDtfxY", "https://www.youtube.com/watch?v=I0et_hDtfxY", rawMetadata{
+		Title: "Kiss the Rain", Uploader: "YIRUMA place", Track: "Kiss the Rain",
+		Artists: []string{"Yiruma", "Tamu"}, Artist: "Yiruma", Album: "The Best", ReleaseYear: 2011,
+	})
+	if info.Artist != "Yiruma, Tamu" || info.Album != "The Best" || info.ReleaseYear != 2011 || info.Track != "Kiss the Rain" {
+		t.Errorf("data rilis = %+v", info)
+	}
+
+	// Tahun yang jelas tidak masuk akal lebih baik dibuang daripada ditulis.
+	if got := mediaFromRaw("youtube:x", "u", rawMetadata{ReleaseYear: 12}).ReleaseYear; got != 0 {
+		t.Errorf("tahun tidak wajar = %d, mau 0", got)
+	}
+	// Field lama "artist" dipakai bila daftar "artists" tidak ada.
+	if got := mediaFromRaw("youtube:x", "u", rawMetadata{Artist: "Tunggal"}).Artist; got != "Tunggal" {
+		t.Errorf("artist = %q", got)
+	}
+}

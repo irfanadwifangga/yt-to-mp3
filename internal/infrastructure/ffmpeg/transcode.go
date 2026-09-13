@@ -140,10 +140,27 @@ func metadataArgs(m *domain.MediaInfo) []string {
 	}
 
 	add("title", m.Title)
-	add("artist", m.Uploader)
-	add("album", m.Uploader)
+	// Artis dari katalog musik lebih tepat daripada nama kanal; nama kanal
+	// hanya cadangan.
+	add("artist", firstNonEmpty(m.Artist, m.Uploader))
+	// Album dan tahun hanya ditulis dari data rilis. Nama kanal sebagai album
+	// mengelompokkan lagu-lagu yang tidak berkaitan menjadi satu album di
+	// pemutar, dan tahun unggah bukan tahun rilis lagu.
+	add("album", m.Album)
+	if m.ReleaseYear > 0 {
+		add("date", strconv.Itoa(m.ReleaseYear))
+	}
 	add("comment", m.SourceURL)
 	return args
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // Transcode menjalankan FFmpeg dan melaporkan kemajuannya.

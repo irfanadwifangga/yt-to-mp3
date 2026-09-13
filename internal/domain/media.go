@@ -15,4 +15,13 @@ type MediaInfo struct {
 	SourceCodec  string        `json:"source_codec"`
 	SampleRate   int           `json:"sample_rate"`
 	IsLive       bool          `json:"is_live"`
+
+	// Data rilis dari katalog YouTube Music. Hanya terisi untuk video yang
+	// terhubung ke katalog musik; kosong untuk unggahan biasa. Tahun unggah
+	// sengaja tidak dipakai sebagai pengganti ReleaseYear: video lagu tahun
+	// 1975 yang diunggah pada 2008 bukan rilisan 2008.
+	Track       string `json:"track,omitempty"`
+	Artist      string `json:"artist,omitempty"`
+	Album       string `json:"album,omitempty"`
+	ReleaseYear int    `json:"release_year,omitempty"`
 }

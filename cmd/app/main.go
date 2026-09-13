@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/adapters"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/api"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
@@ -206,11 +207,11 @@ func run() error {
 		Presets:    presets,
 		Cache:      mediaCache,
 		Resolver:   resolver,
-		Downloader: downloaderAdapter{inner: ytdlp.NewDownloader(toolManager, log)},
-		Transcoder: transcoderAdapter{inner: ffmpeg.NewTranscoder(toolManager, log)},
+		Downloader: adapters.Downloader{Inner: ytdlp.NewDownloader(toolManager, log)},
+		Transcoder: adapters.Transcoder{Inner: ffmpeg.NewTranscoder(toolManager, log)},
 		Verifier:   ffmpeg.NewProber(toolManager, log),
 		Store:      store,
-		Naming:     namingAdapter{},
+		Naming:     adapters.Naming{},
 		Events:     hub,
 		Log:        log,
 	})
@@ -265,8 +266,8 @@ func run() error {
 		Hub:       hub,
 		Files:     files,
 		Settings:  settings,
-		Revealer:  revealAdapter{},
-		Picker:    pickerAdapter{},
+		Revealer:  adapters.Revealer{},
+		Picker:    adapters.Picker{},
 		OutputDir: store.OutputDir,
 	})
 

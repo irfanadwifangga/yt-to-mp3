@@ -154,7 +154,10 @@ func (j *Job) MediaWithTags(m *MediaInfo) *MediaInfo {
 		c.Title = j.TagTitle
 	}
 	if j.TagArtist != "" {
+		// Artis dari katalog musik ikut diganti; tanpa ini data katalog
+		// menang atas pilihan pengguna di tag artist.
 		c.Uploader = j.TagArtist
+		c.Artist = j.TagArtist
 	}
 	return &c
 }

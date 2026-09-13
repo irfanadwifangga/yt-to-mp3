@@ -269,3 +269,27 @@ func TestIntegrasiSampulRusakTidakMenggagalkan(t *testing.T) {
 		t.Errorf("Verify() error = %v", err)
 	}
 }
+
+// Tag tahun dan album dari data rilis harus benar-benar terbaca dari berkas
+// ID3v2.3, bukan hanya ada di argv.
+func TestIntegrasiTagDataRilis(t *testing.T) {
+	e := setup(t)
+	audio, cover := e.fixture(t)
+	out := filepath.Join(e.dir, "rilis.mp3")
+
+	info := media()
+	info.Artist, info.Album, info.ReleaseYear = "Yiruma", "The Best", 2011
+	err := ffmpeg.NewTranscoder(e.tools, e.log).Transcode(context.Background(), ffmpeg.TranscodeInput{
+		AudioPath: audio, CoverPath: cover, OutputPath: out, Timeout: 2 * time.Minute, Media: info,
+		Preset: &domain.Preset{ID: "mp3_standard", Format: "mp3", Codec: "libmp3lame", Mode: "cbr",
+			BitrateKbps: intPtr(192), SampleRate: intPtr(48000), Channels: 2},
+	}, func(ffmpeg.Progress) {})
+	if err != nil {
+		t.Fatalf("Transcode() error = %v", err)
+	}
+
+	tags := e.inspect(t, out).Format.Tags
+	if tags["artist"] != "Yiruma" || tags["album"] != "The Best" || tags["date"] != "2011" {
+		t.Errorf("tag = %v", tags)
+	}
+}
