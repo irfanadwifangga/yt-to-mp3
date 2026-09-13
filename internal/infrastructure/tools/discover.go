@@ -70,6 +70,8 @@ type Manager struct {
 	mu    sync.RWMutex
 	cache map[string]cacheEntry
 	now   func() time.Time // dapat diganti test
+
+	progress progressState
 }
 
 // cacheEntry adalah hasil discovery beserta waktu pengambilannya.

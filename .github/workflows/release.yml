@@ -52,3 +52,57 @@ jobs:
             dist/*.tar.gz
             dist/checksums.txt
           retention-days: 7
+      # Binary Windows diteruskan ke job installer. metadata.json membawa
+      # versi yang dipakai GoReleaser, termasuk versi snapshot.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-build
+          path: |
+            dist/*_windows_amd64.zip
+            dist/metadata.json
+          retention-days: 1
+
+  installer:
+    name: Installer Windows
+    needs: goreleaser
+    runs-on: windows-latest
+    permissions:
+      # Hanya dibutuhkan untuk mengunggah installer ke draft rilis dari tag.
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        with:
+          name: windows-build
+          path: dist
+      - name: Siapkan binary dan versi
+        shell: pwsh
+        run: |
+          $meta = Get-Content dist/metadata.json | ConvertFrom-Json
+          $zip = Get-ChildItem dist -Filter "*_windows_amd64.zip" | Select-Object -First 1
+          Expand-Archive $zip.FullName -DestinationPath build/windows -Force
+          Add-Content -Path $env:GITHUB_ENV -Value "APP_VERSION=$($meta.version)"
+      - name: Pasang Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Bangun installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          & $iscc "/DAppVersion=$env:APP_VERSION" "/DSourceExe=$PWD\build\windows\yt-to-mp3.exe" "/O$PWD\dist" packaging\windows\yt-to-mp3.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = Get-ChildItem dist -Filter "*_setup.exe" | Select-Object -First 1
+          $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "$($setup.FullName).sha256" -Value "$hash  $($setup.Name)" -Encoding ascii
+          Add-Content -Path $env:GITHUB_ENV -Value "SETUP_PATH=$($setup.FullName)"
+      - if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        name: Unggah ke draft rilis
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "$env:SETUP_PATH" "$env:SETUP_PATH.sha256" --clobber
+      - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: installer
+          path: dist/*_setup.exe*
+          retention-days: 7

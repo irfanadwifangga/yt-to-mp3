@@ -131,8 +131,15 @@ func (h *Handle) Terminate(grace time.Duration) error {
 		return nil
 	}
 
-	// Sinyal lembut lebih dulu supaya tool sempat menutup berkasnya.
-	_ = h.guard.signal(h.cmd)
+	// Sinyal lembut lebih dulu supaya tool sempat menutup berkasnya. Bila
+	// sinyal sama sekali tidak bisa dikirim, misalnya dari build Windows
+	// tanpa console, menunggu masa tenggang hanya memperlambat pembatalan.
+	if err := h.guard.signal(h.cmd); err != nil {
+		if kerr := h.guard.kill(); kerr != nil {
+			return fmt.Errorf("matikan process tree: %w", kerr)
+		}
+		return nil
+	}
 
 	select {
 	case <-h.done:

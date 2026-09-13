@@ -146,11 +146,19 @@ func (a downloader) Download(
 	return &application.DownloadOutcome{AudioPath: res.AudioPath, CoverPath: res.ThumbnailPath}, nil
 }
 
-type transcoder struct{ inner *ffmpeg.Transcoder }
+type transcoder struct {
+	inner *ffmpeg.Transcoder
+	// observe hanya ada di test: dipanggil tepat sebelum FFmpeg berjalan
+	// untuk memotret isi folder hasil di tengah job.
+	observe func()
+}
 
 func (a transcoder) Transcode(
 	ctx context.Context, req application.TranscodeRequest, onProgress func(*float64),
 ) error {
+	if a.observe != nil {
+		a.observe()
+	}
 	return a.inner.Transcode(ctx, ffmpeg.TranscodeInput{
 		AudioPath: req.AudioPath, CoverPath: req.CoverPath, OutputPath: req.OutputPath,
 		Preset: req.Preset, Media: req.Media, Timeout: req.Timeout,
@@ -182,6 +190,22 @@ type stack struct {
 	outDir  string
 	tmpDir  string
 	ffprobe string
+
+	// visible berisi nama berkas di folder hasil yang terlihat pengguna
+	// saat konversi berjalan, di luar direktori .tmp.
+	mu      sync.Mutex
+	visible []string
+}
+
+func (s *stack) snapshotOutput() {
+	entries, _ := os.ReadDir(s.outDir)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range entries {
+		if e.Name() != ".tmp" {
+			s.visible = append(s.visible, e.Name())
+		}
+	}
 }
 
 func newStack(t *testing.T, mode string) *stack {
@@ -247,7 +271,7 @@ func newStack(t *testing.T, mode string) *stack {
 	pipeline := application.NewPipeline(application.PipelineDeps{
 		Repo: s.jobs, Closer: s.jobs, Presets: presets, Cache: media, Resolver: resolver,
 		Downloader: downloader{inner: ytdlp.NewDownloader(prov, log)},
-		Transcoder: transcoder{inner: ffmpeg.NewTranscoder(prov, log)},
+		Transcoder: transcoder{inner: ffmpeg.NewTranscoder(prov, log), observe: s.snapshotOutput},
 		Verifier:   ffmpeg.NewProber(prov, log),
 		Store:      store, Naming: naming{}, Events: pub, Log: log,
 	})
@@ -346,6 +370,14 @@ func TestE2EKonversiLengkap(t *testing.T) {
 	}
 	if file.Filename != testTitle+".mp3" || filepath.Dir(file.Path) != s.outDir {
 		t.Errorf("berkas = %s di %s", file.Filename, filepath.Dir(file.Path))
+	}
+	// Selama konversi, folder hasil tidak boleh berisi apa pun yang tampak
+	// seperti hasil, termasuk penanda reservasi 0 byte.
+	s.mu.Lock()
+	visible := s.visible
+	s.mu.Unlock()
+	if len(visible) != 0 {
+		t.Errorf("folder hasil saat konversi berisi %v, mau kosong", visible)
 	}
 	info, err := os.Stat(file.Path)
 	if err != nil || info.Size() != file.SizeBytes {

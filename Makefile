@@ -94,6 +94,10 @@ fmt-check: ## Gagal bila ada file Go yang belum diformat
 typecheck: ## Typecheck frontend
 	npm --prefix web run typecheck
 
+.PHONY: test-web
+test-web: ## Test komponen frontend (vitest + jsdom)
+	npm --prefix web test
+
 .PHONY: check
 check: fmt-check vet test ## Jalankan seluruh pemeriksaan Go
 
@@ -104,6 +108,18 @@ tidy: ## Rapikan go.mod
 .PHONY: clean
 clean: ## Hapus artefak build
 	rm -rf bin coverage.out web/dist/assets web/dist/index.html
+
+.PHONY: icon
+icon: ## Gambar ulang ikon Windows dari tanda merek (hasilnya di-commit)
+	go run ./scripts/icon -o packaging/windows/yt-to-mp3.ico
+
+.PHONY: winres
+winres: ## Buat resource Windows (ikon, info versi, manifest) untuk build lokal
+	go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0 -64 \
+		-o cmd/app/resource_windows_amd64.syso \
+		-icon packaging/windows/yt-to-mp3.ico \
+		-manifest packaging/windows/yt-to-mp3.exe.manifest \
+		packaging/windows/versioninfo.json
 
 .PHONY: release-check
 release-check: ## Validasi .goreleaser.yaml (butuh goreleaser v2)

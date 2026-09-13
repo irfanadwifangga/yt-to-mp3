@@ -41,3 +41,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Resource Windows dibuat saat build rilis (make winres / hook GoReleaser)
+/cmd/app/resource_windows_*.syso

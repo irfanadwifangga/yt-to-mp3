@@ -51,6 +51,16 @@ export interface Health {
   output_dir: string;
   tools: Record<string, ToolStatus>;
   queue: { active: number; queued: number; capacity: number };
+  app_update: AppUpdate;
+}
+
+export interface AppUpdate {
+  current: string;
+  /** Versi rilis terbaru dari cek terakhir; kosong bila belum pernah berhasil. */
+  latest?: string;
+  update_available: boolean;
+  /** Halaman rilis, dibentuk server dari konstanta. */
+  release_url?: string;
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -180,6 +190,18 @@ export interface ToolsPayload {
   tools: Record<string, ToolStatus>;
   /** Waktu cek pembaruan terakhir yang berhasil. */
   checked_at?: string;
+  /** Instalasi yang sedang berjalan per nama tool; kosong bila tidak ada. */
+  progress: Record<string, ToolProgress>;
+}
+
+export interface ToolProgress {
+  phase: "downloading" | "extracting";
+  /** Unduhan ke berapa dari steps; FFmpeg Linux dan macOS dua arsip. */
+  step: number;
+  steps: number;
+  done_bytes: number;
+  /** 0 bila server tidak menyebutkan ukuran. */
+  total_bytes: number;
 }
 
 export type JobStatus =

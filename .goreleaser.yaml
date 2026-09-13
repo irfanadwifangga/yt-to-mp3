@@ -30,13 +30,39 @@ builds:
       - -s -w
       - -X github.com/irfanadwifangga/yt-to-mp3/internal/version.Version={{ .Version }}
       - -X github.com/irfanadwifangga/yt-to-mp3/internal/version.Commit={{ .ShortCommit }}
-    goos: [windows, linux, darwin]
+    goos: [linux, darwin]
     goarch: [amd64, arm64]
-    ignore:
-      # Tidak ada entri manifest tool untuk windows/arm64, jadi tool tidak
-      # bisa dipasang dari aplikasi di sana.
-      - goos: windows
-        goarch: arm64
+
+  # Windows dipisah karena dua hal yang tidak berlaku di OS lain: subsystem
+  # GUI supaya tidak ada jendela console saat dibuka dari Start Menu, dan
+  # resource berisi ikon, info versi, serta manifest. windows/arm64 tidak
+  # dibangun karena manifest tool tidak punya entri untuknya.
+  - id: yt-to-mp3-windows
+    main: ./cmd/app
+    binary: yt-to-mp3
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -H windowsgui
+      - -X github.com/irfanadwifangga/yt-to-mp3/internal/version.Version={{ .Version }}
+      - -X github.com/irfanadwifangga/yt-to-mp3/internal/version.Commit={{ .ShortCommit }}
+    goos: [windows]
+    goarch: [amd64]
+    hooks:
+      pre:
+        # Berkas .syso bernama *_windows_amd64 hanya ikut di-link untuk
+        # target itu. Tidak di-commit karena versinya berubah setiap rilis.
+        - cmd: >-
+            go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0
+            -64 -o cmd/app/resource_windows_amd64.syso
+            -icon packaging/windows/yt-to-mp3.ico
+            -manifest packaging/windows/yt-to-mp3.exe.manifest
+            -file-version {{ .Version }} -product-version {{ .Version }}
+            -ver-major {{ .Major }} -ver-minor {{ .Minor }} -ver-patch {{ .Patch }} -ver-build 0
+            -product-ver-major {{ .Major }} -product-ver-minor {{ .Minor }} -product-ver-patch {{ .Patch }} -product-ver-build 0
+            packaging/windows/versioninfo.json
 
 archives:
   - id: default
@@ -70,6 +96,9 @@ release:
   draft: true
   prerelease: auto
   footer: |
+    Pengguna Windows cukup mengunduh `yt-to-mp3_<versi>_windows_amd64_setup.exe`;
+    zip Windows untuk pemakaian portable.
+
     Binary belum ditandatangani. Di Windows, SmartScreen dapat menampilkan
     peringatan; pilih "More info" lalu "Run anyway". Di macOS, jalankan
     `xattr -d com.apple.quarantine ./yt-to-mp3` setelah mengekstrak.

@@ -28,6 +28,10 @@ const (
 	toolYTDLP   = "yt-dlp"
 	toolFFmpeg  = "ffmpeg"
 	toolFFprobe = "ffprobe"
+
+	// AppUpdateKey adalah kunci versi aplikasi ini di hasil cek pembaruan,
+	// sama dengan version.AppName.
+	AppUpdateKey = "yt-to-mp3"
 )
 
 // ToolUpdateState adalah hasil cek pembaruan terakhir.
@@ -48,6 +52,7 @@ type ToolUpdateSource interface {
 	Install(ctx context.Context, name string) error
 	LatestVersion(ctx context.Context, name string) (string, error)
 	InstallLatestYTDLP(ctx context.Context) (string, error)
+	Progress() map[string]ToolProgress
 }
 
 // ToolService menggabungkan status tool dengan hasil cek pembaruan.
@@ -65,6 +70,39 @@ type ToolService struct {
 	state ToolUpdateState
 
 	checkMu sync.Mutex // satu cek atau pembaruan pada satu waktu
+
+	// Diisi SetApp saat wiring; kosong berarti pembaruan aplikasi tidak
+	// pernah ditawarkan.
+	appVersion string
+	releaseURL string
+}
+
+// SetApp memasang versi aplikasi yang sedang berjalan dan halaman rilisnya.
+// Dipanggil sekali saat wiring, sebelum Run.
+func (s *ToolService) SetApp(version, releaseURL string) {
+	s.appVersion = version
+	s.releaseURL = releaseURL
+}
+
+// AppUpdate mengembalikan status pembaruan aplikasi dari cek terakhir.
+//
+// Aplikasi hanya memberi tahu, tidak pernah mengunduh atau memasang dirinya
+// sendiri: memperbarui binary yang sedang berjalan lintas tiga OS jauh lebih
+// berisiko daripada manfaatnya untuk aplikasi yang jarang dirilis.
+func (s *ToolService) AppUpdate() AppUpdate {
+	s.mu.Lock()
+	latest := s.state.Latest[AppUpdateKey]
+	s.mu.Unlock()
+
+	// Build dari source ("-dev") dan snapshot CI ("-snapshot") bukan untuk
+	// pengguna akhir; menawari mereka rilis resmi hanya mengganggu.
+	release := s.appVersion != "" && !strings.Contains(s.appVersion, "-")
+	return AppUpdate{
+		Current:         s.appVersion,
+		Latest:          latest,
+		UpdateAvailable: release && IsNewerVersion(s.appVersion, latest),
+		ReleaseURL:      s.releaseURL,
+	}
 }
 
 // NewToolService membuat layanan tool. enabled dibaca ulang setiap jatuh
@@ -107,6 +145,11 @@ func (s *ToolService) Install(ctx context.Context, name string) error {
 	return s.src.Install(ctx, name)
 }
 
+// Progress mengembalikan kemajuan instalasi yang sedang berjalan.
+func (s *ToolService) Progress() map[string]ToolProgress {
+	return s.src.Progress()
+}
+
 // CheckedAt mengembalikan waktu cek terakhir yang berhasil, nil bila belum
 // pernah.
 func (s *ToolService) CheckedAt() *time.Time {
@@ -131,7 +174,7 @@ func (s *ToolService) CheckUpdates(ctx context.Context) error {
 
 	found := map[string]string{}
 	var lastErr error
-	for _, name := range []string{toolYTDLP, toolFFmpeg} {
+	for _, name := range []string{toolYTDLP, toolFFmpeg, AppUpdateKey} {
 		v, err := s.src.LatestVersion(ctx, name)
 		if err != nil {
 			lastErr = err

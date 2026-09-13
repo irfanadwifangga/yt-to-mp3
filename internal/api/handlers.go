@@ -34,6 +34,7 @@ type healthResponse struct {
 	OutputDir     string                            `json:"output_dir"`
 	Tools         map[string]application.ToolStatus `json:"tools"`
 	Queue         application.QueueStatus           `json:"queue"`
+	AppUpdate     application.AppUpdate             `json:"app_update"`
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +48,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		OutputDir:     s.currentOutputDir(),
 		Tools:         s.tools.StatusAll(r.Context()),
 		Queue:         s.jobs.Queue(r.Context()),
+		AppUpdate:     s.tools.AppUpdate(),
 	})
 }
 
@@ -62,10 +64,18 @@ type toolsResponse struct {
 
 	// CheckedAt adalah waktu cek pembaruan terakhir yang berhasil.
 	CheckedAt *time.Time `json:"checked_at,omitempty"`
+
+	// Progress berisi instalasi yang sedang berjalan per nama tool. Selalu
+	// berupa objek, kosong bila tidak ada.
+	Progress map[string]application.ToolProgress `json:"progress"`
 }
 
 func (s *Server) toolsView(r *http.Request) toolsResponse {
-	return toolsResponse{Tools: s.tools.StatusAll(r.Context()), CheckedAt: s.tools.CheckedAt()}
+	return toolsResponse{
+		Tools:     s.tools.StatusAll(r.Context()),
+		CheckedAt: s.tools.CheckedAt(),
+		Progress:  s.tools.Progress(),
+	}
 }
 
 func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
@@ -109,8 +119,9 @@ type installRequest struct {
 
 // handleToolInstall memasang satu tool.
 //
-// Instalasi berjalan sinkron dan bisa memakan waktu beberapa menit; progres
-// terunduh baru bisa distream setelah SSE hub dipakai pada tahap 4.
+// Instalasi berjalan sinkron dan bisa memakan waktu beberapa menit. Selama
+// request ini tertahan, kemajuannya dibaca lewat field progress pada
+// GET /api/tools.
 func (s *Server) handleToolInstall(w http.ResponseWriter, r *http.Request) {
 	var req installRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

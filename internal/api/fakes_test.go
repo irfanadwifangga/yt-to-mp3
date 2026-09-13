@@ -380,3 +380,15 @@ func (r *fakeRevealer) Reveal(path string) error {
 	r.revealed = append(r.revealed, path)
 	return nil
 }
+
+func (f *fakeTools) Progress() map[string]application.ToolProgress {
+	return map[string]application.ToolProgress{}
+}
+
+// AppUpdate memakai nilai tetap supaya bentuk app_update terkunci di golden.
+func (f *fakeTools) AppUpdate() application.AppUpdate {
+	return application.AppUpdate{
+		Current: "1.0.0", Latest: "1.1.0", UpdateAvailable: true,
+		ReleaseURL: "https://github.com/irfanadwifangga/yt-to-mp3/releases/latest",
+	}
+}

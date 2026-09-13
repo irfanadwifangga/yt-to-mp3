@@ -10,10 +10,22 @@ Konverter audio YouTube menjadi MP3 berbentuk aplikasi desktop-lokal: satu binar
 - **Progress live** per job lewat SSE, ditampilkan sebagai sampul video yang terisi warna dari bawah ke atas. Membatalkan job menghentikan seluruh process tree, termasuk FFmpeg yang dijalankan yt-dlp, lalu membersihkan berkas sementara.
 - **Daftar selesai** — unduh hasil, buka foldernya di file manager, coba lagi yang gagal, atau hapus dari daftar (dengan atau tanpa berkasnya). Riwayat panjang dimuat bertahap.
 - **Auto-retry** — kegagalan jaringan sementara diulang otomatis hingga 3 kali dengan jeda bertambah. Bila YouTube membatasi permintaan (HTTP 429), jedanya lebih panjang dan job paralel diturunkan ke satu selama beberapa menit.
-- **Lima preset MP3**: 128, 192, 256, 320 kbps CBR, dan VBR V0. Keluaran 48 kHz stereo dengan tag ID3v2.3 dan sampul tersemat.
+- **Lima preset MP3**: 128, 192, 256, 320 kbps CBR, dan VBR V0. Keluaran 48 kHz stereo dengan tag ID3v2.3 dan sampul persegi tersemat.
+- **Judul dan artis bisa disunting sebelum konversi**, terisi saran yang sudah dirapikan (tanpa `(Official Video)` dan sejenisnya). Keduanya dipakai untuk tag dan nama berkas.
+- **Peringatan konversi ganda** bila video yang sama pernah dikonversi dengan preset yang sama.
 - **Setelan dalam dialog** (tombol **Setelan** atau `Ctrl+,`), dengan folder keluaran dipilih lewat dialog folder bawaan sistem operasi.
 - **Bahasa Indonesia dan Inggris**, serta tema terang, gelap, atau mengikuti sistem.
 - **Satu binary, satu instance** — menjalankannya dua kali membuka jendela yang sudah ada, bukan server kedua.
+
+## Instalasi
+
+**Windows:** unduh `yt-to-mp3_<versi>_windows_amd64_setup.exe` dari halaman Releases lalu jalankan. Tidak perlu hak admin. Installer membuat shortcut di Start Menu, dan aplikasi bisa di-uninstall dari **Settings → Apps**. Uninstall tidak menghapus riwayat maupun berkas MP3 hasil konversi.
+
+Installer dan exe belum ditandatangani, sehingga SmartScreen dapat menampilkan "Windows protected your PC". Pilih **More info** lalu **Run anyway**. Cocokkan berkas dengan `.sha256` di halaman rilis bila ingin memastikan unduhannya utuh.
+
+Aplikasi berjalan tanpa jendela sendiri: membukanya menjalankan server lokal lalu membuka tab di browser default. Tutup lewat tombol **Keluar** di halaman, atau biarkan berhenti sendiri setelah tab ditutup dan tidak ada job. Saat pertama dibuka, pasang yt-dlp dan FFmpeg dari **Setelan → Tool**.
+
+**macOS dan Linux:** unduh arsip `tar.gz` untuk arsitektur yang sesuai, ekstrak, lalu jalankan `yt-to-mp3`. Di macOS, jalankan `xattr -d com.apple.quarantine ./yt-to-mp3` lebih dulu karena binary belum ditandatangani.
 
 ## Kebutuhan
 
@@ -116,6 +128,7 @@ http://localhost:5173/?token=<token-dari-log>
 | --- | --- |
 | `make check` | Format, `go vet`, dan seluruh test Go |
 | `make typecheck` | Typecheck frontend |
+| `make test-web` | Test komponen frontend dengan vitest dan jsdom: analisis otomatis, hasil analisis basi, suntingan tag, peringatan konversi ganda, pembaruan yt-dlp, notifikasi, dan penggabungan riwayat |
 | `make check-i18n` | Setiap kode error Go punya terjemahan `id` dan `en`, dan kunci kedua bahasa setara |
 | `make test-integration` | Konversi dengan FFmpeg dan ffprobe sungguhan memakai fixture sintetis (nada sinus, sampul polos), ditambah E2E jalur job lengkap dengan yt-dlp palsu: konversi, auto-retry, dan pembatalan saat mengunduh. Gagal bila ffmpeg tidak ditemukan |
 | `make nfr` | Ukur target [NFR](docs/yt-to-mp3-go-planning.md#22-non-functional-requirements) pada direktori data sementara; `URL="<tautan>"` ikut mengukur konversi dua job paralel |
@@ -137,6 +150,13 @@ make release-snapshot
 ```
 
 Tool yt-dlp dan FFmpeg tidak pernah ikut di dalam arsip rilis; pengguna memasangnya dari aplikasi ([ADR-031](docs/yt-to-mp3-go-planning.md#4-keputusan-teknis)). Signing belum ada: macOS butuh codesign dan notarization dengan akun Apple Developer, Windows butuh sertifikat code signing.
+
+Build Windows berbeda dari target lain ([planning §25](docs/yt-to-mp3-go-planning.md#25-build-dev-workflow-dan-rilis)):
+- Di-link sebagai aplikasi GUI tanpa jendela console. Error startup muncul sebagai dialog.
+- Membawa ikon, info versi, dan manifest.
+- Job **Installer Windows** membungkusnya menjadi `setup.exe` dengan Inno Setup.
+
+Untuk build lokal dengan ikon dan info versi, jalankan `make winres` sebelum `go build`. Ikon digambar ulang dari tanda merek dengan `make icon`.
 
 ## Struktur
 
@@ -208,7 +228,9 @@ Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka 
 ## Keterbatasan yang diketahui
 
 - **FFmpeg yang dipasang aplikasi hanya maju lewat rilis aplikasi.** yt-dlp bisa diperbarui langsung dari **Setelan → Tool** (diverifikasi dengan `SHA2-256SUMS` rilis resminya), tetapi FFmpeg tetap mengikuti manifest yang di-pin; untuk memajukannya, jalankan `make update-tools` lalu commit.
-- **Belum ada rilis biner yang diterbitkan**; untuk sekarang build dari source. Binary rilis nantinya belum ditandatangani, sehingga SmartScreen di Windows dan Gatekeeper di macOS akan memperingatkan saat pertama dijalankan.
+- **Binary dan installer belum ditandatangani**, sehingga SmartScreen di Windows dan Gatekeeper di macOS memperingatkan saat pertama dijalankan.
+- **Aplikasi hanya memberi tahu bila ada versi baru**, tidak memperbarui dirinya sendiri; unduh installer baru dari halaman rilis. Cek ini membaca rilis GitHub `irfanadwifangga/yt-to-mp3`, jadi baru berfungsi setelah rilis diterbitkan di repositori publik.
+- **Build Windows tanpa console tidak menampilkan log di mana pun selain berkas** `logs/app.log` di direktori data. Untuk melihat log langsung, jalankan dari source dengan `go run ./cmd/app`.
 
 Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan keluaran video. Daftar lengkapnya di [non-goals](docs/yt-to-mp3-go-planning.md#3-non-goals).
 

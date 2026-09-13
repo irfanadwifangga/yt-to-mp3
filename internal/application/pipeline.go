@@ -241,26 +241,12 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	}
 
 	ext := "." + preset.Format
-	filename := p.naming.Build(job.FilenameMode, media, ext)
-	finalPath, finalName, release, err := out.ReservePath(filename)
-	if err != nil {
-		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
-			"pesan nama berkas", err)
-	}
-	// Reservasi dilepas bila job gagal; setelah commit berhasil penanda
-	// sudah tergantikan berkas asli dan pelepasan tidak berdampak.
-	committed := false
-	defer func() {
-		if !committed {
-			release()
-		}
-	}()
-
 	outTmp, err := out.CommitTempFile(job.ID, ext)
 	if err != nil {
 		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
 			"siapkan berkas sementara", err)
 	}
+	committed := false
 	defer func() {
 		if !committed {
 			_ = os.Remove(outTmp)
@@ -299,9 +285,19 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 			"hitung checksum hasil", err)
 	}
 
-	// Commit terakhir: sebelum titik ini tidak ada apa pun di direktori
-	// keluaran selain penanda kosong.
+	// Nama final baru dipesan setelah hasil terverifikasi, tepat sebelum
+	// rename. Penanda reservasi adalah berkas kosong bernama final; bila
+	// dipesan sebelum konversi, pengguna yang membuka folder hasil melihat
+	// "Judul.mp3" berukuran 0 byte selama job berjalan dan mengira berkasnya
+	// rusak. Sekarang penanda itu hanya hidup sepersekian detik.
+	filename := p.naming.Build(job.FilenameMode, media, ext)
+	finalPath, finalName, release, err := out.ReservePath(filename)
+	if err != nil {
+		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
+			"pesan nama berkas", err)
+	}
 	if err := out.CommitPath(outTmp, finalPath); err != nil {
+		release()
 		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
 			"pindahkan hasil", err)
 	}

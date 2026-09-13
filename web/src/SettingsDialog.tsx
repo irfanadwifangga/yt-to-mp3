@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, type Health, type Preset, type Setting } from "./api";
+import { api, ApiError, type Health, type Preset, type Setting, type ToolProgress } from "./api";
 import { CloseIcon, FolderIcon } from "./icons";
 import { has, locale, setLocale, t, type Locale } from "./i18n";
-import { formatTime, messageFor, presetLabel } from "./messages";
+import { formatBytes, formatTime, messageFor, presetLabel } from "./messages";
 import { loadTheme, saveTheme, type Theme } from "./theme";
 
 export type SettingsSection =
@@ -397,10 +397,32 @@ function PathControl({ id, value, describedBy, onChange }: PathProps) {
 
 /* Panel non-setelan ---------------------------------------------------- */
 
+/** Jeda polling kemajuan selama tool dipasang atau diperbarui. */
+const PROGRESS_POLL_MS = 400;
+
 function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState<string | undefined>();
+  const [progress, setProgress] = useState<Record<string, ToolProgress>>({});
+
+  // Pemasangan berjalan di dalam satu request panjang, jadi kemajuannya
+  // dibaca terpisah. Tanpa ini unduhan FFmpeg ratusan MB terlihat macet.
+  useEffect(() => {
+    if (busy === null || busy === "check") return;
+    let alive = true;
+    const timer = setInterval(() => {
+      api
+        .tools()
+        .then((res) => alive && setProgress(res.progress ?? {}))
+        .catch(() => {});
+    }, PROGRESS_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      setProgress({});
+    };
+  }, [busy]);
 
   useEffect(() => {
     api
@@ -435,7 +457,7 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
       )}
       <ul className="tools">
         {Object.entries(health.tools).map(([name, tool]) => (
-          <li key={name}>
+          <li key={name} aria-busy={busy === name}>
             <span className={tool.available ? (tool.update_available ? "dot warn" : "dot ok") : "dot warn"} />
             <span className="tool-name">{name}</span>
             <span className="mono tool-version">
@@ -451,6 +473,7 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
               onInstall={() => void run(name, t("tools.installFailed"), () => api.installTool(name))}
               onUpdate={() => void run(name, t("tools.updateFailed"), () => api.updateTool(name))}
             />
+            {busy === name && progress[name] && <ToolProgressBar progress={progress[name]} />}
           </li>
         ))}
       </ul>
@@ -469,6 +492,38 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
         </button>
       </div>
     </>
+  );
+}
+
+/** Kemajuan unduhan dan pemasangan satu tool. */
+function ToolProgressBar({ progress }: { progress: ToolProgress }) {
+  const sized = progress.phase === "downloading" && progress.total_bytes > 0;
+  // formatBytes menampilkan "-" untuk nol; di awal unduhan "0 KB" lebih jujur.
+  const done = formatBytes(Math.max(progress.done_bytes, 1));
+  const label =
+    progress.phase === "extracting"
+      ? t("tools.extracting")
+      : progress.done_bytes === 0
+        ? // Sebelum respons pertama tiba, misalnya selama redirect GitHub,
+          // "0 KB" terbaca seperti unduhan yang macet.
+          t("tools.connecting")
+        : sized
+        ? t("tools.downloading", { done, total: formatBytes(progress.total_bytes) })
+        : t("tools.downloadingUnknown", { done });
+
+  return (
+    <div className="tool-progress">
+      {/* Tanpa value, elemen progress tampil indeterminate. */}
+      <progress
+        max={sized ? progress.total_bytes : undefined}
+        value={sized ? progress.done_bytes : undefined}
+        aria-label={label}
+      />
+      <span className="hint mono">
+        {progress.steps > 1 && `${t("tools.step", { step: progress.step, steps: progress.steps })} · `}
+        {label}
+      </span>
+    </div>
   );
 }
 
@@ -567,10 +622,23 @@ function DisplayPanel() {
 
 function AboutPanel({ health }: { health: Health | null }) {
   if (!health) return null;
+  const update = health.app_update;
   return (
     <dl className="about">
       <dt>{t("settings.about.version")}</dt>
       <dd className="mono">{health.version}</dd>
+      <dt>{t("settings.about.latest")}</dt>
+      <dd className="mono">
+        {!update.latest ? (
+          t("settings.about.unknown")
+        ) : update.update_available && update.release_url ? (
+          <a href={update.release_url} target="_blank" rel="noopener noreferrer">
+            {t("settings.about.download", { version: update.latest })}
+          </a>
+        ) : (
+          update.latest
+        )}
+      </dd>
       <dt>{t("settings.about.commit")}</dt>
       <dd className="mono">{health.commit}</dd>
     </dl>

@@ -49,10 +49,11 @@ func newGuard() (*guard, error) {
 }
 
 // prepare menempatkan anak pada process group tersendiri, prasyarat untuk
-// mengirim CTRL_BREAK tanpa ikut mematikan proses kita sendiri.
+// mengirim CTRL_BREAK tanpa ikut mematikan proses kita sendiri. Pada build
+// tanpa console, jendela console milik anak ikut disembunyikan.
 func (g *guard) prepare(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP,
+		CreationFlags: creationFlags(windows.CREATE_NEW_PROCESS_GROUP),
 	}
 }
 

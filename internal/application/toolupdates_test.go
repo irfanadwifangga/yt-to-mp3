@@ -191,3 +191,44 @@ func TestToolServiceUpdateHanyaYTDLP(t *testing.T) {
 		t.Error("pembaruan masih ditandai setelah dipasang")
 	}
 }
+
+func (f *fakeUpdateSource) Progress() map[string]application.ToolProgress { return nil }
+
+func TestToolServiceAppUpdate(t *testing.T) {
+	const releases = "https://github.com/irfanadwifangga/yt-to-mp3/releases/latest"
+	enabled := true
+	svc, src, _, _ := newToolFixture(&enabled)
+	src.latest[application.AppUpdateKey] = "1.2.0"
+	ctx := context.Background()
+
+	svc.SetApp("1.1.0", releases)
+	if u := svc.AppUpdate(); u.UpdateAvailable || u.Latest != "" {
+		t.Errorf("sebelum dicek = %+v, mau tanpa informasi", u)
+	}
+
+	if err := svc.CheckUpdates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	u := svc.AppUpdate()
+	if !u.UpdateAvailable || u.Latest != "1.2.0" || u.Current != "1.1.0" || u.ReleaseURL != releases {
+		t.Errorf("setelah dicek = %+v, mau pembaruan ke 1.2.0", u)
+	}
+
+	tests := []struct {
+		current string
+		want    bool
+	}{
+		{"1.2.0", false},
+		{"1.3.0", false},
+		// Build dari source dan snapshot CI tidak ditawari rilis resmi.
+		{"0.1.0-dev", false},
+		{"1.1.1-snapshot", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		svc.SetApp(tc.current, releases)
+		if got := svc.AppUpdate().UpdateAvailable; got != tc.want {
+			t.Errorf("versi %q: update_available = %v, mau %v", tc.current, got, tc.want)
+		}
+	}
+}

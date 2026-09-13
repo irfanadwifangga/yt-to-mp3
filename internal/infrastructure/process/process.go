@@ -55,6 +55,7 @@ func Output(ctx context.Context, s Spec) (Result, error) {
 	cmd := exec.CommandContext(ctx, s.Bin, s.Args...)
 	cmd.Dir = s.Dir
 	cmd.Env = s.Env
+	hideConsole(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: DefaultMaxOutput}

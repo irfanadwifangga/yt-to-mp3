@@ -23,9 +23,11 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/browser"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/dialog"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ffmpeg"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/fs"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/process"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/tools"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ytdlp"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/instance"
@@ -43,6 +45,13 @@ const logRetentionDays = 7
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		// Build rilis Windows berjalan tanpa console (-H windowsgui), jadi
+		// stderr tidak terlihat siapa pun. Tanpa dialog, kegagalan startup
+		// membuat aplikasi seolah tidak pernah dibuka.
+		if !process.HasConsole() {
+			dialog.Error(version.AppName,
+				"yt-to-mp3 gagal dijalankan / failed to start.\n\n"+err.Error())
+		}
 		os.Exit(1)
 	}
 }
@@ -84,9 +93,7 @@ func run() error {
 	if info, running := instance.FindRunning(cfg.Paths.RuntimeFile); running {
 		log.Info("instance lain sudah berjalan", "pid", info.PID, "port", info.Port)
 		if !*noBrowser {
-			if err := browser.Open(info.URL()); err != nil {
-				log.Warn("gagal membuka browser", "error", err)
-			}
+			openBrowser(info.URL(), log, true)
 		}
 		return nil
 	}
@@ -239,6 +246,7 @@ func run() error {
 	toolService := application.NewToolService(toolManager,
 		tools.NewUpdateStateFile(filepath.Join(cfg.Paths.DataDir, "tool-updates.json")),
 		func() bool { return settings.Live().ToolUpdateCheck }, log)
+	toolService.SetApp(version.Version, version.ReleasesURL)
 	go toolService.Run(ctx)
 
 	srv := api.New(api.Options{
@@ -326,9 +334,7 @@ func run() error {
 	fmt.Fprintln(os.Stderr, "buka:", info.URL())
 
 	if !*noBrowser {
-		if err := browser.Open(info.URL()); err != nil {
-			log.Warn("gagal membuka browser", "error", err)
-		}
+		openBrowser(info.URL(), log, false)
 	}
 
 	select {
@@ -350,6 +356,34 @@ func run() error {
 	}
 	log.Info("berhenti dengan bersih")
 	return nil
+}
+
+// openBrowser membuka URL di browser default.
+//
+// Pada build tanpa console, baris "buka:" di stderr tidak terlihat, sehingga
+// browser yang gagal dibuka membuat aplikasi tidak bisa dijangkau sama
+// sekali. Alamatnya ditampilkan lewat dialog sebagai gantinya. wait menahan
+// sampai dialog ditutup, untuk jalur yang langsung keluar sesudahnya.
+func openBrowser(url string, log *slog.Logger, wait bool) {
+	err := browser.Open(url)
+	if err == nil {
+		return
+	}
+	log.Warn("gagal membuka browser", "error", err)
+	if process.HasConsole() {
+		return
+	}
+
+	show := func() {
+		dialog.Info(version.AppName,
+			"Browser tidak dapat dibuka otomatis. Salin alamat ini ke browser:\n"+
+				"The browser could not be opened. Copy this address into a browser:\n\n"+url)
+	}
+	if wait {
+		show()
+		return
+	}
+	go show()
 }
 
 // openStore memakai direktori keluaran tersimpan, dengan bawaan config

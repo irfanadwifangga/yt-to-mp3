@@ -1,5 +1,11 @@
 {
   "app": "yt-to-mp3",
+  "app_update": {
+    "current": "1.0.0",
+    "latest": "1.1.0",
+    "release_url": "https://github.com/irfanadwifangga/yt-to-mp3/releases/latest",
+    "update_available": true
+  },
   "commit": "<commit>",
   "output_dir": "",
   "queue": {

@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/version"
 )
 
 const (
@@ -50,6 +52,9 @@ var YTDLPAssets = map[string]YTDLPAsset{
 var (
 	ytdlpTag  = regexp.MustCompile(`^\d{4}\.\d{2}\.\d{2}(\.\d+)?$`)
 	ffmpegTag = regexp.MustCompile(`^\d+(\.\d+){0,3}$`)
+	// Rilis prarilis seperti v1.2.0-rc.1 tidak pernah dijawab
+	// /releases/latest, jadi hanya bentuk stabil yang diterima.
+	appTag = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 )
 
 // ParseSHA256Sums mengurai berkas checksum berformat sha256sum.
@@ -75,6 +80,8 @@ func (m *Manager) LatestVersion(ctx context.Context, name string) (string, error
 		repo, pattern = ytdlpRepo, ytdlpTag
 	case FFmpeg, FFprobe:
 		repo, pattern = ffmpegRepo, ffmpegTag
+	case version.AppName:
+		repo, pattern = version.Repo, appTag
 	default:
 		return "", fmt.Errorf("tool %q tidak dikenal", name)
 	}
@@ -96,7 +103,9 @@ func (m *Manager) LatestVersion(ctx context.Context, name string) (string, error
 	if !pattern.MatchString(rel.TagName) {
 		return "", fmt.Errorf("tag rilis %s tidak dikenal: %q", repo, rel.TagName)
 	}
-	return rel.TagName, nil
+	// Tag aplikasi berbentuk v1.2.3, sedangkan versi yang disematkan
+	// GoReleaser tanpa awalan v.
+	return strings.TrimPrefix(rel.TagName, "v"), nil
 }
 
 // InstallLatestYTDLP memasang yt-dlp rilis terbaru dan mengembalikan
@@ -143,12 +152,20 @@ func (m *Manager) InstallLatestYTDLP(ctx context.Context) (string, error) {
 	}
 	m.log.Info("memperbarui yt-dlp", "versi", tag, "url", d.URL)
 
-	archive, err := m.download(ctx, d)
+	defer m.clearProgress(YTDLP)
+	m.setProgress(YTDLP, application.ToolProgress{Phase: application.ToolPhaseDownloading, Step: 1, Steps: 1})
+	archive, err := m.download(ctx, d, func(done, total int64) {
+		m.setProgress(YTDLP, application.ToolProgress{
+			Phase: application.ToolPhaseDownloading, Step: 1, Steps: 1,
+			DoneBytes: done, TotalBytes: total,
+		})
+	})
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = os.Remove(archive) }()
 
+	m.setProgress(YTDLP, application.ToolProgress{Phase: application.ToolPhaseExtracting, Step: 1, Steps: 1})
 	if err := m.extract(archive, d); err != nil {
 		return "", err
 	}

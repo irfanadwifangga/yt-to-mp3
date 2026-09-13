@@ -18,6 +18,7 @@ import (
 
 	"github.com/ulikunitz/xz"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 )
 
@@ -66,14 +67,30 @@ func (m *Manager) Install(ctx context.Context, name string) error {
 		}
 	}()
 
-	for _, d := range build.Downloads {
+	steps := len(build.Downloads)
+	defer m.clearProgress(name)
+
+	for i, d := range build.Downloads {
+		step := i + 1
 		m.log.Info("mengunduh tool", "tool", name, "url", d.URL)
-		p, err := m.download(ctx, d)
+		m.setProgress(name, application.ToolProgress{
+			Phase: application.ToolPhaseDownloading, Step: step, Steps: steps,
+		})
+		p, err := m.download(ctx, d, func(done, total int64) {
+			m.setProgress(name, application.ToolProgress{
+				Phase: application.ToolPhaseDownloading, Step: step, Steps: steps,
+				DoneBytes: done, TotalBytes: total,
+			})
+		})
 		if err != nil {
 			return err
 		}
 		archives = append(archives, p)
 	}
+
+	m.setProgress(name, application.ToolProgress{
+		Phase: application.ToolPhaseExtracting, Step: steps, Steps: steps,
+	})
 
 	for i, d := range build.Downloads {
 		if err := m.extract(archives[i], d); err != nil {
@@ -88,7 +105,11 @@ func (m *Manager) Install(ctx context.Context, name string) error {
 
 // download mengambil berkas ke temp sambil menghitung SHA-256, lalu
 // membandingkannya dengan manifest.
-func (m *Manager) download(ctx context.Context, build Download) (string, error) {
+//
+// onBytes dipanggil setiap potongan tertulis dengan jumlah byte sejauh ini
+// dan ukuran total dari Content-Length, atau 0 bila server tidak
+// menyebutkannya.
+func (m *Manager) download(ctx context.Context, build Download, onBytes func(done, total int64)) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 
@@ -124,7 +145,8 @@ func (m *Manager) download(ctx context.Context, build Download) (string, error) 
 
 	hasher := sha256.New()
 	limited := io.LimitReader(resp.Body, maxDownloadBytes+1)
-	written, copyErr := io.Copy(io.MultiWriter(tmp, hasher), limited)
+	counter := &byteCounter{total: max(resp.ContentLength, 0), report: onBytes}
+	written, copyErr := io.Copy(io.MultiWriter(tmp, hasher, counter), limited)
 	closeErr := tmp.Close()
 
 	if copyErr != nil || closeErr != nil {

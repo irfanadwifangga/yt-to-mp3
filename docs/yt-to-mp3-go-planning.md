@@ -377,6 +377,8 @@ Bila ukuran total atau durasi tidak diketahui, `progress` dikirim `null` dan UI 
 2. Hitung `sha256`, simpan ke `files`.
 3. Menangkan nama final lewat reservasi `O_EXCL` (ADR-029), lalu `os.Rename` dari temp.
 
+Urutan ini wajib: reservasi terjadi **setelah** verifikasi, bukan saat konversi dimulai. Penanda reservasi adalah berkas 0 byte bernama final, dan implementasi awal yang memesannya sebelum transcode membuat pengguna melihat `Judul.mp3` kosong di folder hasil selama job berjalan. `TestE2EKonversiLengkap` memotret folder hasil saat FFmpeg berjalan dan mewajibkannya kosong.
+
 Temp untuk commit final berada di `<output_dir>/.tmp/` — **satu volume dengan output**, karena `os.Rename` tidak atomik, dan gagal di Windows, antar-volume. Temp unduhan mentah boleh berada di app data dir.
 
 ## 13. Timeout, batas, dan preflight
@@ -500,6 +502,8 @@ FFmpeg tidak punya distribusi binary statis resmi, jadi kedua sumber FFmpeg di a
 3. Ekstrak (`.zip` lewat stdlib, `.tar.xz` lewat ADR-032), ambil hanya berkas executable yang dibutuhkan.
 4. Pasang ke `<data_dir>/tools/` lewat rename atomik.
 
+`POST /api/tools/install` dan `POST /api/tools/update` berjalan sinkron dan bisa memakan waktu beberapa menit (arsip FFmpeg Windows sekitar 106 MB). Selama request itu tertahan, `GET /api/tools` menyertakan `progress` per nama tool: `phase` (`downloading` atau `extracting`), `step`/`steps` untuk build yang terdiri dari beberapa arsip, serta `done_bytes` dan `total_bytes` (0 bila server tidak mengirim `Content-Length`). Nilainya selalu objek dan entrinya dihapus begitu instalasi selesai atau gagal. Panel **Setelan → Tool** mem-polling-nya setiap 400 ms selama tombol pasang atau perbarui sedang berjalan, lalu menampilkan bar kemajuan, atau bar indeterminate saat ukurannya tidak diketahui dan saat mengekstrak. Polling dipilih ketimbang SSE karena hanya aktif selama satu tindakan pengguna dan tidak butuh jalur event baru.
+
 Aturan lain:
 
 - Pengecekan update mingguan, opsional (`tool_update_check`), dan tidak pernah memasang tanpa persetujuan user.
@@ -507,6 +511,13 @@ Aturan lain:
   - Versi dibandingkan per bagian angka. Versi yang tidak bisa diurai, seperti snapshot `N-…`, tidak pernah ditandai tertinggal.
   - `POST /api/tools/check` menjalankan cek sekarang. `POST /api/tools/update` hanya menerima `yt-dlp` (pengecualian ADR-033): tag divalidasi dengan pola tanggal sebelum menyusun URL, checksum diambil dari `SHA2-256SUMS` rilis tersebut, lalu unduhan diverifikasi dan dipasang lewat jalur yang sama dengan instalasi manifest.
   - UI menandai tool yang tertinggal. yt-dlp mendapat tombol **Perbarui**; FFmpeg hanya diberi petunjuk (rilis aplikasi untuk tool terkelola, package manager untuk tool dari `PATH`).
+  - Cek yang sama menanyakan rilis terbaru aplikasi dari `version.Repo`.
+    - Tag harus berbentuk `vX.Y.Z` dan disimpan tanpa awalan `v` di bawah kunci `yt-to-mp3`.
+    - `GET /api/health` menyertakan `app_update` (`current`, `latest`, `update_available`, `release_url`). UI menampilkan chip "Versi X tersedia" di topbar dan baris versi terbaru di **Setelan → Tentang**, keduanya menaut ke halaman rilis.
+    - Aplikasi **tidak pernah memperbarui dirinya sendiri**: mengganti binary yang sedang berjalan lintas tiga OS jauh lebih berisiko daripada manfaatnya untuk aplikasi yang jarang dirilis.
+    - `release_url` dibentuk dari konstanta, bukan dari jawaban API.
+    - Versi berakhiran `-dev` atau `-snapshot` tidak pernah ditawari pembaruan.
+    - **Selama repositori private, API GitHub menjawab 404 tanpa autentikasi**, sehingga cek pembaruan aplikasi tidak menghasilkan apa pun sampai rilis diterbitkan di repositori publik. Cek tool tetap berjalan karena kegagalan sebagian tidak menggagalkan cek.
 - `GET /api/health` menampilkan versi aktual hasil `yt-dlp --version` / `ffmpeg -version` agar bug report dapat dikaitkan ke versi tool.
 - Tool dari `PATH` dipakai apa adanya tanpa verifikasi checksum: itu milik sistem pengguna, bukan sesuatu yang kita pasang.
 
@@ -667,7 +678,18 @@ Teknis:
 - `make dev` menjalankan Vite dan Go bersamaan; `make build` menjalankan `vite build` sebelum `go build`.
 - Matriks CI: `windows/amd64`, `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`.
 - Rilis dengan GoReleaser (`.goreleaser.yaml`, workflow `release.yml`), artifact `yt-to-mp3_<version>_<os>_<arch>` (zip untuk Windows, tar.gz lainnya), disertai `checksums.txt` SHA-256. Hook `before` membangun SPA dan menjalankan `check:i18n` sebelum `go build`, karena SPA disematkan. Tag `v*` membuat rilis **draft**; pemicu manual menjalankan snapshot tanpa menerbitkan apa pun. windows/arm64 sengaja tidak dibangun karena tidak punya entri manifest tool.
-- **Signing**: macOS perlu codesign + notarization, kalau tidak Gatekeeper memblokir. Di Windows, binary Go tanpa signature yang men-spawn subprocess sering kena false positive SmartScreen/AV — anggarkan sertifikat atau dokumentasikan langkah bypass.
+- **Windows desktop**: build Windows dipisah menjadi build GoReleaser tersendiri.
+  - Di-link dengan `-H windowsgui`, jadi tidak ada jendela console saat dibuka dari Start Menu. Konsekuensinya stderr tidak terlihat. Kegagalan startup ditampilkan lewat dialog native, begitu pula alamat aplikasi bila browser gagal dibuka (`process.HasConsole`).
+  - Proses anak (yt-dlp, FFmpeg, probe versi) dijalankan dengan `CREATE_NO_WINDOW` **hanya** bila aplikasi tidak punya console. Tanpa flag itu setiap proses anak membuka jendela console yang berkedip. Dengan console, anak mewarisinya dan `CTRL_BREAK` tetap sampai.
+  - Dari build tanpa console, `CTRL_BREAK` tidak bisa dikirim, sehingga `Terminate` langsung menutup job object alih-alih menunggu masa tenggang 5 detik. Diukur pada build GUI: pembatalan saat mengunduh selesai dalam 248 ms tanpa proses tersisa, dan selama konversi tidak ada proses anak yang punya jendela.
+  - Hook pre-build menjalankan `goversioninfo` untuk menyematkan ikon (`packaging/windows/yt-to-mp3.ico`, digambar `scripts/icon` dari tanda merek), info versi, dan manifest (Common Controls 6, DPI per monitor, `asInvoker`). Berkas `.syso` tidak di-commit; build lokal memakai `make winres`.
+- **Installer Windows**: job `installer` di workflow Rilis berjalan di runner Windows setelah GoReleaser. Job itu mengekstrak exe dari zip, memasang Inno Setup lewat Chocolatey, lalu membangun `yt-to-mp3_<version>_windows_amd64_setup.exe` beserta `.sha256` dari `packaging/windows/yt-to-mp3.iss`. Pada tag, installer diunggah ke draft rilis yang sama; pada snapshot, diunggah sebagai artifact.
+  - Installer dipasang per pengguna tanpa admin ke `%LOCALAPPDATA%\Programs\yt-to-mp3`, membuat shortcut Start Menu (shortcut desktop opsional), dan terdaftar di Apps & features.
+  - `CloseApplications` menutup instance yang masih berjalan sebelum berkas diganti, karena aplikasi tanpa jendela mudah terlupa masih hidup.
+  - Uninstall tidak menyentuh data aplikasi maupun hasil konversi.
+  - `AppId` tidak boleh diganti setelah rilis pertama.
+  - Inno Setup tidak tersedia di mesin pengembangan, jadi skrip installer hanya tervalidasi lewat workflow Rilis (jalankan manual untuk snapshot).
+- **Signing**: belum ada, keputusan sadar untuk rilis awal. Di Windows, SmartScreen memperingatkan exe dan installer yang belum ditandatangani; catatan rilis memuat langkah "More info → Run anyway". macOS perlu codesign dan notarization agar Gatekeeper tidak memblokir. Menambahkan signing nanti hanya menyentuh pipeline rilis.
 - Logging `log/slog` terstruktur ke `<data_dir>/logs/app.log`, rotasi harian, retensi 7 hari.
 
 ## 26. Roadmap

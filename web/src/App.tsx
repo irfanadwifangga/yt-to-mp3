@@ -4,6 +4,7 @@ import { Capture } from "./Capture";
 import { GearIcon } from "./icons";
 import { t } from "./i18n";
 import { ActiveList, FinishedList } from "./Jobs";
+import { mergeJobs, newlyFinished, pendingIds } from "./jobList";
 import { messageFor, messageForCode } from "./messages";
 import { SettingsDialog, type SettingsSection } from "./SettingsDialog";
 import { Toasts, type Toast } from "./Toasts";
@@ -19,33 +20,6 @@ const POLL_MS = 2000;
  *  jarang lebih dari puluhan. */
 const ACTIVE_LIMIT = 100;
 const PAGE_SIZE = 25;
-
-/**
- * Menggabungkan dua daftar job tanpa duplikat, terbaru di atas.
- *
- * Baris dari `fresh` menang karena statusnya lebih baru. Tanggal dibanding
- * sebagai waktu, bukan string: pecahan detik RFC 3339 dari server panjangnya
- * tidak tetap.
- */
-/**
- * Job yang sebelumnya aktif, kini tidak aktif, tetapi belum muncul di
- * halaman riwayat yang diambil. Tetap dilacak supaya selesainya diumumkan
- * pada polling berikutnya, bukan hilang tanpa notifikasi karena kedua
- * daftar diambil pada saat yang sedikit berbeda.
- */
-function pendingIds(previous: Set<string>, finished: Job[], nowActive: Set<string>): string[] {
-  const seen = new Set(finished.map((job) => job.id));
-  return [...previous].filter((id) => !nowActive.has(id) && !seen.has(id));
-}
-
-function mergeJobs(fresh: Job[], previous: Job[]): Job[] {
-  const byId = new Map<string, Job>();
-  for (const job of previous) byId.set(job.id, job);
-  for (const job of fresh) byId.set(job.id, job);
-  return [...byId.values()].sort(
-    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id.localeCompare(a.id)
-  );
-}
 
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -93,8 +67,7 @@ export function App() {
       const nowActive = new Set(a.jobs.map((job) => job.id));
       const previous = knownActive.current;
       if (previous) {
-        for (const job of f.jobs) {
-          if (!previous.has(job.id) || nowActive.has(job.id)) continue;
+        for (const job of newlyFinished(previous, f.jobs, nowActive)) {
           const title = job.title || job.source_key;
           // Berkas sudah tersimpan di folder hasil; notifikasi ini yang
           // memberi tahu pengguna, bukan tombol unduh di riwayat.
@@ -253,6 +226,18 @@ export function App() {
         </div>
 
         <div className="topbar-actions">
+          {/* Aplikasi tidak memperbarui dirinya sendiri; cukup memberi tahu
+              dan menunjuk ke halaman rilis. */}
+          {health?.app_update.update_available && health.app_update.release_url && (
+            <a
+              className="chip warn"
+              href={health.app_update.release_url}
+              target="_blank"
+              rel="noopener noreferrer">
+              <span className="dot warn" />
+              {t("app.updateAvailable", { version: health.app_update.latest ?? "" })}
+            </a>
+          )}
           {health && (
             <button
               type="button"

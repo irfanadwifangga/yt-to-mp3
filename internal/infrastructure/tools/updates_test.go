@@ -14,6 +14,7 @@ import (
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/version"
 )
 
 // fakeGitHub meniru API rilis GitHub dan host unduhannya.
@@ -27,6 +28,9 @@ func fakeGitHub(t *testing.T, ytdlpTag, sums string, payload []byte) *Manager {
 	})
 	mux.HandleFunc("/repos/GyanD/codexffmpeg/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"tag_name":"9.1"}`))
+	})
+	mux.HandleFunc("/repos/"+version.Repo+"/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v1.2.0"}`))
 	})
 	mux.HandleFunc("/yt-dlp/yt-dlp/releases/download/"+ytdlpTag+"/SHA2-256SUMS", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(sums))
@@ -61,7 +65,11 @@ func TestLatestVersion(t *testing.T) {
 	m := fakeGitHub(t, "2026.09.01", "", nil)
 	ctx := context.Background()
 
-	for name, want := range map[string]string{YTDLP: "2026.09.01", FFmpeg: "9.1", FFprobe: "9.1"} {
+	// Versi aplikasi dikembalikan tanpa awalan v, sama dengan versi yang
+	// disematkan GoReleaser.
+	for name, want := range map[string]string{
+		YTDLP: "2026.09.01", FFmpeg: "9.1", FFprobe: "9.1", version.AppName: "1.2.0",
+	} {
 		got, err := m.LatestVersion(ctx, name)
 		if err != nil || got != want {
 			t.Errorf("LatestVersion(%s) = %q, %v; mau %q", name, got, err, want)
