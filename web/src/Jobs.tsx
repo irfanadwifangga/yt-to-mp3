@@ -246,6 +246,11 @@ function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
         {job.error_code && job.status === "failed" && (
           <p className="item-error">{messageForCode(job.error_code)}</p>
         )}
+        {hasFile && job.file_name && (
+          <p className="item-hint mono item-file" title={job.file_name}>
+            {job.file_name}
+          </p>
+        )}
         {done && !job.file_id && <p className="item-error">{t("history.missing")}</p>}
         {error && (
           <p className="alert small" role="alert">
@@ -302,16 +307,9 @@ function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
           <>
             {hasFile && (
               <>
-                <button
-                  type="button"
-                  className="btn small"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    void run("download", () => downloadFile(job.file_id!, `${title}.mp3`))
-                  }>
-                  <DownloadIcon />
-                  {busy === "download" ? t("history.preparing") : t("history.download")}
-                </button>
+                {/* Berkasnya sudah ada di folder hasil, jadi membuka folder
+                    adalah aksi utama. Simpan salinan hanya mengunduh duplikat
+                    lewat browser dan sengaja dibuat samar. */}
                 <button
                   type="button"
                   className="btn small"
@@ -319,6 +317,19 @@ function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
                   onClick={() => void run("reveal", () => api.revealFile(job.file_id!))}>
                   <FolderIcon />
                   {t("history.reveal")}
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  disabled={busy !== null}
+                  title={t("history.saveCopyHint")}
+                  onClick={() =>
+                    void run("download", () =>
+                      downloadFile(job.file_id!, job.file_name || `${title}.mp3`)
+                    )
+                  }>
+                  <DownloadIcon />
+                  {busy === "download" ? t("history.preparing") : t("history.saveCopy")}
                 </button>
               </>
             )}

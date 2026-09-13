@@ -1072,3 +1072,146 @@ select:focus-visible {
   gap: 0.75rem;
   flex-wrap: wrap;
 }
+
+/* Kartu tangkap tanpa tombol analisis ----------------------------------- */
+
+.capture-input {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+.capture-input input {
+  flex: 1;
+  padding-right: 2.9rem;
+}
+
+.capture-spinner {
+  position: absolute;
+  right: 0.95rem;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.5rem;
+  border: 2px solid var(--line);
+  border-top-color: var(--signal);
+  border-radius: 50%;
+  animation: capture-spin 0.8s linear infinite;
+}
+
+.capture-clear {
+  position: absolute;
+  right: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+@keyframes capture-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.capture-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.item-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Notifikasi ------------------------------------------------------------- */
+
+.toasts {
+  position: fixed;
+  right: clamp(0.75rem, 3vw, 1.5rem);
+  bottom: clamp(0.75rem, 3vw, 1.5rem);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(27rem, calc(100vw - 1.5rem));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.75rem 0.6rem 0.75rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast-mark {
+  width: 0.35rem;
+  align-self: stretch;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.toast-ok .toast-mark {
+  background: var(--signal);
+}
+
+.toast-bad .toast-mark {
+  background: var(--clip);
+}
+
+.toast-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.toast-title {
+  font-weight: 620;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast-text {
+  color: var(--muted);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.toast-error {
+  color: var(--clip);
+}
+
+.toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (max-width: 40rem) {
+  .toast {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .toast-actions {
+    grid-column: 2;
+  }
+}

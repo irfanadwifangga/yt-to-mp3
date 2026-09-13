@@ -37,6 +37,8 @@ type jobView struct {
 	// FileID terisi hanya bila berkas hasilnya masih ada di disk, sehingga
 	// UI dapat menyembunyikan tombol unduh yang pasti gagal.
 	FileID string `json:"file_id,omitempty"`
+	// FileName hanya nama berkas, tidak pernah path lengkapnya.
+	FileName string `json:"file_name,omitempty"`
 
 	CreatedAt  time.Time  `json:"created_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
@@ -132,16 +134,17 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 	for _, j := range jobs {
 		ids = append(ids, j.ID)
 	}
-	fileIDs, err := s.files.IDsByJobs(r.Context(), ids)
+	refs, err := s.files.RefsByJobs(r.Context(), ids)
 	if err != nil {
-		s.log.Warn("baca id berkas gagal", "error", err)
-		fileIDs = nil
+		s.log.Warn("baca berkas hasil gagal", "error", err)
+		refs = nil
 	}
 
 	views := make([]jobView, 0, len(jobs))
 	for _, j := range jobs {
 		v := toJobView(j)
-		v.FileID = fileIDs[j.ID]
+		v.FileID = refs[j.ID].ID
+		v.FileName = refs[j.ID].Filename
 		views = append(views, v)
 	}
 	writeJSON(w, http.StatusOK, listJobsResponse{Jobs: views, NextCursor: next})
@@ -155,8 +158,9 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view := toJobView(job)
-	if fileIDs, err := s.files.IDsByJobs(r.Context(), []string{job.ID}); err == nil {
-		view.FileID = fileIDs[job.ID]
+	if refs, err := s.files.RefsByJobs(r.Context(), []string{job.ID}); err == nil {
+		view.FileID = refs[job.ID].ID
+		view.FileName = refs[job.ID].Filename
 	}
 	writeJSON(w, http.StatusOK, view)
 }

@@ -35,9 +35,9 @@ func TestFileSetMissingDuaArah(t *testing.T) {
 		if f.Missing != wantMissing {
 			t.Errorf("Missing = %v, mau %v", f.Missing, wantMissing)
 		}
-		ids, err := files.IDsByJobs(ctx, []string{"job_1"})
+		ids, err := files.RefsByJobs(ctx, []string{"job_1"})
 		if err != nil {
-			t.Fatalf("IDsByJobs() error = %v", err)
+			t.Fatalf("RefsByJobs() error = %v", err)
 		}
 		if _, listed := ids["job_1"]; listed == wantMissing {
 			t.Errorf("tercantum di riwayat = %v, mau %v", listed, !wantMissing)

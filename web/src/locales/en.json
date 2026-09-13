@@ -15,10 +15,10 @@
   "app.queueSummary": "{active} active · {queued} waiting · capacity {capacity}",
 
   "capture.label": "Paste a YouTube link",
-  "capture.submit": "Analyze",
   "capture.busy": "Analyzing…",
-  "capture.pasteHint": "Pasted links are analyzed right away.",
+  "capture.pasteHint": "Paste or type a YouTube video link; analysis starts automatically.",
   "capture.needTool": "Install yt-dlp first to enable analysis.",
+  "capture.checkingTools": "Checking tools…",
   "capture.failed": "Analysis failed",
   "capture.unknown": "Unknown channel",
   "capture.preset": "Preset",
@@ -26,6 +26,8 @@
   "capture.queueing": "Queueing…",
   "capture.queueFailed": "Could not queue",
   "capture.clear": "Cancel",
+  "capture.retry": "Try again",
+  "capture.clearInput": "Clear link",
 
   "queue.title": "In progress",
   "queue.empty": "Nothing in progress. Paste a link above to start.",
@@ -38,8 +40,9 @@
 
   "history.title": "Finished",
   "history.empty": "Converted files will appear here.",
-  "history.download": "Download",
   "history.preparing": "Preparing…",
+  "history.saveCopy": "Save a copy",
+  "history.saveCopyHint": "Download a copy through the browser. The original is already in the output folder.",
   "history.reveal": "Show in folder",
   "history.missing": "The file is no longer on disk.",
   "history.retry": "Retry",
@@ -55,6 +58,13 @@
   "history.loadMore": "Load more",
   "history.loadingMore": "Loading…",
   "history.loadMoreFailed": "Could not load history",
+
+  "toast.completed": "Done: {title}",
+  "toast.savedAs": "Saved to the output folder as {file}.",
+  "toast.savedGeneric": "Saved to the output folder.",
+  "toast.failed": "Failed: {title}",
+  "toast.queued": "Added to queue: {title}",
+  "toast.close": "Dismiss notification",
 
   "tools.hint": "Used to download and convert. Everything runs on this computer.",
   "tools.installed": "installed",

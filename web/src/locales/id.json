@@ -15,10 +15,10 @@
   "app.queueSummary": "{active} aktif · {queued} menunggu · kapasitas {capacity}",
 
   "capture.label": "Tempel tautan YouTube",
-  "capture.submit": "Analisis",
   "capture.busy": "Menganalisis…",
-  "capture.pasteHint": "Tautan yang ditempel langsung dianalisis.",
+  "capture.pasteHint": "Tempel atau ketik tautan video YouTube; analisis berjalan otomatis.",
   "capture.needTool": "Pasang yt-dlp dulu untuk mengaktifkan analisis.",
+  "capture.checkingTools": "Memeriksa tool…",
   "capture.failed": "Analisis gagal",
   "capture.unknown": "Channel tidak diketahui",
   "capture.preset": "Preset",
@@ -26,6 +26,8 @@
   "capture.queueing": "Mengantre…",
   "capture.queueFailed": "Tidak dapat mengantre",
   "capture.clear": "Batal",
+  "capture.retry": "Coba lagi",
+  "capture.clearInput": "Kosongkan tautan",
 
   "queue.title": "Sedang diproses",
   "queue.empty": "Tidak ada yang sedang diproses. Tempel tautan di atas untuk mulai.",
@@ -38,9 +40,10 @@
 
   "history.title": "Selesai",
   "history.empty": "Hasil konversi akan muncul di sini.",
-  "history.download": "Unduh",
   "history.preparing": "Menyiapkan…",
-  "history.reveal": "Buka folder",
+  "history.saveCopy": "Simpan salinan",
+  "history.saveCopyHint": "Unduh salinan lewat browser. Berkas aslinya sudah tersimpan di folder hasil.",
+  "history.reveal": "Tampilkan di folder",
   "history.missing": "Berkas tidak ada lagi di disk.",
   "history.retry": "Coba lagi",
   "history.retrying": "Mengantre…",
@@ -55,6 +58,13 @@
   "history.loadMore": "Muat lagi",
   "history.loadingMore": "Memuat…",
   "history.loadMoreFailed": "Gagal memuat riwayat",
+
+  "toast.completed": "Selesai: {title}",
+  "toast.savedAs": "Tersimpan di folder hasil sebagai {file}.",
+  "toast.savedGeneric": "Tersimpan di folder hasil.",
+  "toast.failed": "Gagal: {title}",
+  "toast.queued": "Ditambahkan ke antrean: {title}",
+  "toast.close": "Tutup notifikasi",
 
   "tools.hint": "Dipakai untuk mengunduh dan mengonversi. Semuanya berjalan di komputer ini.",
   "tools.installed": "terpasang",

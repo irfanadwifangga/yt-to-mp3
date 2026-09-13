@@ -68,9 +68,9 @@ Aplikasi memilih port acak di `127.0.0.1` lalu membuka browser. Alamat pembukany
 
 Cara memakai:
 
-1. Tempel URL video YouTube; analisis berjalan otomatis (atau tekan **Analisis** bila mengetik manual).
+1. Tempel atau ketik URL video YouTube. Analisis berjalan otomatis begitu tautannya lengkap; tidak ada tombol yang perlu ditekan (Enter tetap bisa dipakai).
 2. Pilih preset, lalu **Konversi**.
-3. Pantau progress di **Sedang diproses**. Hasilnya pindah ke **Selesai** dan tersimpan di folder keluaran yang tertera di bagian bawah halaman.
+3. Pantau progress di **Sedang diproses**. Begitu selesai, notifikasi memberi tahu bahwa berkas sudah tersimpan di folder hasil (tertera di bagian bawah halaman), lengkap dengan tombol **Tampilkan di folder**. Berkas tidak perlu diunduh lagi; **Simpan salinan** di daftar Selesai hanya membuat duplikat lewat browser.
 
 Menghentikan aplikasi: tombol **Keluar** di kanan atas, atau `Ctrl+C` di terminal. Aplikasi juga berhenti sendiri setelah tab ditutup dan tidak ada job selama 30 menit; batasnya bisa diubah atau dimatikan (0) di **Setelan → Lanjutan**. Tidak ada tray icon karena pustaka tray membutuhkan cgo, dan itu akan merusak target cross-compile ([ADR-021](docs/yt-to-mp3-go-planning.md#4-keputusan-teknis)).
 

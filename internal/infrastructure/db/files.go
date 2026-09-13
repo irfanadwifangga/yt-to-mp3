@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 )
 
@@ -129,13 +130,13 @@ func scanFile(s scanner) (*domain.File, error) {
 	return &f, nil
 }
 
-// IDsByJobs memetakan job ke id berkas hasilnya.
+// RefsByJobs memetakan job ke id dan nama berkas hasilnya.
 //
 // Diambil sekali untuk seluruh halaman history, bukan satu query per baris:
 // pola N+1 pada daftar 100 job menghasilkan 100 perjalanan ke database untuk
 // data yang muat dalam satu.
-func (r *FileRepository) IDsByJobs(ctx context.Context, jobIDs []string) (map[string]string, error) {
-	out := make(map[string]string, len(jobIDs))
+func (r *FileRepository) RefsByJobs(ctx context.Context, jobIDs []string) (map[string]application.FileRef, error) {
+	out := make(map[string]application.FileRef, len(jobIDs))
 	if len(jobIDs) == 0 {
 		return out, nil
 	}
@@ -147,18 +148,19 @@ func (r *FileRepository) IDsByJobs(ctx context.Context, jobIDs []string) (map[st
 	}
 
 	rows, err := r.db.Read().QueryContext(ctx,
-		`SELECT job_id, id FROM files WHERE missing = 0 AND job_id IN (`+placeholders+`)`, args...)
+		`SELECT job_id, id, filename FROM files WHERE missing = 0 AND job_id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query id berkas: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
-		var jobID, fileID string
-		if err := rows.Scan(&jobID, &fileID); err != nil {
-			return nil, fmt.Errorf("scan id berkas: %w", err)
+		var jobID string
+		var ref application.FileRef
+		if err := rows.Scan(&jobID, &ref.ID, &ref.Filename); err != nil {
+			return nil, fmt.Errorf("scan berkas: %w", err)
 		}
-		out[jobID] = fileID
+		out[jobID] = ref
 	}
 	return out, rows.Err()
 }

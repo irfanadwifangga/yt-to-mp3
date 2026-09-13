@@ -412,9 +412,16 @@ func ParseEventPayload(payload string) StreamEvent {
 	return ev
 }
 
+// FileRef adalah rujukan berkas hasil yang aman dikirim ke klien: id untuk
+// aksi dan nama untuk ditampilkan, tanpa path filesystem.
+type FileRef struct {
+	ID       string
+	Filename string
+}
+
 // FileStore membaca berkas hasil.
 type FileStore interface {
 	Get(ctx context.Context, id string) (*domain.File, error)
-	IDsByJobs(ctx context.Context, jobIDs []string) (map[string]string, error)
+	RefsByJobs(ctx context.Context, jobIDs []string) (map[string]FileRef, error)
 	MarkMissing(ctx context.Context, id string) error
 }

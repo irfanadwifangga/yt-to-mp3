@@ -349,11 +349,11 @@ func (f *fakeFiles) GetByJob(_ context.Context, jobID string) (*domain.File, err
 	return f.byID[id], nil
 }
 
-func (f *fakeFiles) IDsByJobs(_ context.Context, jobIDs []string) (map[string]string, error) {
-	out := map[string]string{}
+func (f *fakeFiles) RefsByJobs(_ context.Context, jobIDs []string) (map[string]application.FileRef, error) {
+	out := map[string]application.FileRef{}
 	for _, id := range jobIDs {
 		if fileID, ok := f.byJob[id]; ok {
-			out[id] = fileID
+			out[id] = application.FileRef{ID: fileID, Filename: f.byID[fileID].Filename}
 		}
 	}
 	return out, nil

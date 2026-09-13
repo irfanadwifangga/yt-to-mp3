@@ -126,7 +126,10 @@ func seedContractJobs(t *testing.T, h *harness) {
 			t.Fatalf("buat %s: %v", j.ID, err)
 		}
 	}
-	h.files.add(&domain.File{ID: "file_selesai", JobID: "job_selesai", Path: "C:/tidak/boleh/bocor.mp3"})
+	h.files.add(&domain.File{
+		ID: "file_selesai", JobID: "job_selesai", Filename: "Lagu Selesai.mp3",
+		Path: "C:/tidak/boleh/bocor/Lagu Selesai.mp3",
+	})
 }
 
 // Bentuk respons yang dibaca SPA dikunci berkas golden. Pengecekan field per

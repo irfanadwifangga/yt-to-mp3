@@ -4,8 +4,12 @@ import { Capture } from "./Capture";
 import { GearIcon } from "./icons";
 import { t } from "./i18n";
 import { ActiveList, FinishedList } from "./Jobs";
-import { messageFor } from "./messages";
+import { messageFor, messageForCode } from "./messages";
 import { SettingsDialog, type SettingsSection } from "./SettingsDialog";
+import { Toasts, type Toast } from "./Toasts";
+
+/** Notifikasi yang terlihat sekaligus; yang lebih lama digeser keluar. */
+const MAX_TOASTS = 4;
 
 /** Antrean disegarkan cukup sering untuk terasa hidup, tetapi progress
  *  halus datang lewat SSE sehingga polling tidak perlu rapat. */
@@ -23,6 +27,17 @@ const PAGE_SIZE = 25;
  * sebagai waktu, bukan string: pecahan detik RFC 3339 dari server panjangnya
  * tidak tetap.
  */
+/**
+ * Job yang sebelumnya aktif, kini tidak aktif, tetapi belum muncul di
+ * halaman riwayat yang diambil. Tetap dilacak supaya selesainya diumumkan
+ * pada polling berikutnya, bukan hilang tanpa notifikasi karena kedua
+ * daftar diambil pada saat yang sedikit berbeda.
+ */
+function pendingIds(previous: Set<string>, finished: Job[], nowActive: Set<string>): string[] {
+  const seen = new Set(finished.map((job) => job.id));
+  return [...previous].filter((id) => !nowActive.has(id) && !seen.has(id));
+}
+
 function mergeJobs(fresh: Job[], previous: Job[]): Job[] {
   const byId = new Map<string, Job>();
   for (const job of previous) byId.set(job.id, job);
@@ -43,6 +58,21 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [quitting, setQuitting] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Id job yang terlihat aktif pada polling sebelumnya. Job yang keluar dari
+  // daftar ini lalu muncul di riwayat berarti baru saja selesai atau gagal.
+  // null sampai polling pertama, supaya riwayat lama tidak ikut diumumkan
+  // saat halaman dibuka.
+  const knownActive = useRef<Set<string> | null>(null);
+
+  const pushToast = useCallback((toast: Toast) => {
+    setToasts((prev) => [...prev.filter((x) => x.id !== toast.id), toast].slice(-MAX_TOASTS));
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((x) => x.id !== id));
+  }, []);
 
   // Setelah pengguna memuat halaman lama, polling tidak lagi mengganti
   // riwayat dengan halaman pertama saja. Baris yang tergeser keluar dari
@@ -59,6 +89,38 @@ export function App() {
       ]);
       setHealth(h);
       setActive(a.jobs);
+
+      const nowActive = new Set(a.jobs.map((job) => job.id));
+      const previous = knownActive.current;
+      if (previous) {
+        for (const job of f.jobs) {
+          if (!previous.has(job.id) || nowActive.has(job.id)) continue;
+          const title = job.title || job.source_key;
+          // Berkas sudah tersimpan di folder hasil; notifikasi ini yang
+          // memberi tahu pengguna, bukan tombol unduh di riwayat.
+          if (job.status === "completed") {
+            pushToast({
+              id: `done-${job.id}`,
+              tone: "ok",
+              title: t("toast.completed", { title }),
+              body: job.file_name
+                ? t("toast.savedAs", { file: job.file_name })
+                : t("toast.savedGeneric"),
+              fileId: job.file_id
+            });
+          } else if (job.status === "failed") {
+            pushToast({
+              id: `fail-${job.id}`,
+              tone: "bad",
+              title: t("toast.failed", { title }),
+              body: messageForCode(job.error_code)
+            });
+          }
+        }
+      }
+      // Job yang sudah diumumkan keluar dari himpunan dengan sendirinya,
+      // karena himpunan baru hanya berisi job yang masih aktif.
+      knownActive.current = previous ? new Set([...nowActive, ...pendingIds(previous, f.jobs, nowActive)]) : nowActive;
       if (extended.current) {
         setFinished((prev) => mergeJobs(f.jobs, prev));
       } else {
@@ -69,7 +131,23 @@ export function App() {
     } catch (err) {
       setError(messageFor(err, t("app.loadFailed")));
     }
-  }, []);
+  }, [pushToast]);
+
+  // Job baru dicatat sebagai aktif saat itu juga. Konversi yang selesai
+  // sebelum polling berikutnya tetap diumumkan walau tidak pernah terlihat
+  // di daftar aktif.
+  const handleQueued = useCallback(
+    (job: Job) => {
+      knownActive.current?.add(job.id);
+      pushToast({
+        id: `queued-${job.id}`,
+        tone: "info",
+        title: t("toast.queued", { title: job.title || job.source_key })
+      });
+      void refresh();
+    },
+    [pushToast, refresh]
+  );
 
   async function loadMore() {
     if (!cursor || loadingMore) return;
@@ -151,7 +229,8 @@ export function App() {
   const tools = health ? Object.values(health.tools) : [];
   const toolsReady = tools.length > 0 && tools.every((tool) => tool.available);
   const toolsUpdate = tools.some((tool) => tool.update_available);
-  const canAnalyze = health?.tools["yt-dlp"]?.available ?? false;
+  // null selama health pertama belum datang: belum diketahui, bukan tidak ada.
+  const canAnalyze = health ? (health.tools["yt-dlp"]?.available ?? false) : null;
 
   return (
     <div className="app">
@@ -215,7 +294,7 @@ export function App() {
           ready={canAnalyze}
           presets={presets}
           defaultPreset={defaultPreset}
-          onQueued={refresh}
+          onQueued={handleQueued}
         />
         <ActiveList jobs={active} onChanged={refresh} />
         <FinishedList
@@ -246,6 +325,12 @@ export function App() {
           </span>
         </footer>
       )}
+
+      <Toasts
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onReveal={(fileId) => api.revealFile(fileId)}
+      />
 
       <SettingsDialog
         section={settingsSection}

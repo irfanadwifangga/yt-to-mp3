@@ -184,6 +184,8 @@ export interface Job {
   /** Terisi selama job menunggu jeda auto-retry. */
   retry_at?: string;
   file_id?: string;
+  /** Nama berkas hasil di folder keluaran; server tidak pernah mengirim path. */
+  file_name?: string;
   created_at: string;
   started_at?: string;
   finished_at?: string;
