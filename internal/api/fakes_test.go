@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
@@ -178,6 +179,10 @@ func (r *fakeJobRepo) List(_ context.Context, q application.JobListQuery) ([]*do
 		if q.Status != "" && j.Status != q.Status {
 			continue
 		}
+		if (q.Scope == application.ScopeActive && !j.Status.IsActive()) ||
+			(q.Scope == application.ScopeFinished && !j.Status.IsTerminal()) {
+			continue
+		}
 		copied := *j
 		out = append(out, &copied)
 	}
@@ -217,6 +222,23 @@ func (r *fakeJobRepo) Fail(
 	j.Status = domain.StatusFailed
 	j.ErrorCode = code
 	j.ErrorMessage = detail
+	return nil
+}
+
+func (r *fakeJobRepo) Requeue(
+	_ context.Context, id string, _ domain.JobStatus, code domain.ErrorCode, detail string, retryAt time.Time,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.jobs[id]
+	if !ok {
+		return domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
+	}
+	j.Status = domain.StatusQueued
+	j.AttemptCount++
+	j.ErrorCode = code
+	j.ErrorMessage = detail
+	j.RetryAt = &retryAt
 	return nil
 }
 
@@ -296,6 +318,14 @@ func (f *fakeFiles) Get(_ context.Context, id string) (*domain.File, error) {
 		return nil, domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
 	}
 	return file, nil
+}
+
+func (f *fakeFiles) GetByJob(_ context.Context, jobID string) (*domain.File, error) {
+	id, ok := f.byJob[jobID]
+	if !ok {
+		return nil, domain.NewError(domain.CodeJobNotFound, domain.ClassPermanent, "tidak ada")
+	}
+	return f.byID[id], nil
 }
 
 func (f *fakeFiles) IDsByJobs(_ context.Context, jobIDs []string) (map[string]string, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -437,4 +438,144 @@ func TestJobDelete(t *testing.T) {
 	}
 
 	wantDomainCode(t, repo.Delete(ctx, "job_1"), domain.CodeJobNotFound)
+}
+
+// Job yang diantrekan ulang menunggu retry_at, lalu diambil kembali dengan
+// sisa kegagalan sebelumnya dibersihkan.
+func TestRequeueMenghormatiRetryAt(t *testing.T) {
+	d := migrated(t)
+	repo := db.NewJobRepository(d)
+	ctx := context.Background()
+
+	if err := repo.Create(ctx, newJob("job_1", "aaa")); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	claimed, err := repo.ClaimNextQueued(ctx)
+	if err != nil || claimed == nil {
+		t.Fatalf("ClaimNextQueued() = %v, %v", claimed, err)
+	}
+
+	if err := repo.Requeue(ctx, "job_1", domain.StatusResolving,
+		domain.CodeDownloadFailed, "connection reset", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Requeue() error = %v", err)
+	}
+
+	waiting, err := repo.Get(ctx, "job_1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if waiting.Status != domain.StatusQueued || waiting.AttemptCount != 1 ||
+		waiting.ErrorCode != domain.CodeDownloadFailed || waiting.RetryAt == nil {
+		t.Errorf("job menunggu = %+v", waiting)
+	}
+
+	if next, err := repo.ClaimNextQueued(ctx); err != nil || next != nil {
+		t.Fatalf("job diambil sebelum retry_at: %v, %v", next, err)
+	}
+
+	past := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	if _, err := d.Write().ExecContext(ctx, `UPDATE jobs SET retry_at = ? WHERE id = 'job_1'`, past); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := repo.ClaimNextQueued(ctx)
+	if err != nil || again == nil {
+		t.Fatalf("job tidak diambil setelah retry_at lewat: %v, %v", again, err)
+	}
+	if again.ErrorCode != "" || again.RetryAt != nil || again.AttemptCount != 1 {
+		t.Errorf("job diambil ulang = %+v", again)
+	}
+
+	// Job yang sudah berganti status tidak boleh diantrekan ulang oleh
+	// penulis yang keyakinannya basi.
+	if err := repo.Requeue(ctx, "job_1", domain.StatusDownloading,
+		domain.CodeDownloadFailed, "x", time.Now()); err == nil {
+		t.Error("Requeue dengan status asal yang basi seharusnya ditolak")
+	}
+}
+
+func TestSetTitleHanyaMengisiYangKosong(t *testing.T) {
+	d := migrated(t)
+	repo := db.NewJobRepository(d)
+	ctx := context.Background()
+
+	kosong := newJob("job_kosong", "aaa")
+	kosong.Title = ""
+	for _, j := range []*domain.Job{kosong, newJob("job_berjudul", "bbb")} {
+		if err := repo.Create(ctx, j); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+	}
+
+	for _, id := range []string{"job_kosong", "job_berjudul"} {
+		if err := repo.SetTitle(ctx, id, "Judul dari metadata"); err != nil {
+			t.Fatalf("SetTitle(%s) error = %v", id, err)
+		}
+	}
+
+	if j, _ := repo.Get(ctx, "job_kosong"); j.Title != "Judul dari metadata" {
+		t.Errorf("judul job kosong = %q", j.Title)
+	}
+	if j, _ := repo.Get(ctx, "job_berjudul"); j.Title != "Judul bbb" {
+		t.Errorf("judul yang sudah ada tertimpa: %q", j.Title)
+	}
+}
+
+func TestJobListScope(t *testing.T) {
+	d := migrated(t)
+	repo := db.NewJobRepository(d)
+	ctx := context.Background()
+
+	for id, key := range map[string]string{"job_antre": "aaa", "job_batal": "bbb", "job_jalan": "ccc"} {
+		if err := repo.Create(ctx, newJob(id, key)); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+	}
+	if err := repo.Transition(ctx, "job_batal", domain.StatusQueued, domain.StatusCancelled, domain.Event{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Transition(ctx, "job_jalan", domain.StatusQueued, domain.StatusResolving, domain.Event{}); err != nil {
+		t.Fatal(err)
+	}
+
+	ids := func(scope application.JobScope) map[string]bool {
+		t.Helper()
+		jobs, _, err := repo.List(ctx, application.JobListQuery{Scope: scope, Limit: 10})
+		if err != nil {
+			t.Fatalf("List(%q) error = %v", scope, err)
+		}
+		out := map[string]bool{}
+		for _, j := range jobs {
+			out[j.ID] = true
+		}
+		return out
+	}
+
+	if got := ids(application.ScopeActive); len(got) != 2 || !got["job_antre"] || !got["job_jalan"] {
+		t.Errorf("active = %v", got)
+	}
+	if got := ids(application.ScopeFinished); len(got) != 1 || !got["job_batal"] {
+		t.Errorf("finished = %v", got)
+	}
+
+	// Riwayat selesai harus dilayani indeks terurut tanpa sort di memori;
+	// regresinya baru terasa pada ribuan job.
+	plan, err := d.Read().QueryContext(ctx, `EXPLAIN QUERY PLAN
+		SELECT id FROM jobs
+		WHERE NOT status IN ('queued','resolving','downloading','converting','verifying','cancelling')
+		ORDER BY created_at DESC, id DESC LIMIT 26`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = plan.Close() }()
+	for plan.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := plan.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(detail, "TEMP B-TREE") {
+			t.Errorf("riwayat selesai diurutkan di memori: %s", detail)
+		}
+	}
 }

@@ -78,9 +78,16 @@ func TestCanTransition(t *testing.T) {
 		{domain.StatusResolving, domain.StatusConverting, false},
 		{domain.StatusDownloading, domain.StatusCompleted, false},
 
-		// Tidak boleh mundur.
+		// Tidak boleh mundur ke fase sebelumnya.
 		{domain.StatusConverting, domain.StatusDownloading, false},
-		{domain.StatusVerifying, domain.StatusQueued, false},
+		{domain.StatusVerifying, domain.StatusResolving, false},
+
+		// Auto-retry mengembalikan job yang sedang berjalan ke antrean.
+		// Job yang sedang dibatalkan tidak boleh hidup lagi lewat jalur ini.
+		{domain.StatusDownloading, domain.StatusQueued, true},
+		{domain.StatusVerifying, domain.StatusQueued, true},
+		{domain.StatusCancelling, domain.StatusQueued, false},
+		{domain.StatusQueued, domain.StatusQueued, false},
 
 		// Status ke dirinya sendiri bukan transisi.
 		{domain.StatusDownloading, domain.StatusDownloading, false},

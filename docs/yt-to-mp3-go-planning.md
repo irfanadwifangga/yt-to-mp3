@@ -530,6 +530,14 @@ Ringkasan; urutan lengkap ada di [architecture.md §7–§9](architecture.md).
 
 Retry bersifat idempoten (ADR-008): selalu menulis ke path temp baru dan hanya menyentuh output final pada langkah commit.
 
+Implementasi:
+
+- Auto-retry memakai baris job yang sama, bukan job baru. Scheduler mengembalikan job ke `queued` (satu-satunya transisi mundur yang diizinkan state machine, dari status aktif mana pun kecuali `cancelling`), menaikkan `attempt_count`, menyimpan kode kegagalan terakhir, dan mengisi `retry_at`. `ClaimNextQueued` melewati job sampai `retry_at` lewat, lalu membersihkan kode error saat mengambilnya.
+- Jeda disimpan di database, jadi tetap berlaku bila aplikasi dibuka ulang di tengah jeda. Jeda throttled 30 detik, 2 menit, dan 5 menit, masing-masing diacak ±20%.
+- Setelah 429, scheduler hanya menjalankan satu job selama 5 menit.
+- Retry manual dari UI membuat job baru dengan `attempt_count` 0, yaitu jatah auto-retry penuh.
+- Selama menunggu jeda, UI menampilkan hitung mundur, nomor percobaan, dan alasan kegagalan terakhir.
+
 ## 20. Normalisasi URL dan `source_key`
 
 - Ekstrak video id dari `watch?v=ID`, `youtu.be/ID`, `shorts/ID`, `embed/ID`
@@ -572,17 +580,17 @@ Diukur dengan `make nfr` (`go run ./scripts/nfr`) pada 2026-09-13, Windows 11 am
 | Aspek | Target | Hasil |
 | --- | --- | --- |
 | Ukuran binary | < 25 MB | 13,5 MB |
-| Cold start sampai SPA tersaji (median 5×) | < 1,5 detik | 96 ms |
-| Memori idle (working set) | < 60 MB | 19,5 MB |
-| Latensi API non-download, p95 terburuk (`/api/health`) | < 50 ms | 3,5 ms |
-| Daftar riwayat berfilter status, 10.000 job, p95 | tanpa degradasi terasa | 1,7 ms |
+| Cold start sampai SPA tersaji (median 5×) | < 1,5 detik | 97 ms |
+| Memori idle (working set) | < 60 MB | 19,3 MB |
+| Latensi API non-download, p95 terburuk (`/api/health`) | < 50 ms | 2,3 ms |
+| Daftar riwayat (`status=finished`, jalur yang dipakai UI), 10.000 job, p95 | tanpa degradasi terasa | 1,0 ms |
 | Memori puncak proses aplikasi saat 2 job berjalan | < 200 MB | 30,8 MB |
 | CPU proses aplikasi di luar tool, rata-rata per satu core | < 5% | 1,3% |
 | Konversi lagu 3 menit 33 detik, dua preset paralel, jaringan rumah | < 45 detik untuk 5 menit | 15,9 detik |
 
 Tiga baris terakhir berasal dari `make nfr URL="<tautan>"`, yang butuh jaringan dan yt-dlp serta FFmpeg di `PATH`. Waktu konversi bergantung pada jaringan, jadi dicatat sebagai catatan, bukan lolos/gagal.
 
-Pengukuran pertama menemukan satu regresi: daftar riwayat berfilter status butuh p95 38 ms pada 10.000 job, karena indeks `status` saja memaksa SQLite mengurutkan seluruh baris di memori. Migrasi `00002` menggantinya dengan indeks komposit `(status, created_at DESC, id DESC)`, dan test memeriksa rencana query-nya supaya regresi yang sama tertangkap walau tidak terlihat pada database kecil.
+Pengukuran pertama menemukan satu regresi: daftar riwayat berfilter status butuh p95 38 ms pada 10.000 job, karena indeks `status` saja memaksa SQLite mengurutkan seluruh baris di memori. Migrasi `00002` menggantinya dengan indeks komposit `(status, created_at DESC, id DESC)`, dan test memeriksa rencana query-nya supaya regresi yang sama tertangkap walau tidak terlihat pada database kecil. Migrasi `00003` menambahkan indeks `(created_at DESC, id DESC)` untuk riwayat tanpa filter status: p95 daftar tanpa filter turun dari 2,1 ms menjadi 1,0 ms.
 
 ## 23. Strategi testing
 

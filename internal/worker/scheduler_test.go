@@ -73,11 +73,43 @@ func newFixture(t *testing.T, concurrency int, run runnerFunc) *fixture {
 
 	repo := db.NewJobRepository(database)
 	rec := &recorder{}
+	sched := worker.New(repo, run, rec, concurrency, log)
+	// Bawaan test: tanpa auto-retry, supaya test lain yang memakai error
+	// transient tidak menunggu jeda sungguhan. Test auto-retry memasang
+	// kebijakannya sendiri.
+	sched.SetRetryPolicy(func(*domain.Error, int) (time.Duration, bool) { return 0, false }, 0)
 	return &fixture{
 		repo:   repo,
-		sched:  worker.New(repo, run, rec, concurrency, log),
+		sched:  sched,
 		events: rec,
 	}
+}
+
+// quickRetry mengulang kelas transient dan throttled tanpa jeda, dengan
+// batas yang sama seperti kebijakan sungguhan.
+func quickRetry(err *domain.Error, attempt int) (time.Duration, bool) {
+	if attempt >= application.MaxAutoRetries {
+		return 0, false
+	}
+	switch err.Class {
+	case domain.ClassTransient, domain.ClassThrottled:
+		return 0, true
+	}
+	return 0, false
+}
+
+// complete menjalankan jalur sukses lengkap dari resolving.
+func complete(ctx context.Context, repo *db.JobRepository, id string) error {
+	steps := []domain.JobStatus{
+		domain.StatusResolving, domain.StatusDownloading, domain.StatusConverting,
+		domain.StatusVerifying, domain.StatusCompleted,
+	}
+	for i := 1; i < len(steps); i++ {
+		if err := repo.Transition(ctx, id, steps[i-1], steps[i], domain.Event{}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (f *fixture) enqueue(t *testing.T, id, key string) {
@@ -328,5 +360,136 @@ func TestEventDisiarkan(t *testing.T) {
 	}
 	if !sawResolving || !sawFailed {
 		t.Errorf("event tidak lengkap: %v", f.events.statuses())
+	}
+}
+
+// Kegagalan sementara diulang otomatis di baris job yang sama, lalu job
+// selesai normal begitu percobaan berikutnya berhasil.
+func TestAutoRetrySampaiBerhasil(t *testing.T) {
+	var calls atomic.Int32
+	var f *fixture
+	f = newFixture(t, 1, func(ctx context.Context, job *domain.Job) error {
+		if calls.Add(1) <= 2 {
+			return domain.NewError(domain.CodeDownloadFailed, domain.ClassTransient, "connection reset")
+		}
+		return complete(ctx, f.repo, job.ID)
+	})
+	f.sched.SetRetryPolicy(quickRetry, 0)
+
+	f.enqueue(t, "job_1", "aaa")
+	f.run(t, func() {
+		job := f.waitStatus(t, "job_1", domain.StatusCompleted)
+		if job.AttemptCount != 2 {
+			t.Errorf("attempt_count = %d, mau 2", job.AttemptCount)
+		}
+		if job.ErrorCode != "" || job.RetryAt != nil {
+			t.Errorf("sisa percobaan gagal tertinggal: code=%q retry_at=%v", job.ErrorCode, job.RetryAt)
+		}
+	})
+	if got := calls.Load(); got != 3 {
+		t.Errorf("runner dipanggil %d kali, mau 3", got)
+	}
+}
+
+// Setelah jatah habis, job ditutup sebagai failed dengan kode terakhirnya.
+func TestAutoRetryBerhentiSetelahBatas(t *testing.T) {
+	var calls atomic.Int32
+	f := newFixture(t, 1, func(ctx context.Context, job *domain.Job) error {
+		calls.Add(1)
+		return domain.NewError(domain.CodeDownloadFailed, domain.ClassTransient, "timed out")
+	})
+	f.sched.SetRetryPolicy(quickRetry, 0)
+
+	f.enqueue(t, "job_1", "aaa")
+	f.run(t, func() {
+		job := f.waitStatus(t, "job_1", domain.StatusFailed)
+		if job.ErrorCode != domain.CodeDownloadFailed {
+			t.Errorf("error_code = %s, mau %s", job.ErrorCode, domain.CodeDownloadFailed)
+		}
+		if job.AttemptCount != application.MaxAutoRetries {
+			t.Errorf("attempt_count = %d, mau %d", job.AttemptCount, application.MaxAutoRetries)
+		}
+	})
+	if got, want := calls.Load(), int32(1+application.MaxAutoRetries); got != want {
+		t.Errorf("runner dipanggil %d kali, mau %d", got, want)
+	}
+}
+
+// Kegagalan permanen tidak pernah diulang, walau kebijakan retry aktif.
+func TestAutoRetryTidakMengulangKegagalanPermanen(t *testing.T) {
+	var calls atomic.Int32
+	f := newFixture(t, 1, func(ctx context.Context, job *domain.Job) error {
+		calls.Add(1)
+		return domain.NewError(domain.CodeVideoPrivate, domain.ClassPermanent, "privat")
+	})
+	f.sched.SetRetryPolicy(quickRetry, 0)
+
+	f.enqueue(t, "job_1", "aaa")
+	f.run(t, func() {
+		f.waitStatus(t, "job_1", domain.StatusFailed)
+	})
+	if got := calls.Load(); got != 1 {
+		t.Errorf("runner dipanggil %d kali, mau 1", got)
+	}
+}
+
+// Setelah 429, job paralel diturunkan ke satu selama masa pendinginan.
+func TestThrottleMenurunkanKonkurensi(t *testing.T) {
+	var (
+		throttledOnce atomic.Bool
+		afterThrottle atomic.Bool
+		concurrent    atomic.Int32
+		peak          atomic.Int32
+	)
+	release := make(chan struct{})
+
+	f := newFixture(t, 2, func(ctx context.Context, job *domain.Job) error {
+		if job.ID == "job_1" && throttledOnce.CompareAndSwap(false, true) {
+			return domain.NewError(domain.CodeRateLimited, domain.ClassThrottled, "http error 429")
+		}
+
+		n := concurrent.Add(1)
+		defer concurrent.Add(-1)
+		if afterThrottle.Load() {
+			for {
+				old := peak.Load()
+				if n <= old || peak.CompareAndSwap(old, n) {
+					break
+				}
+			}
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return domain.NewError(domain.CodeInternal, domain.ClassLocal, "selesai")
+	})
+	f.sched.SetRetryPolicy(quickRetry, time.Minute)
+
+	f.enqueue(t, "job_1", "aaa")
+	f.run(t, func() {
+		deadline := time.Now().Add(5 * time.Second)
+		for !throttledOnce.Load() && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		// Beri waktu job_1 kembali ke antrean sebelum job lain ditambahkan.
+		time.Sleep(100 * time.Millisecond)
+		afterThrottle.Store(true)
+
+		f.enqueue(t, "job_2", "bbb")
+		f.enqueue(t, "job_3", "ccc")
+		f.sched.Notify() <- struct{}{}
+
+		time.Sleep(400 * time.Millisecond) // beri kesempatan slot kedua terpakai bila tidak dibatasi
+		close(release)
+
+		for _, id := range []string{"job_1", "job_2", "job_3"} {
+			f.waitStatus(t, id, domain.StatusFailed)
+		}
+	})
+
+	if got := peak.Load(); got != 1 {
+		t.Errorf("puncak konkurensi selama pendinginan = %d, mau 1", got)
 	}
 }

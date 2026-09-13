@@ -31,7 +31,7 @@ func NewJobRepository(d *DB) *JobRepository {
 const jobColumns = `id, source_url, source_key, COALESCE(title, ''), status, preset_id,
 	filename_mode, progress, COALESCE(phase, ''), attempt_count,
 	COALESCE(error_code, ''), COALESCE(error_message, ''),
-	created_at, started_at, finished_at`
+	created_at, started_at, finished_at, retry_at`
 
 // isUniqueViolation melaporkan apakah error berasal dari pelanggaran unik.
 //
@@ -128,6 +128,19 @@ func (r *JobRepository) List(ctx context.Context, q application.JobListQuery) ([
 		where = append(where, "status = ?")
 		args = append(args, string(q.Status))
 	}
+	switch q.Scope {
+	case application.ScopeActive:
+		// Job aktif selalu sedikit, jadi IN atas indeks komposit status
+		// hanya menyentuh beberapa baris sebelum diurutkan.
+		where = append(where, activeStatusFilter)
+	case application.ScopeFinished:
+		// Sengaja NOT IN atas status aktif, bukan IN atas status terminal.
+		// Hampir seluruh riwayat terminal, sehingga SQLite cukup menelusuri
+		// idx_jobs_created_id yang sudah terurut dan berhenti setelah LIMIT;
+		// bentuk IN membuatnya menggabungkan tiga rentang indeks lalu
+		// mengurutkan ulang di memori.
+		where = append(where, "NOT "+activeStatusFilter)
+	}
 	if q.Cursor != "" {
 		createdAt, id, err := decodeCursor(q.Cursor)
 		if err != nil {
@@ -172,6 +185,9 @@ func (r *JobRepository) List(ctx context.Context, q application.JobListQuery) ([
 	}
 	return jobs, next, nil
 }
+
+// activeStatusFilter memilih job yang belum terminal.
+const activeStatusFilter = `status IN ('queued','resolving','downloading','converting','verifying','cancelling')`
 
 func encodeCursor(createdAt, id string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(createdAt + "\x00" + id))
@@ -303,6 +319,55 @@ func (r *JobRepository) Fail(
 	})
 }
 
+// Requeue mengembalikan job yang gagal sementara ke antrean.
+//
+// Job tidak dibuat ulang: riwayat tetap satu baris per permintaan pengguna,
+// dan attempt_count menjadi jatah auto-retry yang tersisa. progress dan
+// phase dikosongkan karena percobaan berikutnya mulai dari awal.
+func (r *JobRepository) Requeue(
+	ctx context.Context, id string, from domain.JobStatus,
+	code domain.ErrorCode, detail string, retryAt time.Time,
+) error {
+	if !domain.CanTransition(from, domain.StatusQueued) {
+		return domain.ErrInvalidTransition(from, domain.StatusQueued)
+	}
+	now := r.now()
+
+	return r.db.InTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE jobs
+			SET status = 'queued', attempt_count = attempt_count + 1,
+			    error_code = ?, error_message = ?, retry_at = ?, progress = NULL, phase = NULL
+			WHERE id = ? AND status = ?`,
+			string(code), detail, formatTime(retryAt), id, string(from))
+		if err != nil {
+			return fmt.Errorf("antrekan ulang: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("hitung baris antre ulang: %w", err)
+		}
+		if n == 0 {
+			return domain.NewError(domain.CodeInternal, domain.ClassLocal,
+				fmt.Sprintf("job %s tidak lagi berstatus %s", id, from))
+		}
+		return insertEvent(ctx, tx, id,
+			domain.Event{Type: domain.EventState, Payload: application.StreamEvent{
+				Type: application.StreamState, Status: domain.StatusQueued, Code: code,
+			}.PayloadJSON()}, now)
+	})
+}
+
+// SetTitle mengisi judul job yang masih kosong.
+func (r *JobRepository) SetTitle(ctx context.Context, id, title string) error {
+	_, err := r.db.Write().ExecContext(ctx,
+		`UPDATE jobs SET title = ? WHERE id = ? AND COALESCE(title, '') = ''`, title, id)
+	if err != nil {
+		return fmt.Errorf("simpan judul: %w", err)
+	}
+	return nil
+}
+
 // ClaimNextQueued memindahkan satu job antre ke resolving secara atomik.
 //
 // UPDATE ... RETURNING membuat pengambilan job aman walau kelak ada lebih
@@ -312,13 +377,20 @@ func (r *JobRepository) ClaimNextQueued(ctx context.Context) (*domain.Job, error
 	var claimed *domain.Job
 
 	err := r.db.InTx(ctx, func(tx *sql.Tx) error {
+		// Job yang menunggu jeda auto-retry dilewati sampai retry_at lewat.
+		// Kode error percobaan sebelumnya dibersihkan saat diambil: selama
+		// menunggu, kode itu menjelaskan kenapa job diulang; setelah jalan
+		// lagi, kode itu sudah tidak menggambarkan keadaan job.
+		nowText := formatTime(now)
 		row := tx.QueryRowContext(ctx, `
-			UPDATE jobs SET status = 'resolving', started_at = COALESCE(started_at, ?)
+			UPDATE jobs SET status = 'resolving', started_at = COALESCE(started_at, ?),
+			       retry_at = NULL, error_code = NULL, error_message = NULL
 			WHERE id = (
-				SELECT id FROM jobs WHERE status = 'queued'
+				SELECT id FROM jobs
+				WHERE status = 'queued' AND (retry_at IS NULL OR retry_at <= ?)
 				ORDER BY created_at ASC, id ASC LIMIT 1
 			)
-			RETURNING `+jobColumns, formatTime(now))
+			RETURNING `+jobColumns, nowText, nowText)
 
 		j, err := scanJob(row)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -453,12 +525,13 @@ func scanJob(s scanner) (*domain.Job, error) {
 		createdAt  string
 		startedAt  sql.NullString
 		finishedAt sql.NullString
+		retryAt    sql.NullString
 		errorCode  string
 	)
 
 	err := s.Scan(&j.ID, &j.SourceURL, &j.SourceKey, &j.Title, &status, &j.PresetID,
 		&mode, &progress, &j.Phase, &j.AttemptCount, &errorCode, &j.ErrorMessage,
-		&createdAt, &startedAt, &finishedAt)
+		&createdAt, &startedAt, &finishedAt, &retryAt)
 	if err != nil {
 		return nil, err
 	}
@@ -481,6 +554,9 @@ func scanJob(s scanner) (*domain.Job, error) {
 	}
 	if j.FinishedAt, err = parseNullTime(finishedAt); err != nil {
 		return nil, fmt.Errorf("parse finished_at: %w", err)
+	}
+	if j.RetryAt, err = parseNullTime(retryAt); err != nil {
+		return nil, fmt.Errorf("parse retry_at: %w", err)
 	}
 	return &j, nil
 }

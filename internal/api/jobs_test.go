@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -305,5 +307,113 @@ func TestHubMembatasiJumlahPelanggan(t *testing.T) {
 	}
 	if _, _, err := hub.Subscribe(ctx, "job_1", 0, false); err == nil {
 		t.Error("pelanggan kelima seharusnya ditolak")
+	}
+}
+
+// UI mengambil antrean dan riwayat terpisah; riwayat panjang tidak boleh
+// mendesak job aktif keluar dari halaman.
+func TestListJobsPerKelompok(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+
+	for _, j := range []*domain.Job{
+		{ID: "job_antre", SourceKey: "youtube:aaa", Status: domain.StatusQueued, PresetID: "mp3_standard"},
+		{ID: "job_selesai", SourceKey: "youtube:bbb", Status: domain.StatusCompleted, PresetID: "mp3_standard"},
+	} {
+		if err := h.jobs.Create(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for status, want := range map[string]string{"active": "job_antre", "finished": "job_selesai"} {
+		rec := h.do(t, http.MethodGet, "/api/jobs?status="+status, "")
+		var list struct {
+			Jobs []struct {
+				ID string `json:"id"`
+			} `json:"jobs"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(list.Jobs) != 1 || list.Jobs[0].ID != want {
+			t.Errorf("status=%s -> %+v, mau [%s]", status, list.Jobs, want)
+		}
+	}
+
+	if rec := h.do(t, http.MethodGet, "/api/jobs?status=entah", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("status tak dikenal = %d, mau 400", rec.Code)
+	}
+}
+
+func TestDeleteJobBesertaBerkas(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	add := func(id string) string {
+		t.Helper()
+		if err := h.jobs.Create(ctx, &domain.Job{
+			ID: id, SourceKey: "youtube:" + id, Status: domain.StatusCompleted, PresetID: "mp3_standard",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, id+".mp3")
+		if err := os.WriteFile(path, []byte("audio"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		h.files.add(&domain.File{ID: "file_" + id, JobID: id, Path: path, Filename: id + ".mp3"})
+		return path
+	}
+
+	kept := add("job_simpan")
+	removed := add("job_buang")
+
+	if rec := h.do(t, http.MethodDelete, "/api/jobs/job_simpan?delete_file=false", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("hapus tanpa berkas = %d", rec.Code)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("berkas ikut terhapus walau tidak diminta: %v", err)
+	}
+
+	if rec := h.do(t, http.MethodDelete, "/api/jobs/job_buang?delete_file=true", ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("hapus beserta berkas = %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(removed); !os.IsNotExist(err) {
+		t.Errorf("berkas masih ada setelah delete_file=true: %v", err)
+	}
+	if _, err := h.jobs.Get(ctx, "job_buang"); err == nil {
+		t.Error("job masih ada setelah dihapus")
+	}
+}
+
+// Stream untuk job yang belum terminal tidak pernah selesai sendiri. Tanpa
+// penutupan saat shutdown, keluar selagi ada job di antrean menunggu sampai
+// batas waktu shutdown lalu gagal.
+func TestSSEDitutupSaatShutdown(t *testing.T) {
+	h := newHarness(t)
+	if err := h.jobs.Create(context.Background(), &domain.Job{
+		ID: "job_antre", SourceKey: "youtube:aaa", SourceURL: "https://x.test",
+		Status: domain.StatusQueued, PresetID: "mp3_standard", FilenameMode: domain.FilenameTitle,
+	}); err != nil {
+		t.Fatalf("buat job: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		h.do(t, http.MethodGet, "/api/jobs/job_antre/events", "")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("stream job aktif selesai sebelum shutdown")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	h.srv.CloseStreams()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream tidak ditutup setelah CloseStreams")
 	}
 }

@@ -31,6 +31,9 @@ type jobView struct {
 	AttemptCount int              `json:"attempt_count"`
 	ErrorCode    domain.ErrorCode `json:"error_code,omitempty"`
 
+	// RetryAt terisi selama job menunggu jeda auto-retry.
+	RetryAt *time.Time `json:"retry_at,omitempty"`
+
 	// FileID terisi hanya bila berkas hasilnya masih ada di disk, sehingga
 	// UI dapat menyembunyikan tombol unduh yang pasti gagal.
 	FileID string `json:"file_id,omitempty"`
@@ -53,6 +56,7 @@ func toJobView(j *domain.Job) jobView {
 		Phase:        j.Phase,
 		AttemptCount: j.AttemptCount,
 		ErrorCode:    j.ErrorCode,
+		RetryAt:      j.RetryAt,
 		CreatedAt:    j.CreatedAt,
 		StartedAt:    j.StartedAt,
 		FinishedAt:   j.FinishedAt,
@@ -90,9 +94,18 @@ type listJobsResponse struct {
 }
 
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
-	q := application.JobListQuery{
-		Status: domain.JobStatus(r.URL.Query().Get("status")),
-		Cursor: r.URL.Query().Get("cursor"),
+	q := application.JobListQuery{Cursor: r.URL.Query().Get("cursor")}
+
+	// Selain status tunggal, status menerima dua kelompok: active untuk
+	// antrean dan finished untuk riwayat. UI butuh keduanya terpisah supaya
+	// riwayat panjang tidak mendesak job aktif keluar dari halaman.
+	switch status := r.URL.Query().Get("status"); status {
+	case string(application.ScopeActive):
+		q.Scope = application.ScopeActive
+	case string(application.ScopeFinished):
+		q.Scope = application.ScopeFinished
+	default:
+		q.Status = domain.JobStatus(status)
 	}
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
@@ -165,8 +178,12 @@ func (s *Server) handleRetryJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, toJobView(job))
 }
 
+// handleDeleteJob menghapus job dari riwayat. delete_file=true ikut
+// menghapus berkas hasilnya; path berkas tetap dibaca dari database, bukan
+// dari klien.
 func (s *Server) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
-	if err := s.jobs.Delete(r.Context(), r.PathValue("id")); err != nil {
+	deleteFile := r.URL.Query().Get("delete_file") == "true"
+	if err := s.jobs.Delete(r.Context(), r.PathValue("id"), deleteFile); err != nil {
 		s.writeDomainError(w, err)
 		return
 	}
@@ -214,6 +231,11 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+
+		case <-s.streamsDone:
+			// Server sedang berhenti. Klien yang masih hidup akan menyambung
+			// ulang dan jatuh ke polling bila server memang sudah tiada.
 			return
 
 		case ev, open := <-events:

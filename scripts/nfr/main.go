@@ -146,7 +146,7 @@ func run(bin, url string) error {
 	results = append(results, result{"Latensi API non-download, p95 (terburuk: " + worstPath + ")",
 		"< 50 ms", worst.Round(10 * time.Microsecond).String(), pass(worst < 50*time.Millisecond)})
 
-	historyP95, err := inst.latencyP95("/api/jobs?limit=50&status=completed", apiRequests)
+	historyP95, err := inst.latencyP95("/api/jobs?limit=50&status=finished", apiRequests)
 	if err != nil {
 		return err
 	}

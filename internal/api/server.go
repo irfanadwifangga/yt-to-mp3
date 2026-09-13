@@ -89,6 +89,9 @@ type Server struct {
 
 	shutdownOnce sync.Once
 	shutdownCh   chan struct{}
+
+	streamsOnce sync.Once
+	streamsDone chan struct{}
 }
 
 // NewToken membuat session token acak 32 byte.
@@ -121,6 +124,8 @@ func New(opts Options) *Server {
 		outputDir:  opts.OutputDir,
 		startedAt:  time.Now(),
 		shutdownCh: make(chan struct{}),
+
+		streamsDone: make(chan struct{}),
 	}
 
 	s.lastActivity.Store(s.startedAt.UnixNano())
@@ -193,6 +198,16 @@ func (s *Server) requestShutdown() {
 		s.log.Info("shutdown diminta lewat API")
 		close(s.shutdownCh)
 	})
+}
+
+// CloseStreams mengakhiri seluruh stream SSE yang sedang terbuka.
+//
+// http.Server.Shutdown menunggu setiap koneksi aktif selesai, sedangkan
+// stream SSE untuk job yang belum terminal tidak pernah selesai sendiri.
+// Tanpa ini, keluar selagi ada job di antrean menunggu sampai batas waktu
+// shutdown lalu gagal. Didaftarkan lewat http.Server.RegisterOnShutdown.
+func (s *Server) CloseStreams() {
+	s.streamsOnce.Do(func() { close(s.streamsDone) })
 }
 
 // trackActivity mencatat waktu request terautentikasi terakhir.

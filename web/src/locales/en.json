@@ -33,6 +33,7 @@
   "queue.cancelling": "Cancelling…",
   "queue.cancelFailed": "Cancel failed",
   "queue.progressLabel": "Progress of {title}",
+  "queue.retryScheduled": "Retrying in {seconds}s · attempt {attempt} of {max}",
 
   "history.title": "Finished",
   "history.empty": "Converted files will appear here.",
@@ -44,9 +45,15 @@
   "history.retrying": "Queueing…",
   "history.delete": "Remove",
   "history.confirmDelete": "Remove from list? The file stays.",
+  "history.confirmDeleteWithFile": "Remove from the list only, or delete the file too?",
+  "history.removeOnly": "List only",
+  "history.removeWithFile": "Delete file too",
   "history.confirmYes": "Remove",
   "history.confirmNo": "Cancel",
   "history.actionFailed": "Failed",
+  "history.loadMore": "Load more",
+  "history.loadingMore": "Loading…",
+  "history.loadMoreFailed": "Could not load history",
 
   "tools.hint": "Used to download and convert. Everything runs on this computer.",
   "tools.installed": "installed",

@@ -5,16 +5,29 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 )
 
+// JobScope mengelompokkan status untuk daftar di UI.
+type JobScope string
+
+const (
+	ScopeAll      JobScope = ""
+	ScopeActive   JobScope = "active"   // queued sampai cancelling
+	ScopeFinished JobScope = "finished" // completed, failed, cancelled
+)
+
 // JobListQuery adalah parameter pagination history.
 type JobListQuery struct {
 	Status domain.JobStatus // kosong berarti seluruh status
+	Scope  JobScope
 	Limit  int
 	Cursor string
 }
@@ -26,6 +39,9 @@ type JobRepository interface {
 	List(ctx context.Context, q JobListQuery) ([]*domain.Job, string, error)
 	Transition(ctx context.Context, id string, from, to domain.JobStatus, ev domain.Event) error
 	Fail(ctx context.Context, id string, from domain.JobStatus, code domain.ErrorCode, detail string) error
+	// Requeue mengembalikan job yang gagal sementara ke antrean, ditahan
+	// sampai retryAt.
+	Requeue(ctx context.Context, id string, from domain.JobStatus, code domain.ErrorCode, detail string, retryAt time.Time) error
 	ClaimNextQueued(ctx context.Context) (*domain.Job, error)
 	SweepNonTerminal(ctx context.Context) (int, error)
 	Delete(ctx context.Context, id string) error
@@ -92,12 +108,18 @@ func NewJobID() (string, error) {
 	return "job_" + hex.EncodeToString(buf), nil
 }
 
+// JobFiles mencari berkas hasil sebuah job.
+type JobFiles interface {
+	GetByJob(ctx context.Context, jobID string) (*domain.File, error)
+}
+
 // JobService adalah use case pembuatan dan pengelolaan job.
 type JobService struct {
 	repo     JobRepository
 	presets  PresetLister
 	cache    MediaCache
 	resolver MediaResolver
+	files    JobFiles
 	events   EventPublisher
 	notify   chan<- struct{}
 	log      *slog.Logger
@@ -113,6 +135,7 @@ func NewJobService(
 	presets PresetLister,
 	cache MediaCache,
 	resolver MediaResolver,
+	files JobFiles,
 	events EventPublisher,
 	notify chan<- struct{},
 	live func() LiveSettings,
@@ -120,7 +143,7 @@ func NewJobService(
 ) *JobService {
 	return &JobService{
 		repo: repo, presets: presets, cache: cache, resolver: resolver,
-		events: events, notify: notify, live: live, log: log,
+		files: files, events: events, notify: notify, live: live, log: log,
 	}
 }
 
@@ -240,8 +263,13 @@ func (s *JobService) List(ctx context.Context, q JobListQuery) ([]*domain.Job, s
 	return s.repo.List(ctx, q)
 }
 
-// Delete menghapus job dari history.
-func (s *JobService) Delete(ctx context.Context, id string) error {
+// Delete menghapus job dari history, dan bila diminta, berkas hasilnya.
+//
+// Berkas dihapus lebih dulu. Bila penghapusan berkas gagal, job dibiarkan
+// supaya berkas yang tertinggal tetap bisa ditemukan dan dihapus lagi dari
+// riwayat; urutan sebaliknya meninggalkan berkas yatim tanpa jalan kembali
+// dari UI.
+func (s *JobService) Delete(ctx context.Context, id string, deleteFile bool) error {
 	job, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return err
@@ -250,7 +278,38 @@ func (s *JobService) Delete(ctx context.Context, id string) error {
 		return domain.NewError(domain.CodeInternal, domain.ClassLocal,
 			"job yang masih berjalan harus dibatalkan lebih dulu")
 	}
+	if deleteFile {
+		if err := s.removeFile(ctx, id); err != nil {
+			return err
+		}
+	}
 	return s.repo.Delete(ctx, id)
+}
+
+// removeFile menghapus berkas hasil sebuah job dari disk.
+//
+// Path hanya dibaca dari database, tidak pernah dari klien. Job tanpa
+// berkas, atau berkas yang sudah hilang, bukan kegagalan: yang diminta
+// pengguna memang agar berkas itu tidak ada.
+func (s *JobService) removeFile(ctx context.Context, jobID string) error {
+	if s.files == nil {
+		return nil
+	}
+	file, err := s.files.GetByJob(ctx, jobID)
+	var derr *domain.Error
+	if errors.As(err, &derr) && derr.Code == domain.CodeJobNotFound {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := os.Remove(file.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return domain.WrapError(domain.CodeOutputWriteFailed, domain.ClassLocal,
+			"hapus berkas hasil", err)
+	}
+	s.log.Info("berkas hasil dihapus", "job", jobID, "berkas", file.Filename)
+	return nil
 }
 
 // Retry mengantrekan ulang job yang gagal atau dibatalkan.
@@ -287,7 +346,9 @@ func (s *JobService) Retry(ctx context.Context, id string) (*domain.Job, error) 
 		Status:       domain.StatusQueued,
 		PresetID:     job.PresetID,
 		FilenameMode: job.FilenameMode,
-		AttemptCount: job.AttemptCount + 1,
+		// Retry manual adalah keputusan pengguna, jadi job baru mendapat
+		// jatah auto-retry penuh alih-alih mewarisi jatah yang sudah habis.
+		AttemptCount: 0,
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err := s.repo.Create(ctx, retry); err != nil {

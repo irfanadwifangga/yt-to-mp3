@@ -8,7 +8,8 @@ Konverter audio YouTube menjadi MP3 berbentuk aplikasi desktop-lokal: satu binar
 
 - **Analisis tanpa mengunduh** — tempel tautan dan pratinjau judul, channel, durasi, serta codec sumber langsung muncul.
 - **Progress live** per job lewat SSE, ditampilkan sebagai sampul video yang terisi warna dari bawah ke atas. Membatalkan job menghentikan seluruh process tree, termasuk FFmpeg yang dijalankan yt-dlp, lalu membersihkan berkas sementara.
-- **Daftar selesai** — unduh hasil, buka foldernya di file manager, coba lagi yang gagal, atau hapus dari daftar.
+- **Daftar selesai** — unduh hasil, buka foldernya di file manager, coba lagi yang gagal, atau hapus dari daftar (dengan atau tanpa berkasnya). Riwayat panjang dimuat bertahap.
+- **Auto-retry** — kegagalan jaringan sementara diulang otomatis hingga 3 kali dengan jeda bertambah. Bila YouTube membatasi permintaan (HTTP 429), jedanya lebih panjang dan job paralel diturunkan ke satu selama beberapa menit.
 - **Lima preset MP3**: 128, 192, 256, 320 kbps CBR, dan VBR V0. Keluaran 48 kHz stereo dengan tag ID3v2.3 dan sampul tersemat.
 - **Setelan dalam dialog** (tombol **Setelan** atau `Ctrl+,`), dengan folder keluaran dipilih lewat dialog folder bawaan sistem operasi.
 - **Bahasa Indonesia dan Inggris**, serta tema terang, gelap, atau mengikuti sistem.
@@ -177,7 +178,7 @@ Seluruh endpoint berada di bawah `/api` dan mewajibkan header `X-Session-Token`,
 | `POST /metadata` | Analisis URL tanpa mengunduh |
 | `POST /jobs` · `GET /jobs` · `GET /jobs/{id}` | Buat, daftar, dan baca job |
 | `GET /jobs/{id}/events` | Progress live (SSE, mendukung `Last-Event-ID`) |
-| `POST /jobs/{id}/cancel` · `POST /jobs/{id}/retry` · `DELETE /jobs/{id}` | Batalkan, ulangi, hapus |
+| `POST /jobs/{id}/cancel` · `POST /jobs/{id}/retry` · `DELETE /jobs/{id}` | Batalkan, ulangi, hapus (`?delete_file=true` ikut menghapus berkas hasil) |
 | `GET /files/{id}` · `POST /files/{id}/reveal` | Unduh hasil, buka lokasinya |
 | `GET /settings` · `PUT /settings` | Baca dan ubah setelan |
 | `POST /dialogs/folder` | Buka dialog pemilih folder native |

@@ -43,12 +43,14 @@ CREATE TABLE jobs (
   error_message  TEXT,
   created_at     TEXT NOT NULL,
   started_at     TEXT,
-  finished_at    TEXT
+  finished_at    TEXT,
+  retry_at       TEXT  -- migrasi 00003: jeda auto-retry; NULL berarti boleh diambil kapan saja
 );
 
 -- Migrasi 00002: riwayat berfilter status dilayani indeks tanpa sort di memori.
 CREATE INDEX idx_jobs_status_created ON jobs(status, created_at DESC, id DESC);
-CREATE INDEX idx_jobs_created ON jobs(created_at DESC);
+-- Migrasi 00003: urutan riwayat penuh tanpa sort ulang baris bertimestamp sama.
+CREATE INDEX idx_jobs_created_id ON jobs(created_at DESC, id DESC);
 
 -- Menegakkan DUPLICATE_ACTIVE_JOB di level database, bukan hanya di kode.
 CREATE UNIQUE INDEX idx_jobs_active_dedup
@@ -212,5 +214,6 @@ Seluruh kebijakan di atas dijalankan `application.Housekeeper`: satu putaran seb
 | --- | --- | --- |
 | 1 | `00001_init.sql` | Skema awal dan seed preset |
 | 2 | `00002_jobs_status_created_index.sql` | Indeks `(status, created_at DESC, id DESC)` menggantikan `idx_jobs_status`. Diukur: p95 daftar riwayat berfilter status pada 10.000 job turun dari 38 ms menjadi 1,7 ms |
+| 3 | `00003_jobs_retry_at.sql` | Kolom `jobs.retry_at` untuk jeda auto-retry (planning §19). Indeks `(created_at DESC, id DESC)` menggantikan `idx_jobs_created`, sehingga riwayat tanpa filter status tidak lagi mengurutkan ulang baris bertimestamp sama |
 
 `TestMigrateDariSkemaVersi1` membangun database lewat `goose UpTo(1)`, mengisinya dengan SQL mentah, lalu menjalankan `Migrate` penuh dan memeriksa data tetap utuh. `TestRiwayatBerfilterStatusMemakaiIndeks` memeriksa `EXPLAIN QUERY PLAN` supaya regresi indeks tertangkap walau tidak terlihat pada database kecil.

@@ -91,10 +91,15 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(values),
     }),
-  jobs: (status?: JobStatus) =>
-    request<{ jobs: Job[]; next_cursor?: string }>(
-      status ? `/jobs?status=${status}` : "/jobs",
-    ),
+  /** scope "active" untuk antrean, "finished" untuk riwayat berhalaman. */
+  jobs: (params: { scope?: "active" | "finished"; limit?: number; cursor?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.scope) query.set("status", params.scope);
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.cursor) query.set("cursor", params.cursor);
+    const qs = query.toString();
+    return request<{ jobs: Job[]; next_cursor?: string }>(qs ? `/jobs?${qs}` : "/jobs");
+  },
   createJob: (url: string, presetId: string) =>
     request<Job>("/jobs", {
       method: "POST",
@@ -103,8 +108,8 @@ export const api = {
   cancelJob: (id: string) =>
     request<{ status: string }>(`/jobs/${id}/cancel`, { method: "POST" }),
   retryJob: (id: string) => request<Job>(`/jobs/${id}/retry`, { method: "POST" }),
-  deleteJob: (id: string) =>
-    request<void>(`/jobs/${id}?delete_file=false`, { method: "DELETE" }),
+  deleteJob: (id: string, deleteFile = false) =>
+    request<void>(`/jobs/${id}?delete_file=${deleteFile}`, { method: "DELETE" }),
   revealFile: (id: string) =>
     request<void>(`/files/${id}/reveal`, { method: "POST" }),
   /**
@@ -160,8 +165,11 @@ export interface Job {
   filename_mode: string;
   progress: number | null;
   phase?: string;
+  /** Jumlah auto-retry yang sudah dijalankan untuk job ini. */
   attempt_count: number;
   error_code?: string;
+  /** Terisi selama job menunggu jeda auto-retry. */
+  retry_at?: string;
   file_id?: string;
   created_at: string;
   started_at?: string;
@@ -178,6 +186,9 @@ export interface Preset {
   sample_rate?: number;
   channels: number;
 }
+
+/** Sama dengan application.MaxAutoRetries di backend. */
+export const MAX_AUTO_RETRIES = 3;
 
 /** Status terminal tidak akan berubah lagi. */
 export const TERMINAL: readonly JobStatus[] = ["completed", "failed", "cancelled"];

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, downloadFile, isTerminal, type Job } from "./api";
+import { api, downloadFile, isTerminal, MAX_AUTO_RETRIES, type Job } from "./api";
 import { Cover } from "./Cover";
 import { DownloadIcon, FolderIcon } from "./icons";
 import { t } from "./i18n";
@@ -30,6 +30,11 @@ export function ActiveList({ jobs, onChanged }: Props) {
       )}
     </section>
   );
+}
+
+/** Detik tersisa sampai auto-retry, dibulatkan ke atas. */
+function secondsUntil(iso: string): number {
+  return Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 1000));
 }
 
 function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
@@ -64,6 +69,9 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
   }
 
   const waiting = status === "queued";
+  // Job yang menunggu jeda auto-retry membawa kode kegagalan terakhirnya,
+  // supaya pengguna tahu kenapa job itu belum jalan.
+  const retrying = waiting && Boolean(job.retry_at) && Boolean(job.error_code);
 
   return (
     <li className="item">
@@ -79,13 +87,24 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
           {title}
         </p>
         <p className="item-meta">
-          <span>{phaseLabel(phase) || statusLabel(status)}</span>
+          {retrying ? (
+            <span className="mono">
+              {t("queue.retryScheduled", {
+                seconds: secondsUntil(job.retry_at!),
+                attempt: job.attempt_count,
+                max: MAX_AUTO_RETRIES
+              })}
+            </span>
+          ) : (
+            <span>{phaseLabel(phase) || statusLabel(status)}</span>
+          )}
           {!waiting && (
             <span className="mono">
               {percent == null ? t("queue.calculating") : `${percent.toFixed(0)}%`}
             </span>
           )}
         </p>
+        {retrying && <p className="item-hint">{messageForCode(job.error_code)}</p>}
         {error && (
           <p className="alert small" role="alert">
             {error}
@@ -98,8 +117,7 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
           type="button"
           className="btn ghost small"
           onClick={() => void handleCancel()}
-          disabled={busy || status === "cancelling"}
-        >
+          disabled={busy || status === "cancelling"}>
           {busy || status === "cancelling" ? t("queue.cancelling") : t("queue.cancel")}
         </button>
       </div>
@@ -107,8 +125,22 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
   );
 }
 
+interface FinishedProps extends Props {
+  onRemoved: (id: string) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+}
+
 /** Job yang sudah selesai, gagal, atau dibatalkan. */
-export function FinishedList({ jobs, onChanged }: Props) {
+export function FinishedList({
+  jobs,
+  onChanged,
+  onRemoved,
+  hasMore,
+  loadingMore,
+  onLoadMore
+}: FinishedProps) {
   return (
     <section className="block" aria-labelledby="finished-title">
       <h2 id="finished-title" className="block-title">
@@ -120,9 +152,18 @@ export function FinishedList({ jobs, onChanged }: Props) {
       ) : (
         <ul className="list">
           {jobs.map((job) => (
-            <FinishedJob key={job.id} job={job} onChanged={onChanged} />
+            <FinishedJob key={job.id} job={job} onChanged={onChanged} onRemoved={onRemoved} />
           ))}
         </ul>
+      )}
+      {hasMore && (
+        <button
+          type="button"
+          className="btn ghost load-more"
+          onClick={onLoadMore}
+          disabled={loadingMore}>
+          {loadingMore ? t("history.loadingMore") : t("history.loadMore")}
+        </button>
       )}
     </section>
   );
@@ -136,7 +177,7 @@ const PERMANENT = new Set([
   "AGE_RESTRICTED",
   "LIVE_NOT_SUPPORTED",
   "UNSUPPORTED_URL",
-  "INVALID_URL",
+  "INVALID_URL"
 ]);
 
 /** Konfirmasi hapus kembali ke keadaan semula bila diabaikan. */
@@ -144,7 +185,13 @@ const CONFIRM_TIMEOUT_MS = 5000;
 
 type Action = "download" | "reveal" | "retry" | "delete";
 
-function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
+interface FinishedJobProps {
+  job: Job;
+  onChanged: () => void;
+  onRemoved: (id: string) => void;
+}
+
+function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
   const [busy, setBusy] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -169,8 +216,18 @@ function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
     }
   }
 
+  function remove(withFile: boolean) {
+    void run("delete", async () => {
+      await api.deleteJob(job.id, withFile);
+      // Baris dari halaman riwayat lama tidak ikut tersegarkan polling,
+      // jadi dibuang langsung dari daftar.
+      onRemoved(job.id);
+    });
+  }
+
   const title = job.title || job.source_key;
   const done = job.status === "completed";
+  const hasFile = done && Boolean(job.file_id);
   const retryable = !done && !PERMANENT.has(job.error_code ?? "");
   const tone = done ? "ok" : job.status === "failed" ? "bad" : "off";
 
@@ -199,23 +256,51 @@ function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
 
       <div className="item-actions">
         {confirming ? (
-          <>
-            <span className="confirm-text">{t("history.confirmDelete")}</span>
-            <button
-              type="button"
-              className="btn danger small"
-              disabled={busy !== null}
-              onClick={() => void run("delete", () => api.deleteJob(job.id))}
-            >
-              {t("history.confirmYes")}
-            </button>
-            <button type="button" className="btn ghost small" onClick={() => setConfirming(false)}>
-              {t("history.confirmNo")}
-            </button>
-          </>
+          hasFile ? (
+            <>
+              <span className="confirm-text">{t("history.confirmDeleteWithFile")}</span>
+              <button
+                type="button"
+                className="btn small"
+                disabled={busy !== null}
+                onClick={() => remove(false)}>
+                {t("history.removeOnly")}
+              </button>
+              <button
+                type="button"
+                className="btn danger small"
+                disabled={busy !== null}
+                onClick={() => remove(true)}>
+                {t("history.removeWithFile")}
+              </button>
+              <button
+                type="button"
+                className="btn ghost small"
+                onClick={() => setConfirming(false)}>
+                {t("history.confirmNo")}
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="confirm-text">{t("history.confirmDelete")}</span>
+              <button
+                type="button"
+                className="btn danger small"
+                disabled={busy !== null}
+                onClick={() => remove(false)}>
+                {t("history.confirmYes")}
+              </button>
+              <button
+                type="button"
+                className="btn ghost small"
+                onClick={() => setConfirming(false)}>
+                {t("history.confirmNo")}
+              </button>
+            </>
+          )
         ) : (
           <>
-            {done && job.file_id && (
+            {hasFile && (
               <>
                 <button
                   type="button"
@@ -223,8 +308,7 @@ function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
                   disabled={busy !== null}
                   onClick={() =>
                     void run("download", () => downloadFile(job.file_id!, `${title}.mp3`))
-                  }
-                >
+                  }>
                   <DownloadIcon />
                   {busy === "download" ? t("history.preparing") : t("history.download")}
                 </button>
@@ -232,8 +316,7 @@ function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
                   type="button"
                   className="btn small"
                   disabled={busy !== null}
-                  onClick={() => void run("reveal", () => api.revealFile(job.file_id!))}
-                >
+                  onClick={() => void run("reveal", () => api.revealFile(job.file_id!))}>
                   <FolderIcon />
                   {t("history.reveal")}
                 </button>
@@ -245,8 +328,7 @@ function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
                 type="button"
                 className="btn small"
                 disabled={busy !== null}
-                onClick={() => void run("retry", () => api.retryJob(job.id))}
-              >
+                onClick={() => void run("retry", () => api.retryJob(job.id))}>
                 {busy === "retry" ? t("history.retrying") : t("history.retry")}
               </button>
             )}
@@ -255,8 +337,7 @@ function FinishedJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
               type="button"
               className="btn ghost small quiet-danger"
               disabled={busy !== null}
-              onClick={() => setConfirming(true)}
-            >
+              onClick={() => setConfirming(true)}>
               {t("history.delete")}
             </button>
           </>

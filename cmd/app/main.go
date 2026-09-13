@@ -215,7 +215,7 @@ func run() error {
 	scheduler := worker.New(jobs, pipeline, hub, concurrency, log)
 
 	jobService := application.NewJobService(
-		jobs, presets, mediaCache, resolver, hub, scheduler.Notify(),
+		jobs, presets, mediaCache, resolver, files, hub, scheduler.Notify(),
 		settings.Live, log)
 
 	// Putaran pertama berjalan sebelum scheduler dan listener: sisa temp dari
@@ -293,6 +293,9 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	// Stream SSE tidak pernah selesai sendiri, jadi harus diakhiri saat
+	// shutdown dimulai; kalau tidak, Shutdown menunggu sampai batas waktunya.
+	httpSrv.RegisterOnShutdown(srv.CloseStreams)
 
 	serveErr := make(chan error, 1)
 	go func() {

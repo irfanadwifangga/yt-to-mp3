@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -31,11 +32,19 @@ type Scheduler struct {
 	notify chan struct{}
 	slots  chan struct{}
 
-	mu      sync.Mutex
-	running map[string]context.CancelFunc
+	mu             sync.Mutex
+	running        map[string]context.CancelFunc
+	throttledUntil time.Time // dijaga mu
+
+	retryPlan        RetryPolicy
+	throttleCooldown time.Duration
 
 	wg sync.WaitGroup
 }
+
+// RetryPolicy menentukan jeda auto-retry untuk sebuah kegagalan; ok false
+// berarti job ditutup sebagai failed.
+type RetryPolicy func(err *domain.Error, attempt int) (delay time.Duration, ok bool)
 
 // New membuat scheduler dengan batas konkurensi tertentu.
 func New(
@@ -56,7 +65,19 @@ func New(
 		notify:  make(chan struct{}, 1),
 		slots:   make(chan struct{}, concurrency),
 		running: make(map[string]context.CancelFunc),
+		retryPlan: func(err *domain.Error, attempt int) (time.Duration, bool) {
+			return application.RetryPlan(err, attempt, rand.Float64)
+		},
+		throttleCooldown: application.ThrottleCooldown,
 	}
+}
+
+// SetRetryPolicy mengganti kebijakan auto-retry dan lama penurunan
+// konkurensi setelah throttling. Dipakai test supaya tidak menunggu jeda
+// sungguhan.
+func (s *Scheduler) SetRetryPolicy(plan RetryPolicy, throttleCooldown time.Duration) {
+	s.retryPlan = plan
+	s.throttleCooldown = throttleCooldown
 }
 
 // Notify mengembalikan kanal pembangun yang dipakai JobService.
@@ -95,6 +116,14 @@ func (s *Scheduler) drain(ctx context.Context) {
 		case s.slots <- struct{}{}:
 		default:
 			return // seluruh slot terpakai
+		}
+
+		// Setelah sumber membalas 429, satu job saja yang boleh berjalan
+		// sampai masa pendinginan lewat. Menjalankan beberapa unduhan
+		// sekaligus justru memperpanjang pembatasan.
+		if s.throttled() && s.Running() > 0 {
+			<-s.slots
+			return
 		}
 
 		job, err := s.repo.ClaimNextQueued(ctx)
@@ -191,6 +220,10 @@ func (s *Scheduler) finish(ctx context.Context, job *domain.Job, runErr error) {
 		s.log.Error(detail, "job", job.ID, "status", current.Status)
 	}
 
+	if derr != nil && s.retryLater(closeCtx, current, derr) {
+		return
+	}
+
 	if err := s.repo.Fail(closeCtx, job.ID, current.Status, code, detail); err != nil {
 		s.log.Error("tandai job gagal", "job", job.ID, "error", err)
 		return
@@ -200,6 +233,58 @@ func (s *Scheduler) finish(ctx context.Context, job *domain.Job, runErr error) {
 		JobID: job.ID, Type: application.StreamError,
 		Status: domain.StatusFailed, Code: code,
 	})
+}
+
+// retryLater mengembalikan job ke antrean bila kegagalannya sementara.
+//
+// Jeda disimpan sebagai retry_at di database, sehingga tetap dihormati walau
+// aplikasi dibuka ulang di tengah jeda. Timer di sini hanya membangunkan
+// scheduler tepat waktu; tanpa timer pun job akan terambil pada poll
+// berikutnya.
+func (s *Scheduler) retryLater(ctx context.Context, job *domain.Job, derr *domain.Error) bool {
+	delay, ok := s.retryPlan(derr, job.AttemptCount)
+	if !ok {
+		return false
+	}
+
+	if err := s.repo.Requeue(ctx, job.ID, job.Status, derr.Code, derr.Detail, time.Now().Add(delay)); err != nil {
+		s.log.Error("antrekan ulang gagal, job ditandai gagal", "job", job.ID, "error", err)
+		return false
+	}
+
+	if derr.Class == domain.ClassThrottled {
+		until := time.Now().Add(s.throttleCooldown)
+		s.mu.Lock()
+		if until.After(s.throttledUntil) {
+			s.throttledUntil = until
+		}
+		s.mu.Unlock()
+		s.log.Warn("sumber membatasi permintaan, job paralel diturunkan ke satu",
+			"selama", s.throttleCooldown)
+	}
+
+	s.log.Warn("job gagal sementara, dicoba lagi",
+		"job", job.ID, "code", derr.Code,
+		"percobaan", job.AttemptCount+1, "maks", application.MaxAutoRetries, "jeda", delay)
+	s.events.Publish(application.StreamEvent{
+		JobID: job.ID, Type: application.StreamState,
+		Status: domain.StatusQueued, Code: derr.Code,
+	})
+
+	time.AfterFunc(delay, func() {
+		select {
+		case s.notify <- struct{}{}:
+		default:
+		}
+	})
+	return true
+}
+
+// throttled melaporkan apakah masa pendinginan setelah 429 masih berjalan.
+func (s *Scheduler) throttled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return time.Now().Before(s.throttledUntil)
 }
 
 // closeCancelled menuntaskan job yang dibatalkan, lewat cancelling bila

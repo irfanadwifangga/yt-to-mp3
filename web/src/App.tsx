@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, isTerminal, type Health, type Job, type Preset } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type Health, type Job, type Preset } from "./api";
 import { Capture } from "./Capture";
 import { GearIcon } from "./icons";
 import { t } from "./i18n";
@@ -11,24 +11,83 @@ import { SettingsDialog, type SettingsSection } from "./SettingsDialog";
  *  halus datang lewat SSE sehingga polling tidak perlu rapat. */
 const POLL_MS = 2000;
 
+/** Batas antrean di setelan maksimal 500, tetapi job aktif sekaligus
+ *  jarang lebih dari puluhan. */
+const ACTIVE_LIMIT = 100;
+const PAGE_SIZE = 25;
+
+/**
+ * Menggabungkan dua daftar job tanpa duplikat, terbaru di atas.
+ *
+ * Baris dari `fresh` menang karena statusnya lebih baru. Tanggal dibanding
+ * sebagai waktu, bukan string: pecahan detik RFC 3339 dari server panjangnya
+ * tidak tetap.
+ */
+function mergeJobs(fresh: Job[], previous: Job[]): Job[] {
+  const byId = new Map<string, Job>();
+  for (const job of previous) byId.set(job.id, job);
+  for (const job of fresh) byId.set(job.id, job);
+  return [...byId.values()].sort(
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id.localeCompare(a.id)
+  );
+}
+
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [active, setActive] = useState<Job[]>([]);
+  const [finished, setFinished] = useState<Job[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>();
+  const [loadingMore, setLoadingMore] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [defaultPreset, setDefaultPreset] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [quitting, setQuitting] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
 
+  // Setelah pengguna memuat halaman lama, polling tidak lagi mengganti
+  // riwayat dengan halaman pertama saja. Baris yang tergeser keluar dari
+  // halaman pertama karena job baru selesai tetap disimpan, sehingga tidak
+  // ada celah di antara halaman pertama dan halaman lama yang sudah dimuat.
+  const extended = useRef(false);
+
   const refresh = useCallback(async () => {
     try {
-      const [h, j] = await Promise.all([api.health(), api.jobs()]);
+      const [h, a, f] = await Promise.all([
+        api.health(),
+        api.jobs({ scope: "active", limit: ACTIVE_LIMIT }),
+        api.jobs({ scope: "finished", limit: PAGE_SIZE })
+      ]);
       setHealth(h);
-      setJobs(j.jobs);
+      setActive(a.jobs);
+      if (extended.current) {
+        setFinished((prev) => mergeJobs(f.jobs, prev));
+      } else {
+        setFinished(f.jobs);
+        setCursor(f.next_cursor);
+      }
       setError(null);
     } catch (err) {
       setError(messageFor(err, t("app.loadFailed")));
     }
+  }, []);
+
+  async function loadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.jobs({ scope: "finished", limit: PAGE_SIZE, cursor });
+      extended.current = true;
+      setFinished((prev) => mergeJobs(prev, page.jobs));
+      setCursor(page.next_cursor);
+    } catch (err) {
+      setError(messageFor(err, t("history.loadMoreFailed")));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  const removeFinished = useCallback((id: string) => {
+    setFinished((prev) => prev.filter((job) => job.id !== id));
   }, []);
 
   // Preset adalah product contract yang hidup di database, dan preset bawaan
@@ -64,9 +123,6 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  const active = jobs.filter((j) => !isTerminal(j.status));
-  const finished = jobs.filter((j) => isTerminal(j.status));
 
   // Jumlah job berjalan tampil di judul tab, terlihat walau tab di belakang.
   useEffect(() => {
@@ -157,7 +213,14 @@ export function App() {
           onQueued={refresh}
         />
         <ActiveList jobs={active} onChanged={refresh} />
-        <FinishedList jobs={finished} onChanged={refresh} />
+        <FinishedList
+          jobs={finished}
+          onChanged={refresh}
+          onRemoved={removeFinished}
+          hasMore={Boolean(cursor)}
+          loadingMore={loadingMore}
+          onLoadMore={() => void loadMore()}
+        />
       </main>
 
       {health && (

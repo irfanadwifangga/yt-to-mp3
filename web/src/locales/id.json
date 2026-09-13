@@ -33,6 +33,7 @@
   "queue.cancelling": "Membatalkan…",
   "queue.cancelFailed": "Pembatalan gagal",
   "queue.progressLabel": "Progres {title}",
+  "queue.retryScheduled": "Dicoba lagi dalam {seconds} dtk · percobaan {attempt} dari {max}",
 
   "history.title": "Selesai",
   "history.empty": "Hasil konversi akan muncul di sini.",
@@ -44,9 +45,15 @@
   "history.retrying": "Mengantre…",
   "history.delete": "Hapus",
   "history.confirmDelete": "Hapus dari daftar? Berkasnya tetap ada.",
+  "history.confirmDeleteWithFile": "Hapus dari daftar saja, atau sekalian berkasnya?",
+  "history.removeOnly": "Dari daftar saja",
+  "history.removeWithFile": "Beserta berkas",
   "history.confirmYes": "Hapus",
   "history.confirmNo": "Batal",
   "history.actionFailed": "Gagal",
+  "history.loadMore": "Muat lagi",
+  "history.loadingMore": "Memuat…",
+  "history.loadMoreFailed": "Gagal memuat riwayat",
 
   "tools.hint": "Dipakai untuk mengunduh dan mengonversi. Semuanya berjalan di komputer ini.",
   "tools.installed": "terpasang",

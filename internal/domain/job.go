@@ -27,11 +27,16 @@ const (
 var allowedTransitions = map[JobStatus][]JobStatus{
 	// Job yang masih antre belum punya proses OS, jadi boleh langsung
 	// dibatalkan tanpa melewati cancelling.
-	StatusQueued:      {StatusResolving, StatusCancelled, StatusFailed},
-	StatusResolving:   {StatusDownloading, StatusCancelling, StatusFailed},
-	StatusDownloading: {StatusConverting, StatusCancelling, StatusFailed},
-	StatusConverting:  {StatusVerifying, StatusCancelling, StatusFailed},
-	StatusVerifying:   {StatusCompleted, StatusCancelling, StatusFailed},
+	StatusQueued: {StatusResolving, StatusCancelled, StatusFailed},
+
+	// Kembali ke queued hanya untuk auto-retry setelah kegagalan sementara.
+	// Pipeline bersifat idempoten (ADR-008): setiap percobaan menulis ke
+	// temp baru dan hanya menyentuh keluaran final saat commit, jadi
+	// mengulang dari awal aman di fase mana pun.
+	StatusResolving:   {StatusDownloading, StatusCancelling, StatusFailed, StatusQueued},
+	StatusDownloading: {StatusConverting, StatusCancelling, StatusFailed, StatusQueued},
+	StatusConverting:  {StatusVerifying, StatusCancelling, StatusFailed, StatusQueued},
+	StatusVerifying:   {StatusCompleted, StatusCancelling, StatusFailed, StatusQueued},
 	StatusCancelling:  {StatusCancelled, StatusFailed},
 
 	// completed, failed, dan cancelled bersifat terminal.
@@ -116,9 +121,14 @@ type Job struct {
 	Progress *float64
 	Phase    string
 
+	// AttemptCount adalah jumlah auto-retry yang sudah dijalankan untuk job
+	// ini. Retry manual membuat job baru dengan jatah penuh.
 	AttemptCount int
 	ErrorCode    ErrorCode
 	ErrorMessage string
+
+	// RetryAt terisi selama job menunggu jeda auto-retry.
+	RetryAt *time.Time
 
 	CreatedAt  time.Time
 	StartedAt  *time.Time

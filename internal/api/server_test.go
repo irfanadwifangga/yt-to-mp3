@@ -53,7 +53,7 @@ func newHarness(t *testing.T) *harness {
 			MaxQueueDepth:   3,
 		}
 	}
-	jobService := application.NewJobService(jr, fp, fc, fr, hub, nil, live, log)
+	jobService := application.NewJobService(jr, fp, fc, fr, ff, hub, nil, live, log)
 
 	return &harness{
 		srv: api.New(api.Options{

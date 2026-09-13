@@ -119,6 +119,9 @@ type FilenameBuilder interface {
 type JobCloser interface {
 	Complete(ctx context.Context, jobID string, from domain.JobStatus, f *domain.File, ev domain.Event) error
 	UpdateProgress(ctx context.Context, jobID string, percent *float64, phase string) error
+	// SetTitle mengisi judul job yang dibuat tanpa judul; judul yang sudah
+	// ada tidak ditimpa.
+	SetTitle(ctx context.Context, jobID, title string) error
 }
 
 // Pipeline menjalankan satu job dari metadata sampai berkas final.
@@ -197,6 +200,15 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	media, err := p.resolveMedia(ctx, job)
 	if err != nil {
 		return err
+	}
+
+	// Job yang diantrekan tanpa analisis lebih dulu belum punya judul, dan
+	// tanpa ini riwayatnya selamanya menampilkan source key.
+	if job.Title == "" && media.Title != "" {
+		if err := p.closer.SetTitle(ctx, job.ID, media.Title); err != nil {
+			p.log.Warn("simpan judul gagal", "job", job.ID, "error", err)
+		}
+		job.Title = media.Title
 	}
 	p.setPhase(ctx, job.ID, pctResolved, phaseResolving)
 

@@ -295,6 +295,10 @@ select:focus-visible {
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* Tanpa minmax(0, ...), kolom grid melebar mengikuti isi terpanjang yang
+     tidak boleh patah, yaitu path folder di status bar, sehingga seluruh
+     halaman bisa digeser ke samping. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .topbar {
@@ -1042,4 +1046,15 @@ select:focus-visible {
   .cover-active.is-indeterminate::after {
     bottom: 50%;
   }
+}
+
+/* Riwayat berhalaman dan auto-retry ------------------------------------- */
+
+.item-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.load-more {
+  align-self: flex-start;
 }
