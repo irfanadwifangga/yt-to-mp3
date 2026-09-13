@@ -65,8 +65,8 @@ test: ## Jalankan seluruh test Go
 
 .PHONY: test-integration
 test-integration: export YT2MP3_REQUIRE_TOOLS = 1
-test-integration: ## Test integrasi dengan FFmpeg sungguhan dan fixture sintetis
-	go test -count=1 -tags integration -run Integrasi ./internal/infrastructure/ffmpeg/
+test-integration: ## Test integrasi FFmpeg dan E2E pipeline dengan yt-dlp palsu
+	go test -count=1 -tags integration -run "Integrasi|E2E" ./internal/infrastructure/ffmpeg/ ./internal/e2e/
 
 .PHONY: nfr
 nfr: ## Ukur target NFR planning §22 (URL="<tautan>" untuk ikut mengukur konversi)

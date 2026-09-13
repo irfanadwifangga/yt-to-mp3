@@ -1058,3 +1058,17 @@ select:focus-visible {
 .load-more {
   align-self: flex-start;
 }
+
+/* Pembaruan tool -------------------------------------------------------- */
+
+.tool-latest {
+  color: var(--amber);
+}
+
+.tools-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}

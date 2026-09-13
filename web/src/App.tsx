@@ -150,6 +150,7 @@ export function App() {
 
   const tools = health ? Object.values(health.tools) : [];
   const toolsReady = tools.length > 0 && tools.every((tool) => tool.available);
+  const toolsUpdate = tools.some((tool) => tool.update_available);
   const canAnalyze = health?.tools["yt-dlp"]?.available ?? false;
 
   return (
@@ -164,10 +165,14 @@ export function App() {
           {health && (
             <button
               type="button"
-              className={`chip ${toolsReady ? "ok" : "warn"}`}
+              className={`chip ${toolsReady && !toolsUpdate ? "ok" : "warn"}`}
               onClick={() => setSettingsSection("tools")}>
-              <span className={toolsReady ? "dot ok" : "dot warn"} />
-              {toolsReady ? t("app.toolsReady") : t("app.toolsMissing")}
+              <span className={toolsReady && !toolsUpdate ? "dot ok" : "dot warn"} />
+              {!toolsReady
+                ? t("app.toolsMissing")
+                : toolsUpdate
+                  ? t("app.toolsUpdate")
+                  : t("app.toolsReady")}
             </button>
           )}
           <button

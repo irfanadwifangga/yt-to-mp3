@@ -153,6 +153,8 @@ func New(opts Options) *Server {
 	protected.HandleFunc("POST /shutdown", s.handleShutdown)
 	protected.HandleFunc("GET /tools", s.handleTools)
 	protected.HandleFunc("POST /tools/install", s.handleToolInstall)
+	protected.HandleFunc("POST /tools/check", s.handleToolCheck)
+	protected.HandleFunc("POST /tools/update", s.handleToolUpdate)
 	protected.HandleFunc("POST /metadata", s.handleMetadata)
 	protected.HandleFunc("GET /presets", s.handlePresets)
 	protected.HandleFunc("POST /jobs", s.handleCreateJob)

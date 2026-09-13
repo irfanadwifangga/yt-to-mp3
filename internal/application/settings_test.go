@@ -197,8 +197,8 @@ func TestSettingsOutputDirHarusAbsolut(t *testing.T) {
 	wantInvalidSetting(t, err, application.KeyOutputDir)
 }
 
-// Setelan tanpa implementasi tidak boleh tampil sebagai kontrol di UI, dan
-// setelan yang punya penerap tidak boleh ditandai perlu restart.
+// Setiap setelan yang tampil harus benar-benar berpengaruh, dan setelan yang
+// punya penerap tidak boleh ditandai perlu restart.
 func TestSettingsListMencerminkanPerilakuSebenarnya(t *testing.T) {
 	svc, _, _ := newSettings(t)
 
@@ -212,8 +212,9 @@ func TestSettingsListMencerminkanPerilakuSebenarnya(t *testing.T) {
 		byKey[v.Key] = v
 	}
 
-	if _, ok := byKey[application.KeyToolUpdateCheck]; ok {
-		t.Errorf("%s belum diimplementasikan tetapi ditampilkan", application.KeyToolUpdateCheck)
+	check, ok := byKey[application.KeyToolUpdateCheck]
+	if !ok || check.Kind != "bool" || check.RequiresRestart {
+		t.Errorf("tool_update_check = %+v (ada %v), mau bool tanpa restart", check, ok)
 	}
 
 	idle, ok := byKey[application.KeyIdleShutdown]

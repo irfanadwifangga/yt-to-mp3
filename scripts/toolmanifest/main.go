@@ -110,17 +110,6 @@ func run(ctx context.Context, ytdlpVersion, ffmpegVersion string, verify bool) e
 
 /* yt-dlp ----------------------------------------------------------------- */
 
-// ytdlpAssets memetakan platform ke nama aset rilis dan nama berkas
-// terpasang. yt-dlp_macos adalah universal binary, jadi dipakai kedua
-// arsitektur macOS.
-var ytdlpAssets = map[string][2]string{
-	"windows/amd64": {"yt-dlp.exe", "yt-dlp.exe"},
-	"linux/amd64":   {"yt-dlp_linux", "yt-dlp"},
-	"linux/arm64":   {"yt-dlp_linux_aarch64", "yt-dlp"},
-	"darwin/amd64":  {"yt-dlp_macos", "yt-dlp"},
-	"darwin/arm64":  {"yt-dlp_macos", "yt-dlp"},
-}
-
 func ytdlpTool(ctx context.Context, tag string) (tools.Tool, error) {
 	rel, err := githubRelease(ctx, "yt-dlp/yt-dlp", tag)
 	if err != nil {
@@ -137,27 +126,27 @@ func ytdlpTool(ctx context.Context, tag string) (tools.Tool, error) {
 	if err != nil {
 		return tools.Tool{}, err
 	}
-	sums := parseSums(text)
+	sums := tools.ParseSHA256Sums(text)
 
 	builds := map[string]tools.Build{}
-	for platform, names := range ytdlpAssets {
-		asset, ok := rel.asset(names[0])
+	for platform, a := range tools.YTDLPAssets {
+		asset, ok := rel.asset(a.Asset)
 		if !ok {
-			return tools.Tool{}, fmt.Errorf("aset %s tidak ada", names[0])
+			return tools.Tool{}, fmt.Errorf("aset %s tidak ada", a.Asset)
 		}
-		sum := sums[names[0]]
+		sum := sums[a.Asset]
 		if sum == "" {
-			return tools.Tool{}, fmt.Errorf("%s tidak tercantum di SHA2-256SUMS", names[0])
+			return tools.Tool{}, fmt.Errorf("%s tidak tercantum di SHA2-256SUMS", a.Asset)
 		}
 		// Digest dari GitHub dihitung sendiri oleh GitHub saat aset diunggah.
 		// Ketidakcocokan dengan berkas checksum hulu berarti ada yang salah
 		// dan tidak boleh di-pin.
 		if asset.sha256() != "" && asset.sha256() != sum {
 			return tools.Tool{}, fmt.Errorf("%s: digest GitHub %s berbeda dengan SHA2-256SUMS %s",
-				names[0], asset.sha256(), sum)
+				a.Asset, asset.sha256(), sum)
 		}
 		builds[platform] = tools.Build{Downloads: []tools.Download{{
-			URL: asset.URL, SHA256: sum, Archive: tools.ArchiveNone, Extract: []string{names[1]},
+			URL: asset.URL, SHA256: sum, Archive: tools.ArchiveNone, Extract: []string{a.Target},
 		}}}
 		fmt.Printf("    %-14s %s…\n", platform, sum[:12])
 	}
@@ -167,17 +156,6 @@ func ytdlpTool(ctx context.Context, tag string) (tools.Tool, error) {
 		Source:  "https://github.com/yt-dlp/yt-dlp",
 		Builds:  builds,
 	}, nil
-}
-
-func parseSums(text string) map[string]string {
-	out := map[string]string{}
-	for _, line := range strings.Split(text, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 2 {
-			out[strings.TrimPrefix(fields[1], "*")] = strings.ToLower(fields[0])
-		}
-	}
-	return out
 }
 
 /* FFmpeg ----------------------------------------------------------------- */

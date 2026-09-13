@@ -1,0 +1,37 @@
+{
+  "app": "yt-to-mp3",
+  "commit": "<commit>",
+  "output_dir": "",
+  "queue": {
+    "active": 0,
+    "capacity": 3,
+    "queued": 1
+  },
+  "spa_built": false,
+  "status": "ok",
+  "tools": {
+    "ffmpeg": {
+      "available": false,
+      "name": "ffmpeg",
+      "update_available": false,
+      "version": ""
+    },
+    "ffprobe": {
+      "available": false,
+      "name": "ffprobe",
+      "update_available": false,
+      "version": ""
+    },
+    "yt-dlp": {
+      "available": true,
+      "latest_version": "2026.09.01",
+      "name": "yt-dlp",
+      "pinned_version": "2026.08.19",
+      "source": "managed",
+      "update_available": true,
+      "version": "2026.08.19"
+    }
+  },
+  "uptime_seconds": 0,
+  "version": "<version>"
+}

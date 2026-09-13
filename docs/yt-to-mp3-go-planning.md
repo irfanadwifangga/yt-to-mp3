@@ -77,7 +77,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-030 | Sample rate output 48 kHz, bukan 44.1 kHz | Sumber YouTube didominasi Opus yang secara desain selalu 48 kHz; 44.1 memaksa resampling pada jalur paling umum. MPEG-1 Layer III mendukung 48 kHz secara native, jadi tidak ada kompromi kompatibilitas |
 | ADR-031 | Binary FFmpeg diunduh saat runtime dari rilis berversi: GyanD (Windows) dan martin-riedl.de (Linux, macOS) | Proyek FFmpeg tidak mendistribusikan build statis resmi. Mengunduh saat runtime membuat rilis kita tidak pernah menjadi distributor FFmpeg, sehingga kewajiban LGPL/GPL tidak menempel pada artifact rilis. Keduanya dirujuk halaman unduhan ffmpeg.org. Rencana awal (BtbN dan evermeet.cx) ditinggalkan: BtbN hanya menyediakan snapshot master yang dirotasi, sehingga checksum ter-pin basi, dan evermeet.cx tidak punya build arm64 |
 | ADR-032 | Dependensi pure-Go `github.com/ulikunitz/xz` | Build FFmpeg untuk Linux hanya tersedia sebagai `.tar.xz` dan stdlib tidak punya dekoder xz. Paket ini pure Go sehingga ADR-011 tetap terjaga |
-| ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi |
+| ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi. **Pengecualian yt-dlp:** atas permintaan eksplisit pengguna, yt-dlp boleh diperbarui ke rilis terbaru dengan checksum dari `SHA2-256SUMS` rilis yang sama (seperti `yt-dlp -U`), karena yt-dlp rusak mengikuti perubahan YouTube lebih cepat daripada siklus rilis aplikasi. Verifikasi tetap wajib; yang berubah hanya asal checksum. FFmpeg tidak mendapat pengecualian ini |
 
 ## 5. Struktur folder
 
@@ -486,7 +486,11 @@ FFmpeg tidak punya distribusi binary statis resmi, jadi kedua sumber FFmpeg di a
 
 Aturan lain:
 
-- Pengecekan update mingguan, opsional, dan tidak pernah memasang tanpa persetujuan user.
+- Pengecekan update mingguan, opsional (`tool_update_check`), dan tidak pernah memasang tanpa persetujuan user.
+  - `application.ToolService` menanyakan tag rilis terbaru yt-dlp dan GyanD ke API GitHub saat startup bila sudah jatuh tempo, lalu memeriksa jatuh tempo setiap 6 jam. Hasil disimpan di `<data_dir>/tool-updates.json`; offline tidak memajukan waktu cek maupun menghapus hasil lama.
+  - Versi dibandingkan per bagian angka. Versi yang tidak bisa diurai, seperti snapshot `N-…`, tidak pernah ditandai tertinggal.
+  - `POST /api/tools/check` menjalankan cek sekarang. `POST /api/tools/update` hanya menerima `yt-dlp` (pengecualian ADR-033): tag divalidasi dengan pola tanggal sebelum menyusun URL, checksum diambil dari `SHA2-256SUMS` rilis tersebut, lalu unduhan diverifikasi dan dipasang lewat jalur yang sama dengan instalasi manifest.
+  - UI menandai tool yang tertinggal. yt-dlp mendapat tombol **Perbarui**; FFmpeg hanya diberi petunjuk (rilis aplikasi untuk tool terkelola, package manager untuk tool dari `PATH`).
 - `GET /api/health` menampilkan versi aktual hasil `yt-dlp --version` / `ffmpeg -version` agar bug report dapat dikaitkan ke versi tool.
 - Tool dari `PATH` dipakai apa adanya tanpa verifikasi checksum: itu milik sistem pengguna, bukan sesuatu yang kita pasang.
 
@@ -609,6 +613,14 @@ status code; JSON golden files; skema dan urutan SSE, heartbeat, resume `Last-Ev
 ### E2E
 
 Media fixture yang haknya jelas atau fixture sintetis. Jangan menjadikan URL publik sebagai satu-satunya test oracle.
+
+Implementasi (`internal/e2e`, tag `integration`): binary test berperan sebagai yt-dlp palsu yang dikendalikan variabel lingkungan, sedangkan JobService, scheduler, pipeline, SQLite, store berkas, dan FFmpeg sungguhan. Skenario yang dicakup:
+
+- konversi lengkap, termasuk judul dari metadata, tag, dan pembersihan temp
+- auto-retry setelah kegagalan jaringan sementara
+- pembatalan saat mengunduh yang harus menghentikan proses dan tidak meninggalkan berkas
+
+Kontrak API dikunci berkas golden (`internal/api/testdata/golden/`) untuk daftar job, satu job, error, metadata, tool, preset, dan health, dengan pemeriksaan bahwa path filesystem tidak pernah bocor.
 
 ### Cross-platform
 

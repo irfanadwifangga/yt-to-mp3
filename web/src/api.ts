@@ -34,7 +34,11 @@ export class ApiError extends Error {
 export interface ToolStatus {
   available: boolean;
   version: string;
-  path: string;
+  source?: "managed" | "sidecar" | "path";
+  pinned_version?: string;
+  /** Versi rilis terbaru dari cek pembaruan terakhir. */
+  latest_version?: string;
+  update_available: boolean;
 }
 
 export interface Health {
@@ -81,6 +85,13 @@ export const api = {
   tools: () => request<ToolsPayload>("/tools"),
   installTool: (name: string) =>
     request<ToolsPayload>("/tools/install", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  checkToolUpdates: () => request<ToolsPayload>("/tools/check", { method: "POST" }),
+  /** Hanya yt-dlp; diverifikasi SHA2-256SUMS resmi rilisnya. */
+  updateTool: (name: string) =>
+    request<ToolsPayload>("/tools/update", {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
@@ -142,6 +153,8 @@ export interface Metadata {
 
 export interface ToolsPayload {
   tools: Record<string, ToolStatus>;
+  /** Waktu cek pembaruan terakhir yang berhasil. */
+  checked_at?: string;
 }
 
 export type JobStatus =

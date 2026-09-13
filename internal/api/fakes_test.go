@@ -23,7 +23,28 @@ type fakeTools struct {
 	status     map[string]application.ToolStatus
 	installed  []string
 	installErr error
+	checks     int
+	checkErr   error
+	updated    []string
+	checkedAt  *time.Time
 }
+
+func (f *fakeTools) CheckUpdates(context.Context) error {
+	f.checks++
+	if f.checkErr != nil {
+		return f.checkErr
+	}
+	now := time.Date(2026, 9, 13, 10, 0, 0, 0, time.UTC)
+	f.checkedAt = &now
+	return nil
+}
+
+func (f *fakeTools) Update(_ context.Context, name string) error {
+	f.updated = append(f.updated, name)
+	return nil
+}
+
+func (f *fakeTools) CheckedAt() *time.Time { return f.checkedAt }
 
 func newFakeTools() *fakeTools {
 	return &fakeTools{

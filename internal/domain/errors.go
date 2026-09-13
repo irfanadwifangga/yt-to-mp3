@@ -30,6 +30,7 @@ const (
 	CodeDiskFull          ErrorCode = "DISK_FULL"
 	CodeOutputWriteFailed ErrorCode = "OUTPUT_WRITE_FAILED"
 	CodeDialogUnavailable ErrorCode = "DIALOG_UNAVAILABLE"
+	CodeToolUpdateCheck   ErrorCode = "TOOL_UPDATE_CHECK_FAILED"
 	CodeJobNotFound       ErrorCode = "JOB_NOT_FOUND"
 	CodeQueueFull         ErrorCode = "QUEUE_FULL"
 	CodeDuplicateActive   ErrorCode = "DUPLICATE_ACTIVE_JOB"

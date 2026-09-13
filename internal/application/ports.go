@@ -8,6 +8,7 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 )
@@ -20,15 +21,22 @@ type ToolStatus struct {
 	Source    string `json:"source,omitempty"`
 	Pinned    string `json:"pinned_version,omitempty"`
 
+	// Latest adalah versi rilis terbaru dari cek pembaruan terakhir.
+	Latest          string `json:"latest_version,omitempty"`
+	UpdateAvailable bool   `json:"update_available"`
+
 	// Path sengaja tidak punya tag JSON: path filesystem tidak pernah
 	// menyeberang batas API.
 	Path string `json:"-"`
 }
 
-// ToolManager menemukan dan memasang yt-dlp serta FFmpeg.
+// ToolManager menemukan, memasang, dan memperbarui yt-dlp serta FFmpeg.
 type ToolManager interface {
 	StatusAll(ctx context.Context) map[string]ToolStatus
 	Install(ctx context.Context, name string) error
+	CheckUpdates(ctx context.Context) error
+	Update(ctx context.Context, name string) error
+	CheckedAt() *time.Time
 }
 
 // MediaResolver mengambil metadata sumber.

@@ -1,0 +1,15 @@
+{
+  "presets": [
+    {
+      "bitrate_kbps": 192,
+      "channels": 2,
+      "codec": "libmp3lame",
+      "deprecated": false,
+      "format": "mp3",
+      "id": "mp3_standard",
+      "label": "Standard",
+      "mode": "cbr",
+      "sample_rate": 48000
+    }
+  ]
+}

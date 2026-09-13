@@ -402,3 +402,57 @@ func TestPresets(t *testing.T) {
 		t.Errorf("sample_rate = %d, mau 48000", body.Presets[0].SampleRate)
 	}
 }
+
+func TestToolCheckDanUpdate(t *testing.T) {
+	t.Run("cek berhasil membawa waktu cek", func(t *testing.T) {
+		h := newHarness(t)
+		rec := h.do(t, http.MethodPost, "/api/tools/check", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, mau 200 (body: %s)", rec.Code, rec.Body.String())
+		}
+		var body struct {
+			CheckedAt string `json:"checked_at"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if h.tools.checks != 1 || body.CheckedAt == "" {
+			t.Errorf("checks = %d, checked_at = %q", h.tools.checks, body.CheckedAt)
+		}
+	})
+
+	t.Run("cek gagal dilaporkan 503", func(t *testing.T) {
+		h := newHarness(t)
+		h.tools.checkErr = domain.NewError(domain.CodeToolUpdateCheck, domain.ClassTransient, "offline")
+		rec := h.do(t, http.MethodPost, "/api/tools/check", "")
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, mau 503", rec.Code)
+		}
+		if got := codeOf(t, rec); got != domain.CodeToolUpdateCheck {
+			t.Errorf("kode = %s, mau %s", got, domain.CodeToolUpdateCheck)
+		}
+	})
+
+	// FFmpeg mengikuti manifest ter-pin; hanya yt-dlp yang boleh diperbarui
+	// dari checksum rilis hulunya.
+	t.Run("hanya yt-dlp yang dapat diperbarui", func(t *testing.T) {
+		h := newHarness(t)
+		for _, name := range []string{"ffmpeg", "rm -rf"} {
+			rec := h.do(t, http.MethodPost, "/api/tools/update", `{"name":"`+name+`"}`)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("%s: status = %d, mau 400", name, rec.Code)
+			}
+		}
+		if len(h.tools.updated) != 0 {
+			t.Errorf("updated = %v, mau kosong", h.tools.updated)
+		}
+
+		rec := h.do(t, http.MethodPost, "/api/tools/update", `{"name":"yt-dlp"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, mau 200 (body: %s)", rec.Code, rec.Body.String())
+		}
+		if len(h.tools.updated) != 1 || h.tools.updated[0] != "yt-dlp" {
+			t.Errorf("updated = %v, mau [yt-dlp]", h.tools.updated)
+		}
+	})
+}

@@ -117,8 +117,10 @@ http://localhost:5173/?token=<token-dari-log>
 | `make check` | Format, `go vet`, dan seluruh test Go |
 | `make typecheck` | Typecheck frontend |
 | `make check-i18n` | Setiap kode error Go punya terjemahan `id` dan `en`, dan kunci kedua bahasa setara |
-| `make test-integration` | Konversi dengan FFmpeg dan ffprobe sungguhan memakai fixture sintetis (nada sinus, sampul polos); gagal bila ffmpeg tidak ditemukan |
+| `make test-integration` | Konversi dengan FFmpeg dan ffprobe sungguhan memakai fixture sintetis (nada sinus, sampul polos), ditambah E2E jalur job lengkap dengan yt-dlp palsu: konversi, auto-retry, dan pembatalan saat mengunduh. Gagal bila ffmpeg tidak ditemukan |
 | `make nfr` | Ukur target [NFR](docs/yt-to-mp3-go-planning.md#22-non-functional-requirements) pada direktori data sementara; `URL="<tautan>"` ikut mengukur konversi dua job paralel |
+
+Bentuk respons API dikunci berkas golden di `internal/api/testdata/golden/` dan ikut diperiksa `make test`. Perubahan kontrak yang disengaja ditulis ulang dengan `go test ./internal/api/ -run Kontrak -update`, lalu diff-nya ditinjau sebelum commit.
 
 CI menjalankan seluruh pemeriksaan di atas kecuali `make nfr`, ditambah test Go di Windows dan macOS (terminasi process tree dan rename atomik berbeda per OS). Workflow **Regresi tool** memasang yt-dlp dan FFmpeg persis dari manifest di kelima target rilis lalu mengonversi fixture dengan binary hasil pasang; workflow itu jalan setiap kali kode tool atau manifest berubah, dan mingguan untuk menangkap URL hulu yang mati. `make help` menampilkan seluruh target.
 
@@ -174,6 +176,7 @@ Seluruh endpoint berada di bawah `/api` dan mewajibkan header `X-Session-Token`,
 | --- | --- |
 | `GET /health` | Status aplikasi, tool, dan antrean |
 | `GET /tools` · `POST /tools/install` | Status dan instalasi tool |
+| `POST /tools/check` · `POST /tools/update` | Cek versi terbaru; perbarui yt-dlp ke rilis terbaru |
 | `GET /presets` | Daftar preset |
 | `POST /metadata` | Analisis URL tanpa mengunduh |
 | `POST /jobs` · `GET /jobs` · `GET /jobs/{id}` | Buat, daftar, dan baca job |
@@ -204,8 +207,7 @@ Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka 
 
 ## Keterbatasan yang diketahui
 
-- **Versi tool yang dipasang aplikasi hanya maju lewat rilis aplikasi.** yt-dlp perlu sering diperbarui mengikuti perubahan di sisi YouTube; selama cek pembaruan belum ada, perbarui manifest dengan `make update-tools` lalu commit, atau pakai yt-dlp dari package manager.
-- **Cek pembaruan tool belum diimplementasikan.** Kunci `tool_update_check` diterima di `config.json`, tetapi belum berpengaruh dan karena itu tidak ditampilkan di UI.
+- **FFmpeg yang dipasang aplikasi hanya maju lewat rilis aplikasi.** yt-dlp bisa diperbarui langsung dari **Setelan → Tool** (diverifikasi dengan `SHA2-256SUMS` rilis resminya), tetapi FFmpeg tetap mengikuti manifest yang di-pin; untuk memajukannya, jalankan `make update-tools` lalu commit.
 - **Belum ada rilis biner yang diterbitkan**; untuk sekarang build dari source. Binary rilis nantinya belum ditandatangani, sehingga SmartScreen di Windows dan Gatekeeper di macOS akan memperingatkan saat pertama dijalankan.
 
 Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan keluaran video. Daftar lengkapnya di [non-goals](docs/yt-to-mp3-go-planning.md#3-non-goals).

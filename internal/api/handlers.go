@@ -59,10 +59,48 @@ func (s *Server) handleShutdown(w http.ResponseWriter, _ *http.Request) {
 
 type toolsResponse struct {
 	Tools map[string]application.ToolStatus `json:"tools"`
+
+	// CheckedAt adalah waktu cek pembaruan terakhir yang berhasil.
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+}
+
+func (s *Server) toolsView(r *http.Request) toolsResponse {
+	return toolsResponse{Tools: s.tools.StatusAll(r.Context()), CheckedAt: s.tools.CheckedAt()}
 }
 
 func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, toolsResponse{Tools: s.tools.StatusAll(r.Context())})
+	writeJSON(w, http.StatusOK, s.toolsView(r))
+}
+
+// handleToolCheck menanyakan versi terbaru seluruh tool sekarang juga.
+// Tidak ada yang dipasang; hasilnya hanya menandai tool yang tertinggal.
+func (s *Server) handleToolCheck(w http.ResponseWriter, r *http.Request) {
+	if err := s.tools.CheckUpdates(r.Context()); err != nil {
+		s.writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.toolsView(r))
+}
+
+// handleToolUpdate memperbarui yt-dlp ke rilis terbaru atas permintaan
+// pengguna. FFmpeg sengaja tidak diterima; versinya mengikuti manifest yang
+// di-pin di rilis aplikasi.
+func (s *Server) handleToolUpdate(w http.ResponseWriter, r *http.Request) {
+	var req installRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Body bukan JSON yang valid.")
+		return
+	}
+	if req.Name != "yt-dlp" {
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Hanya yt-dlp yang dapat diperbarui dari aplikasi.")
+		return
+	}
+
+	if err := s.tools.Update(r.Context(), req.Name); err != nil {
+		s.writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.toolsView(r))
 }
 
 type installRequest struct {
@@ -91,7 +129,7 @@ func (s *Server) handleToolInstall(w http.ResponseWriter, r *http.Request) {
 		s.writeDomainError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toolsResponse{Tools: s.tools.StatusAll(r.Context())})
+	writeJSON(w, http.StatusOK, s.toolsView(r))
 }
 
 type metadataRequest struct {

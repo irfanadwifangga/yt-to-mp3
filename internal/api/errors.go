@@ -42,6 +42,7 @@ var statusByCode = map[domain.ErrorCode]int{
 	domain.CodeTimeout:           http.StatusGatewayTimeout,
 	domain.CodeDiskFull:          http.StatusInsufficientStorage,
 	domain.CodeDialogUnavailable: http.StatusServiceUnavailable,
+	domain.CodeToolUpdateCheck:   http.StatusServiceUnavailable,
 }
 
 // errorBody adalah amplop error yang dipakai seluruh endpoint.

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Health, type Preset, type Setting } from "./api";
 import { CloseIcon, FolderIcon } from "./icons";
 import { has, locale, setLocale, t, type Locale } from "./i18n";
-import { messageFor, presetLabel } from "./messages";
+import { formatTime, messageFor, presetLabel } from "./messages";
 import { loadTheme, saveTheme, type Theme } from "./theme";
 
 export type SettingsSection =
@@ -23,7 +23,7 @@ const GROUPS: { id: SettingsSection; keys: string[] }[] = [
   { id: "storage", keys: ["output_dir"] },
   { id: "conversion", keys: ["default_preset_id", "filename_mode"] },
   { id: "queue", keys: ["max_concurrent_jobs", "max_queue_depth"] },
-  { id: "tools", keys: [] },
+  { id: "tools", keys: ["tool_update_check"] },
   { id: "display", keys: [] },
   { id: "advanced", keys: ["idle_shutdown_minutes", "log_level"] },
   { id: "about", keys: [] },
@@ -400,15 +400,24 @@ function PathControl({ id, value, describedBy, onChange }: PathProps) {
 function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checkedAt, setCheckedAt] = useState<string | undefined>();
 
-  async function install(name: string) {
-    setBusy(name);
+  useEffect(() => {
+    api
+      .tools()
+      .then((res) => setCheckedAt(res.checked_at))
+      .catch(() => setCheckedAt(undefined));
+  }, []);
+
+  async function run(key: string, failure: string, fn: () => Promise<{ checked_at?: string }>) {
+    setBusy(key);
     setError(null);
     try {
-      await api.installTool(name);
+      const res = await fn();
+      setCheckedAt(res.checked_at);
       onChanged();
     } catch (err) {
-      setError(messageFor(err, t("tools.installFailed")));
+      setError(messageFor(err, failure));
     } finally {
       setBusy(null);
     }
@@ -427,29 +436,81 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
       <ul className="tools">
         {Object.entries(health.tools).map(([name, tool]) => (
           <li key={name}>
-            <span className={tool.available ? "dot ok" : "dot warn"} />
+            <span className={tool.available ? (tool.update_available ? "dot warn" : "dot ok") : "dot warn"} />
             <span className="tool-name">{name}</span>
             <span className="mono tool-version">
               {tool.available ? tool.version || t("tools.installed") : t("tools.unavailable")}
+              {tool.update_available && tool.latest_version && (
+                <span className="tool-latest"> → {t("tools.newVersion", { version: tool.latest_version })}</span>
+              )}
             </span>
-            {/* ffprobe ikut terpasang bersama ffmpeg dari arsip yang sama. */}
-            {!tool.available &&
-              (name === "ffprobe" ? (
-                <span className="hint">{t("tools.bundled")}</span>
-              ) : (
-                <button
-                  type="button"
-                  className="btn small"
-                  onClick={() => void install(name)}
-                  disabled={busy !== null}
-                >
-                  {busy === name ? t("tools.installing") : t("tools.install")}
-                </button>
-              ))}
+            <ToolAction
+              name={name}
+              tool={tool}
+              busy={busy}
+              onInstall={() => void run(name, t("tools.installFailed"), () => api.installTool(name))}
+              onUpdate={() => void run(name, t("tools.updateFailed"), () => api.updateTool(name))}
+            />
           </li>
         ))}
       </ul>
+      <div className="tools-check">
+        <span className="hint">
+          {checkedAt
+            ? t("tools.lastChecked", { time: formatTime(checkedAt) })
+            : t("tools.neverChecked")}
+        </span>
+        <button
+          type="button"
+          className="btn small"
+          disabled={busy !== null}
+          onClick={() => void run("check", t("tools.checkFailed"), () => api.checkToolUpdates())}>
+          {busy === "check" ? t("tools.checking") : t("tools.checkNow")}
+        </button>
+      </div>
     </>
+  );
+}
+
+interface ToolActionProps {
+  name: string;
+  tool: Health["tools"][string];
+  busy: string | null;
+  onInstall: () => void;
+  onUpdate: () => void;
+}
+
+/** Tombol atau petunjuk di ujung baris tool. */
+function ToolAction({ name, tool, busy, onInstall, onUpdate }: ToolActionProps) {
+  // ffprobe ikut terpasang dan diperbarui bersama ffmpeg dari arsip yang sama.
+  if (name === "ffprobe") {
+    return !tool.available ? <span className="hint">{t("tools.bundled")}</span> : null;
+  }
+
+  if (!tool.available) {
+    return (
+      <button type="button" className="btn small" onClick={onInstall} disabled={busy !== null}>
+        {busy === name ? t("tools.installing") : t("tools.install")}
+      </button>
+    );
+  }
+
+  if (!tool.update_available) return null;
+
+  // Hanya yt-dlp yang dapat diperbarui dari aplikasi. FFmpeg mengikuti
+  // manifest ter-pin di rilis aplikasi, atau package manager bila berasal
+  // dari PATH.
+  if (name === "yt-dlp") {
+    return (
+      <button type="button" className="btn small primary" onClick={onUpdate} disabled={busy !== null}>
+        {busy === name ? t("tools.updating") : t("tools.update")}
+      </button>
+    );
+  }
+  return (
+    <span className="hint">
+      {tool.source === "path" ? t("tools.updateViaPackageManager") : t("tools.updateViaRelease")}
+    </span>
   );
 }
 

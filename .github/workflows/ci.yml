@@ -59,10 +59,10 @@ jobs:
       # ffmpeg tidak ditemukan, supaya CI tidak hijau tanpa menguji apa pun.
       - name: Pasang FFmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - name: Test integrasi FFmpeg
+      - name: Test integrasi FFmpeg dan E2E pipeline
         env:
           YT2MP3_REQUIRE_TOOLS: "1"
-        run: go test -tags integration -run Integrasi -v ./internal/infrastructure/ffmpeg/
+        run: go test -tags integration -run "Integrasi|E2E" -v ./internal/infrastructure/ffmpeg/ ./internal/e2e/
 
   test-os:
     name: Test Go ${{ matrix.os }}

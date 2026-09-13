@@ -63,14 +63,6 @@ var restartRequired = map[string]bool{
 	KeyMaxConcurrent: true,
 }
 
-// notImplemented adalah setelan yang sudah divalidasi dan boleh diisi lewat
-// config.json, tetapi belum punya implementasi. Sengaja tidak ditampilkan
-// di UI: kontrol yang tidak berpengaruh apa pun menjanjikan perilaku yang
-// tidak pernah terjadi.
-var notImplemented = map[string]bool{
-	KeyToolUpdateCheck: true,
-}
-
 // Applier menerapkan nilai setelan ke komponen yang sedang berjalan.
 type Applier func(value string) error
 
@@ -192,9 +184,6 @@ func (s *SettingsService) List(ctx context.Context) ([]SettingView, error) {
 
 	views := make([]SettingView, 0, len(order))
 	for _, key := range order {
-		if notImplemented[key] {
-			continue
-		}
 		v := SettingView{
 			Key:             key,
 			Value:           values[key],

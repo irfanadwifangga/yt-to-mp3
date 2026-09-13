@@ -234,6 +234,13 @@ func run() error {
 	go scheduler.Run(ctx)
 	go housekeeper.Run(ctx)
 
+	// Cek pembaruan hanya membaca versi terbaru; pemasangan selalu menunggu
+	// permintaan eksplisit dari UI.
+	toolService := application.NewToolService(toolManager,
+		tools.NewUpdateStateFile(filepath.Join(cfg.Paths.DataDir, "tool-updates.json")),
+		func() bool { return settings.Live().ToolUpdateCheck }, log)
+	go toolService.Run(ctx)
+
 	srv := api.New(api.Options{
 		Config:    cfg,
 		Logger:    log,
@@ -242,7 +249,7 @@ func run() error {
 		SPA:       spaFS,
 		SPABuilt:  spaBuilt,
 		Dev:       *devMode,
-		Tools:     toolManager,
+		Tools:     toolService,
 		Presets:   presets,
 		Metadata:  application.NewMetadataService(resolver, mediaCache, log),
 		Jobs:      jobService,

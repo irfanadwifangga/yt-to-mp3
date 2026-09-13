@@ -63,6 +63,10 @@ type Manager struct {
 	log      *slog.Logger
 	client   *http.Client
 
+	// Kosong berarti GitHub sungguhan; test mengarahkannya ke server lokal.
+	githubAPI      string
+	githubDownload string
+
 	mu    sync.RWMutex
 	cache map[string]cacheEntry
 	now   func() time.Time // dapat diganti test
