@@ -1,6 +1,6 @@
 # Youtube To MP3 Converter
 
-[English](README.md) · **Bahasa Indonesia**
+[English](README.en.md) · **Bahasa Indonesia**
 
 Konverter audio YouTube menjadi MP3 berbentuk aplikasi desktop-lokal (nama teknis: `yt-to-mp3`, dipakai untuk repositori, exe, dan direktori data): satu binary Go yang menjalankan server di loopback dan menyajikan SPA React yang tersemat di dalamnya. Tidak ada layanan cloud; semua pekerjaan dan data tinggal di mesinmu.
 
@@ -43,7 +43,7 @@ Build pertama mengunduh modul Go dan paket npm, jadi butuh jaringan sekali. Selu
 
 ### Memasang yt-dlp dan FFmpeg
 
-Cara termudah: buka **Setelan → Tool** lalu tekan **Pasang**. Aplikasi mengunduh versi yang di-pin di manifest, memverifikasi SHA-256 sebelum mengekstrak, lalu memasangnya ke direktori data aplikasi. Sumbernya yt-dlp dari rilis resminya, FFmpeg dari GyanD (Windows) dan martin-riedl.de (Linux, macOS); alasannya di [ADR-031](docs/yt-to-mp3-go-planning.md#4-keputusan-teknis).
+Cara termudah: buka **Setelan → Tool** lalu tekan **Pasang**. Aplikasi mengunduh versi yang di-pin di manifest, memverifikasi SHA-256 sebelum mengekstrak, lalu memasangnya ke direktori data aplikasi. Sumbernya yt-dlp dari rilis resminya, FFmpeg dari GyanD (Windows) dan martin-riedl.de (Linux, macOS); alasannya di [ADR-031](yt-to-mp3-go-planning.md#4-keputusan-teknis).
 
 Tool yang sudah terpasang lewat package manager juga dipakai; aplikasi menemukannya dari `PATH`.
 
@@ -87,7 +87,7 @@ Cara memakai:
 2. Pilih preset, lalu **Konversi**.
 3. Pantau progress di **Sedang diproses**. Begitu selesai, notifikasi memberi tahu bahwa berkas sudah tersimpan di folder hasil (tertera di bagian bawah halaman), lengkap dengan tombol **Tampilkan di folder**. Berkas tidak perlu diunduh lagi; **Simpan salinan** di daftar Selesai hanya membuat duplikat lewat browser.
 
-Menghentikan aplikasi: tombol **Keluar** di kanan atas, menutup jendela aplikasi, atau `Ctrl+C` di terminal. Bila UI terbuka di tab browser, aplikasi juga berhenti sendiri setelah tab ditutup dan tidak ada job selama 30 menit; batasnya bisa diubah atau dimatikan (0) di **Setelan → Lanjutan**. Tidak ada tray icon karena pustaka tray membutuhkan cgo, dan itu akan merusak target cross-compile ([ADR-021](docs/yt-to-mp3-go-planning.md#4-keputusan-teknis)).
+Menghentikan aplikasi: tombol **Keluar** di kanan atas, menutup jendela aplikasi, atau `Ctrl+C` di terminal. Bila UI terbuka di tab browser, aplikasi juga berhenti sendiri setelah tab ditutup dan tidak ada job selama 30 menit; batasnya bisa diubah atau dimatikan (0) di **Setelan → Lanjutan**. Tidak ada tray icon karena pustaka tray membutuhkan cgo, dan itu akan merusak target cross-compile ([ADR-021](yt-to-mp3-go-planning.md#4-keputusan-teknis)).
 
 ## Konfigurasi
 
@@ -134,7 +134,7 @@ http://localhost:5173/?token=<token-dari-log>
 | `make test-web` | Test komponen frontend dengan vitest dan jsdom: analisis otomatis, hasil analisis basi, suntingan tag, peringatan konversi ganda, pembaruan yt-dlp, notifikasi, dan penggabungan riwayat |
 | `make check-i18n` | Setiap kode error Go punya terjemahan `id` dan `en`, dan kunci kedua bahasa setara |
 | `make test-integration` | Konversi dengan FFmpeg dan ffprobe sungguhan memakai fixture sintetis (nada sinus, sampul polos), ditambah E2E jalur job lengkap dengan yt-dlp palsu: konversi, auto-retry, dan pembatalan saat mengunduh. Gagal bila ffmpeg tidak ditemukan |
-| `make nfr` | Ukur target [NFR](docs/yt-to-mp3-go-planning.md#22-non-functional-requirements) pada direktori data sementara; `URL="<tautan>"` ikut mengukur konversi dua job paralel |
+| `make nfr` | Ukur target [NFR](yt-to-mp3-go-planning.md#22-non-functional-requirements) pada direktori data sementara; `URL="<tautan>"` ikut mengukur konversi dua job paralel |
 
 Bentuk respons API dikunci berkas golden di `internal/api/testdata/golden/` dan ikut diperiksa `make test`. Perubahan kontrak yang disengaja ditulis ulang dengan `go test ./internal/api/ -run Kontrak -update`, lalu diff-nya ditinjau sebelum commit.
 
@@ -152,9 +152,9 @@ Sebelum tag pertama, validasi pipeline-nya dengan menjalankan workflow **Release
 make release-snapshot
 ```
 
-Tool yt-dlp dan FFmpeg tidak pernah ikut di dalam arsip rilis; pengguna memasangnya dari aplikasi ([ADR-031](docs/yt-to-mp3-go-planning.md#4-keputusan-teknis)). Signing belum ada: macOS butuh codesign dan notarization dengan akun Apple Developer, Windows butuh sertifikat code signing.
+Tool yt-dlp dan FFmpeg tidak pernah ikut di dalam arsip rilis; pengguna memasangnya dari aplikasi ([ADR-031](yt-to-mp3-go-planning.md#4-keputusan-teknis)). Signing belum ada: macOS butuh codesign dan notarization dengan akun Apple Developer, Windows butuh sertifikat code signing.
 
-Build Windows berbeda dari target lain ([planning §25](docs/yt-to-mp3-go-planning.md#25-build-dev-workflow-dan-rilis)):
+Build Windows berbeda dari target lain ([planning §25](yt-to-mp3-go-planning.md#25-build-dev-workflow-dan-rilis)):
 - Di-link sebagai aplikasi GUI tanpa jendela console. Error startup muncul sebagai dialog.
 - Membawa ikon, info versi, dan manifest.
 - Job **Windows installer** membungkusnya menjadi `setup.exe` dengan Inno Setup.
@@ -192,11 +192,11 @@ scripts/              pemutakhiran manifest tool dan pembuat ikon
 docs/                 perencanaan, arsitektur, data model
 ```
 
-Arah impor satu arah: `api` dan `infrastructure` bergantung pada `application`, `application` hanya pada `domain`, dan `domain` tidak bergantung pada apa pun. Detailnya di [architecture.md](docs/architecture.md).
+Arah impor satu arah: `api` dan `infrastructure` bergantung pada `application`, `application` hanya pada `domain`, dan `domain` tidak bergantung pada apa pun. Detailnya di [architecture.md](architecture.md).
 
 ## API
 
-Seluruh endpoint berada di bawah `/api` dan mewajibkan header `X-Session-Token`, kecuali `GET /api/ping` yang dipakai untuk mendeteksi instance yang sudah berjalan. Kontrak lengkapnya di [planning §7](docs/yt-to-mp3-go-planning.md#7-kontrak-api).
+Seluruh endpoint berada di bawah `/api` dan mewajibkan header `X-Session-Token`, kecuali `GET /api/ping` yang dipakai untuk mendeteksi instance yang sudah berjalan. Kontrak lengkapnya di [planning §7](yt-to-mp3-go-planning.md#7-kontrak-api).
 
 | Endpoint | Fungsi |
 | --- | --- |
@@ -229,7 +229,7 @@ Aplikasi merawat datanya sendiri saat dibuka lalu setiap jam: jejak event job ya
 
 ## Keamanan
 
-Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka pengguna dapat mengirim request ke `127.0.0.1`. Karena itu server ini menerapkan bind loopback eksplisit, allowlist header `Host` sebagai penangkal DNS rebinding, pemeriksaan `Origin` pada setiap request yang mengubah state, session token acak per proses, CORS deny-all, dan batas ukuran body. Path berkas tidak pernah diterima dari klien, dan argumen tool tidak pernah melewati shell. Perinciannya di [planning §15](docs/yt-to-mp3-go-planning.md#15-model-keamanan-lokal).
+Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka pengguna dapat mengirim request ke `127.0.0.1`. Karena itu server ini menerapkan bind loopback eksplisit, allowlist header `Host` sebagai penangkal DNS rebinding, pemeriksaan `Origin` pada setiap request yang mengubah state, session token acak per proses, CORS deny-all, dan batas ukuran body. Path berkas tidak pernah diterima dari klien, dan argumen tool tidak pernah melewati shell. Perinciannya di [planning §15](yt-to-mp3-go-planning.md#15-model-keamanan-lokal).
 
 ## Keterbatasan yang diketahui
 
@@ -239,15 +239,15 @@ Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka 
 - **Build Windows tanpa console tidak menampilkan log di mana pun selain berkas** `logs/app.log` di direktori data. Untuk melihat log langsung, jalankan dari source dengan `go run ./cmd/app`.
 - **Jendela aplikasi di Windows adalah Microsoft Edge dengan profil terpisah**, bukan jendela native. Bila Edge tidak ada, UI jatuh ke browser default, dan menutup tab itu tidak langsung menghentikan aplikasi; idle shutdown yang mengakhirinya kemudian.
 
-Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan keluaran video. Daftar lengkapnya di [non-goals](docs/yt-to-mp3-go-planning.md#3-non-goals).
+Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan keluaran video. Daftar lengkapnya di [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
 
 ## Dokumentasi
 
 | Dokumen | Isi |
 | --- | --- |
-| [yt-to-mp3-go-planning.md](docs/yt-to-mp3-go-planning.md) | Ruang lingkup, 34 ADR, kontrak API, roadmap, kriteria selesai |
-| [architecture.md](docs/architecture.md) | Aturan dependensi, port/adapter, model concurrency, siklus hidup |
-| [data-model.md](docs/data-model.md) | Skema SQLite, invarian, retensi, migrasi |
+| [yt-to-mp3-go-planning.md](yt-to-mp3-go-planning.md) | Ruang lingkup, 34 ADR, kontrak API, roadmap, kriteria selesai |
+| [architecture.md](architecture.md) | Aturan dependensi, port/adapter, model concurrency, siklus hidup |
+| [data-model.md](data-model.md) | Skema SQLite, invarian, retensi, migrasi |
 
 ## Catatan legal
 
@@ -255,4 +255,4 @@ Mengunduh konten YouTube umumnya melanggar Terms of Service platform tersebut, d
 
 ## Lisensi
 
-[MIT](LICENSE)
+[MIT](../LICENSE)

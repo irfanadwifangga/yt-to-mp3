@@ -104,11 +104,12 @@ yt-to-mp3/
 ├─ migrations/
 ├─ testdata/
 ├─ scripts/
-├─ docs/
+├─ docs/                  # planning, arsitektur, data model, README.en.md, README.id.md
+├─ packaging/windows/     # ikon, manifest, info versi, skrip Inno Setup
 ├─ .github/workflows/
 ├─ Makefile
 ├─ go.mod
-└─ README.md
+└─ README.md              # perkenalan singkat dua bahasa, merujuk ke docs/README.*.md
 ```
 
 ## 6. Job lifecycle

@@ -74,6 +74,10 @@ archives:
     files:
       - LICENSE
       - README.md
+      # README di root hanya perkenalan; dokumentasi lengkap yang
+      # dirujuknya ikut dibawa supaya tautannya tetap berguna di arsip.
+      - docs/README.en.md
+      - docs/README.id.md
 
 checksum:
   name_template: checksums.txt
