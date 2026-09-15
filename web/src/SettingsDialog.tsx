@@ -194,7 +194,7 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
 
               {g.id === "tools" && <ToolsPanel health={health} onChanged={onChanged} />}
               {g.id === "display" && <DisplayPanel />}
-              {g.id === "about" && <AboutPanel health={health} />}
+              {g.id === "about" && <AboutPanel health={health} onChanged={onChanged} />}
             </section>
           ))}
         </div>
@@ -620,7 +620,25 @@ function DisplayPanel() {
   );
 }
 
-function AboutPanel({ health }: { health: Health | null }) {
+function AboutPanel({ health, onChanged }: { health: Health | null; onChanged: () => void }) {
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Versi terbaru bisa belum diketahui, misalnya tepat setelah memasang
+  // versi baru; pengguna tidak perlu menunggu cek otomatis berikutnya.
+  async function check() {
+    setChecking(true);
+    setError(null);
+    try {
+      await api.checkToolUpdates();
+      onChanged();
+    } catch (err) {
+      setError(messageFor(err, t("tools.checkFailed")));
+    } finally {
+      setChecking(false);
+    }
+  }
+
   if (!health) return null;
   const update = health.app_update;
   return (
@@ -630,7 +648,17 @@ function AboutPanel({ health }: { health: Health | null }) {
       <dt>{t("settings.about.latest")}</dt>
       <dd className="mono">
         {!update.latest ? (
-          t("settings.about.unknown")
+          <>
+            {t("settings.about.unknown")}{" "}
+            <button type="button" className="link" onClick={() => void check()} disabled={checking}>
+              {checking ? t("tools.checking") : t("tools.checkNow")}
+            </button>
+            {error && (
+              <span className="alert small" role="alert">
+                {error}
+              </span>
+            )}
+          </>
         ) : update.update_available && update.release_url ? (
           <a href={update.release_url} target="_blank" rel="noopener noreferrer">
             {t("settings.about.download", { version: update.latest })}

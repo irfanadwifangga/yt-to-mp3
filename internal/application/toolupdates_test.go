@@ -232,3 +232,36 @@ func TestToolServiceAppUpdate(t *testing.T) {
 		}
 	}
 }
+
+// Hasil cek lama yang belum memuat versi aplikasi tidak boleh membuat
+// aplikasi menunggu seminggu untuk tahu versi terbarunya.
+func TestToolServiceCekSegeraBilaVersiAplikasiBelumDiketahui(t *testing.T) {
+	enabled := true
+	svc, src, _, _ := newToolFixture(&enabled)
+	ctx := context.Background()
+
+	// Cek pertama hanya berhasil untuk tool, seperti hasil dari versi lama.
+	if err := svc.CheckUpdates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	svc.SetApp("0.1.0", "https://github.com/irfanadwifangga/yt-to-mp3/releases/latest")
+	if !svc.Due() {
+		t.Fatal("tidak jatuh tempo walau versi aplikasi belum pernah diketahui")
+	}
+
+	src.latest[application.AppUpdateKey] = "0.1.0"
+	if err := svc.CheckUpdates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if svc.Due() {
+		t.Error("masih jatuh tempo setelah versi aplikasi diketahui")
+	}
+
+	// Setelan yang dimatikan tetap dihormati.
+	src.latest[application.AppUpdateKey] = ""
+	svc.SetApp("0.1.0", "")
+	enabled = false
+	if svc.Due() {
+		t.Error("jatuh tempo walau cek pembaruan dimatikan")
+	}
+}

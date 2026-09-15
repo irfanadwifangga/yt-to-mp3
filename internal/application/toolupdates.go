@@ -265,6 +265,14 @@ func (s *ToolService) Due() bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Hasil cek yang tersimpan sebelum cek pembaruan aplikasi ada tidak
+	// memuat versi aplikasi. Tanpa pengecualian ini, "versi terbaru" baru
+	// terisi seminggu setelah pengguna memasang versi baru. Bila cek versi
+	// aplikasi terus gagal, misalnya offline, cek diulang tiap tick
+	// (6 jam), masih jauh di bawah batas API GitHub.
+	if s.appVersion != "" && s.state.Latest[AppUpdateKey] == "" {
+		return true
+	}
 	return s.now().Sub(s.state.CheckedAt) >= ToolUpdateInterval
 }
 
