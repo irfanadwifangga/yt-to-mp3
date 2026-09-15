@@ -335,11 +335,33 @@ func (s *stack) wait(t *testing.T, id string, want domain.JobStatus) *domain.Job
 // assertTempBersih memastikan pipeline tidak meninggalkan berkas sementara.
 func (s *stack) assertTempBersih(t *testing.T, jobID string) {
 	t.Helper()
-	if _, err := os.Stat(filepath.Join(s.tmpDir, jobID)); !os.IsNotExist(err) {
-		t.Errorf("direktori kerja job tertinggal: %v", err)
+	jobTmp := filepath.Join(s.tmpDir, jobID)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(jobTmp); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			if _, err := os.Stat(jobTmp); !os.IsNotExist(err) {
+				t.Errorf("direktori kerja job tertinggal: %v", err)
+			}
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(s.outDir, ".tmp")); len(entries) != 0 {
-		t.Errorf("berkas commit sementara tertinggal: %d", len(entries))
+
+	commitTmp := filepath.Join(s.outDir, ".tmp")
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		entries, _ := os.ReadDir(commitTmp)
+		if len(entries) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("berkas commit sementara tertinggal: %d", len(entries))
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
