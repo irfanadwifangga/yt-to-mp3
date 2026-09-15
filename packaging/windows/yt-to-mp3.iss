@@ -8,6 +8,10 @@
 ; Data aplikasi (database, tool, log) tinggal di %LOCALAPPDATA%\yt-to-mp3 dan
 ; hasil konversi di folder Musik; uninstall sengaja tidak menyentuh keduanya.
 
+; Nama yang dilihat pengguna. Nama teknis (folder instalasi, nama exe, AppId)
+; tetap yt-to-mp3 supaya pembaruan mengenali instalasi lama.
+#define DisplayName "Youtube To MP3 Converter"
+
 #ifndef AppVersion
   #define AppVersion "0.0.0-dev"
 #endif
@@ -19,12 +23,12 @@
 ; AppId mengikat pembaruan dan uninstall ke instalasi yang sama. Jangan
 ; pernah diganti setelah rilis pertama.
 AppId={{8D5C3E7A-4B1F-4E2A-9C6D-2F7B1A3E5D90}
-AppName=yt-to-mp3
+AppName={#DisplayName}
 AppVersion={#AppVersion}
-AppVerName=yt-to-mp3 {#AppVersion}
+AppVerName={#DisplayName} {#AppVersion}
 AppPublisher=Irfana Dwi Fangga
 DefaultDirName={autopf}\yt-to-mp3
-DefaultGroupName=yt-to-mp3
+DefaultGroupName={#DisplayName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
@@ -33,7 +37,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 LicenseFile=..\..\LICENSE
 SetupIconFile=yt-to-mp3.ico
 UninstallDisplayIcon={app}\yt-to-mp3.exe
-UninstallDisplayName=yt-to-mp3
+UninstallDisplayName={#DisplayName}
 OutputBaseFilename=yt-to-mp3_{#AppVersion}_windows_amd64_setup
 Compression=lzma2
 SolidCompression=yes
@@ -53,9 +57,15 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "yt-to-mp3.exe"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 
+[InstallDelete]
+; Shortcut dari versi sebelum nama tampilan diganti. Tanpa ini pembaruan
+; meninggalkan dua shortcut untuk aplikasi yang sama.
+Type: files; Name: "{autoprograms}\yt-to-mp3.lnk"
+Type: files; Name: "{autodesktop}\yt-to-mp3.lnk"
+
 [Icons]
-Name: "{autoprograms}\yt-to-mp3"; Filename: "{app}\yt-to-mp3.exe"
-Name: "{autodesktop}\yt-to-mp3"; Filename: "{app}\yt-to-mp3.exe"; Tasks: desktopicon
+Name: "{autoprograms}\{#DisplayName}"; Filename: "{app}\yt-to-mp3.exe"
+Name: "{autodesktop}\{#DisplayName}"; Filename: "{app}\yt-to-mp3.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\yt-to-mp3.exe"; Description: "{cm:LaunchProgram,yt-to-mp3}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\yt-to-mp3.exe"; Description: "{cm:LaunchProgram,{#DisplayName}}"; Flags: nowait postinstall skipifsilent

@@ -96,10 +96,10 @@ release:
   draft: true
   prerelease: auto
   footer: |
-    Pengguna Windows cukup mengunduh `yt-to-mp3_<versi>_windows_amd64_setup.exe`;
-    zip Windows untuk pemakaian portable.
+    Windows users only need `yt-to-mp3_<version>_windows_amd64_setup.exe`;
+    the Windows zip is for portable use.
 
-    Binary belum ditandatangani. Di Windows, SmartScreen dapat menampilkan
-    peringatan; pilih "More info" lalu "Run anyway". Di macOS, jalankan
-    `xattr -d com.apple.quarantine ./yt-to-mp3` setelah mengekstrak.
-    Cocokkan unduhan dengan `checksums.txt` sebelum menjalankannya.
+    Binaries are not signed yet. On Windows, SmartScreen may show a warning;
+    choose "More info" and then "Run anyway". On macOS, run
+    `xattr -d com.apple.quarantine ./yt-to-mp3` after extracting.
+    Verify downloads against `checksums.txt` before running them.

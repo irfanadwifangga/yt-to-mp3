@@ -36,7 +36,7 @@ jobs:
           retention-days: 1
 
   check:
-    name: Lint dan test Go
+    name: Lint and test Go
     runs-on: ubuntu-latest
     needs: web
     steps:
@@ -49,18 +49,18 @@ jobs:
         with:
           name: spa-dist
           path: web/dist
-      - name: Periksa format
+      - name: Check formatting
         run: |
           out=$(gofmt -l ./cmd ./internal ./scripts ./web)
-          if [ -n "$out" ]; then echo "belum diformat:"; echo "$out"; exit 1; fi
+          if [ -n "$out" ]; then echo "not formatted:"; echo "$out"; exit 1; fi
       - run: go vet ./...
       - run: go test -race ./...
-      # Test integrasi memakai FFmpeg sungguhan dengan fixture sintetis.
-      # YT2MP3_REQUIRE_TOOLS membuat test gagal alih-alih dilewati bila
-      # ffmpeg tidak ditemukan, supaya CI tidak hijau tanpa menguji apa pun.
-      - name: Pasang FFmpeg
+      # Integration tests use a real FFmpeg with synthetic fixtures.
+      # YT2MP3_REQUIRE_TOOLS makes the tests fail instead of skipping when
+      # ffmpeg is missing, so CI never passes without testing anything.
+      - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - name: Test integrasi FFmpeg dan E2E pipeline
+      - name: FFmpeg integration and E2E pipeline tests
         env:
           YT2MP3_REQUIRE_TOOLS: "1"
         run: go test -tags integration -run "Integrasi|E2E" -v ./internal/infrastructure/ffmpeg/ ./internal/e2e/
@@ -71,10 +71,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux sudah diuji dengan -race di job check. Windows dan macOS
-        # diuji terpisah karena terminasi process tree dan rename atomik
-        # punya implementasi berbeda per OS; acceptance criteria menuntut
-        # cancel terbukti membersihkan seluruh tree di Windows.
+        # Linux is already tested with -race in the check job. Windows and
+        # macOS run separately because process tree termination and atomic
+        # rename are implemented per OS, and the acceptance criteria require
+        # cancellation to be proven to clean up the whole tree on Windows.
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -87,8 +87,8 @@ jobs:
         with:
           name: spa-dist
           path: web/dist
-      # Tanpa -race: detektor race butuh cgo, sedangkan build proyek ini
-      # dijaga CGO_ENABLED=0.
+      # No -race: the race detector needs cgo, while this project builds
+      # with CGO_ENABLED=0.
       - run: go test ./...
 
   build:
@@ -114,8 +114,8 @@ jobs:
         with:
           name: spa-dist
           path: web/dist
-      # CGO_ENABLED=0 dijaga eksplisit: seluruh dependensi wajib pure Go
-      # supaya cross-compile tidak perlu toolchain C. Lihat ADR-011.
+      # CGO_ENABLED=0 is set explicitly: every dependency must be pure Go so
+      # cross-compiling never needs a C toolchain. See ADR-011.
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -149,5 +149,5 @@ jobs:
         with:
           name: spa-dist
           path: web/dist
-      - name: Build dan cek versi
+      - name: Build and print version
         run: go run ./cmd/app -version

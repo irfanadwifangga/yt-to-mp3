@@ -111,7 +111,7 @@ clean: ## Hapus artefak build
 
 .PHONY: icon
 icon: ## Gambar ulang ikon Windows dari tanda merek (hasilnya di-commit)
-	go run ./scripts/icon -o packaging/windows/yt-to-mp3.ico
+	go run ./scripts/icon -o packaging/windows/yt-to-mp3.ico -png-dir web/public -svg web/public/favicon.svg
 
 .PHONY: winres
 winres: ## Buat resource Windows (ikon, info versi, manifest) untuk build lokal

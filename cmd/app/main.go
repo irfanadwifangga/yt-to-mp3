@@ -50,8 +50,8 @@ func main() {
 		// stderr tidak terlihat siapa pun. Tanpa dialog, kegagalan startup
 		// membuat aplikasi seolah tidak pernah dibuka.
 		if !process.HasConsole() {
-			dialog.Error(version.AppName,
-				"yt-to-mp3 gagal dijalankan / failed to start.\n\n"+err.Error())
+			dialog.Error(version.DisplayName,
+				version.DisplayName+" gagal dijalankan / failed to start.\n\n"+err.Error())
 		}
 		os.Exit(1)
 	}
@@ -94,7 +94,7 @@ func run() error {
 	if info, running := instance.FindRunning(cfg.Paths.RuntimeFile); running {
 		log.Info("instance lain sudah berjalan", "pid", info.PID, "port", info.Port)
 		if !*noBrowser {
-			openBrowser(info.URL(), log, true)
+			openUI(info.URL(), windowProfileDir(cfg), log, true)
 		}
 		return nil
 	}
@@ -335,7 +335,15 @@ func run() error {
 	fmt.Fprintln(os.Stderr, "buka:", info.URL())
 
 	if !*noBrowser {
-		openBrowser(info.URL(), log, false)
+		// Di Windows UI dibuka sebagai jendela aplikasi tersendiri (ADR-034).
+		// Menutupnya menghentikan aplikasi begitu tidak ada job yang berjalan.
+		if win := openUI(info.URL(), windowProfileDir(cfg), log, false); win != nil {
+			go func() {
+				<-win.Closed()
+				log.Info("jendela aplikasi ditutup")
+				idle.WindowClosed()
+			}()
+		}
 	}
 
 	select {
@@ -359,6 +367,27 @@ func run() error {
 	return nil
 }
 
+// windowProfileDir adalah profil Edge khusus jendela aplikasi, di dalam
+// direktori data supaya ikut terhapus bersama data aplikasi.
+func windowProfileDir(cfg config.Config) string {
+	return filepath.Join(cfg.Paths.DataDir, "window")
+}
+
+// openUI membuka antarmuka sebagai jendela aplikasi bila sistem mendukung,
+// selain itu di browser default. Window nil berarti penutupan UI tidak bisa
+// diamati, dan idle shutdown biasa yang mengakhiri proses.
+func openUI(url, profileDir string, log *slog.Logger, wait bool) *browser.Window {
+	win, err := browser.OpenAppWindow(url, profileDir)
+	if err == nil {
+		return win
+	}
+	if !errors.Is(err, browser.ErrAppWindowUnavailable) {
+		log.Warn("jendela aplikasi gagal dibuka, memakai browser default", "error", err)
+	}
+	openBrowser(url, log, wait)
+	return nil
+}
+
 // openBrowser membuka URL di browser default.
 //
 // Pada build tanpa console, baris "buka:" di stderr tidak terlihat, sehingga
@@ -376,7 +405,7 @@ func openBrowser(url string, log *slog.Logger, wait bool) {
 	}
 
 	show := func() {
-		dialog.Info(version.AppName,
+		dialog.Info(version.DisplayName,
 			"Browser tidak dapat dibuka otomatis. Salin alamat ini ke browser:\n"+
 				"The browser could not be opened. Copy this address into a browser:\n\n"+url)
 	}

@@ -1,22 +1,23 @@
 /*
- * Palet diambil dari dunia perangkat audio: hijau "signal" seperti lampu
- * level meter, amber untuk peringatan, merah "clip" untuk kegagalan.
- * Kertas kehijauan netral menahan warna sampul video supaya tetap menonjol.
+ * Aksen "signal" biru mengikuti ikon aplikasi (scripts/icon), yang juga
+ * mengisi sampul job saat dikonversi. Amber untuk peringatan dan merah
+ * "clip" untuk kegagalan tetap diambil dari dunia perangkat audio. Netral
+ * abu kebiruan menahan warna sampul video supaya tetap menonjol.
  */
 :root {
   color-scheme: light;
-  --paper: #eef0ec;
-  --surface: #f8f9f6;
-  --sunken: #e4e8e3;
-  --ink: #1c211e;
-  --muted: #5d6862;
-  --line: #d3d9d3;
-  --signal: #2e7d55;
-  --signal-ink: #256847;
-  --on-signal: #f8f9f6;
+  --paper: #eef1f6;
+  --surface: #f8fafc;
+  --sunken: #e3e8ef;
+  --ink: #172033;
+  --muted: #5b6475;
+  --line: #d3dae4;
+  --signal: #2563eb;
+  --signal-ink: #1d4ed8;
+  --on-signal: #f8fafc;
   --amber: #b7791f;
   --clip: #c4453c;
-  --shadow: 0 1px 0 rgb(28 33 30 / 0.04), 0 12px 32px -18px rgb(28 33 30 / 0.25);
+  --shadow: 0 1px 0 rgb(15 23 42 / 0.04), 0 12px 32px -18px rgb(15 23 42 / 0.25);
 
   --font-ui: "Archivo Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Code", monospace;
@@ -26,15 +27,15 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: #121513;
-    --surface: #1a1e1b;
-    --sunken: #0e110f;
-    --ink: #e5eae6;
-    --muted: #8f9a93;
-    --line: #2b322d;
-    --signal: #63c291;
-    --signal-ink: #63c291;
-    --on-signal: #0e110f;
+    --paper: #10131a;
+    --surface: #171b24;
+    --sunken: #0b0e14;
+    --ink: #e6eaf2;
+    --muted: #8e98a9;
+    --line: #283040;
+    --signal: #60a5fa;
+    --signal-ink: #93c5fd;
+    --on-signal: #0b1220;
     --amber: #e0a743;
     --clip: #ef7066;
     --shadow: 0 1px 0 rgb(0 0 0 / 0.3), 0 16px 40px -20px rgb(0 0 0 / 0.7);
@@ -43,15 +44,15 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: #121513;
-  --surface: #1a1e1b;
-  --sunken: #0e110f;
-  --ink: #e5eae6;
-  --muted: #8f9a93;
-  --line: #2b322d;
-  --signal: #63c291;
-  --signal-ink: #63c291;
-  --on-signal: #0e110f;
+  --paper: #10131a;
+  --surface: #171b24;
+  --sunken: #0b0e14;
+  --ink: #e6eaf2;
+  --muted: #8e98a9;
+  --line: #283040;
+  --signal: #60a5fa;
+  --signal-ink: #93c5fd;
+  --on-signal: #0b1220;
   --amber: #e0a743;
   --clip: #ef7066;
   --shadow: 0 1px 0 rgb(0 0 0 / 0.3), 0 16px 40px -20px rgb(0 0 0 / 0.7);
@@ -326,10 +327,12 @@ select:focus-visible {
 
 /* Tanda merek meniru sampul yang sedang terisi: separuh bawah berwarna. */
 .brand-mark {
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: 3px;
-  background: linear-gradient(to top, var(--signal) 0 55%, var(--line) 55% 100%);
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  /* Ikon yang sama dengan favicon dan ikon Windows (scripts/icon), supaya
+     tanda merek tidak pernah punya dua versi. */
+  background: url("/favicon.svg") center / contain no-repeat;
 }
 
 .topbar-actions {
@@ -777,7 +780,7 @@ select:focus-visible {
 }
 
 .settings::backdrop {
-  background: rgb(14 17 15 / 0.45);
+  background: rgb(11 14 20 / 0.45);
 }
 
 .settings[open] {

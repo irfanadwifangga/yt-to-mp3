@@ -110,3 +110,49 @@ func TestIdleTidakTerjadiSelamaSibuk(t *testing.T) {
 		})
 	}
 }
+
+// Menutup jendela aplikasi menghentikan aplikasi setelah jeda singkat, tanpa
+// menunggu batas idle dalam menit, bahkan bila idle shutdown dimatikan.
+func TestIdleSetelahJendelaDitutup(t *testing.T) {
+	for _, timeout := range []time.Duration{30 * time.Minute, 0} {
+		w, m := newIdleWorld()
+		w.timeout = timeout
+		ctx := context.Background()
+
+		w.now = w.now.Add(time.Minute)
+		w.activity = w.now
+		m.WindowClosed()
+
+		w.now = w.now.Add(5 * time.Second)
+		if m.Idle(ctx) {
+			t.Errorf("timeout %v: berhenti sebelum jeda penutupan habis", timeout)
+		}
+		w.now = w.now.Add(6 * time.Second)
+		if !m.Idle(ctx) {
+			t.Errorf("timeout %v: tidak berhenti setelah jendela ditutup", timeout)
+		}
+	}
+}
+
+// Job yang masih berjalan saat jendela ditutup tetap diselesaikan.
+func TestIdleJendelaDitutupMenungguJob(t *testing.T) {
+	w, m := newIdleWorld()
+	ctx := context.Background()
+	m.WindowClosed()
+
+	w.jobs.active = 1
+	w.now = w.now.Add(time.Hour)
+	if m.Idle(ctx) {
+		t.Fatal("berhenti padahal job masih berjalan")
+	}
+
+	w.jobs.active = 0
+	w.now = w.now.Add(5 * time.Second)
+	if m.Idle(ctx) {
+		t.Fatal("berhenti tepat saat job selesai, sebelum jeda penutupan")
+	}
+	w.now = w.now.Add(6 * time.Second)
+	if !m.Idle(ctx) {
+		t.Fatal("tidak berhenti setelah job selesai dan jendela sudah ditutup")
+	}
+}

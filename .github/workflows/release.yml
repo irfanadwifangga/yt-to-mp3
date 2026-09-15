@@ -1,10 +1,10 @@
-name: Rilis
+name: Release
 
-# Tag v* membuat rilis GitHub berstatus draft beserta arsip lima target dan
-# checksums.txt. Tidak ada yang terlihat publik sampai draft itu diterbitkan
-# manual. Pemicu manual menjalankan snapshot: seluruh arsip dibangun dan
-# diunggah sebagai artifact workflow tanpa membuat rilis, untuk memvalidasi
-# konfigurasi GoReleaser sebelum tag pertama.
+# A v* tag creates a draft GitHub release with archives for five targets,
+# checksums.txt, and the Windows installer. Nothing is public until the draft
+# is published by hand. A manual run builds a snapshot instead: everything is
+# uploaded as workflow artifacts without creating a release, to validate the
+# pipeline before tagging.
 
 on:
   push:
@@ -17,14 +17,15 @@ env:
 
 jobs:
   goreleaser:
+    name: GoReleaser
     runs-on: ubuntu-latest
     permissions:
-      # Hanya dibutuhkan untuk membuat draft rilis dari tag.
+      # Only needed to create the draft release from a tag.
       contents: write
     steps:
       - uses: actions/checkout@v5
         with:
-          # Changelog dan versi dibaca dari riwayat tag.
+          # The changelog and version are read from the tag history.
           fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
@@ -43,17 +44,20 @@ jobs:
           args: ${{ startsWith(github.ref, 'refs/tags/') && 'release --clean' || 'release --snapshot --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # metadata.json carries the version GoReleaser used, including snapshot
+      # versions, so artifact names match the files inside them.
+      - name: Read version
+        run: echo "APP_VERSION=$(jq -r .version dist/metadata.json)" >> "$GITHUB_ENV"
       - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v6
         with:
-          name: snapshot
+          name: yt-to-mp3_${{ env.APP_VERSION }}_archives
           path: |
             dist/*.zip
             dist/*.tar.gz
             dist/checksums.txt
           retention-days: 7
-      # Binary Windows diteruskan ke job installer. metadata.json membawa
-      # versi yang dipakai GoReleaser, termasuk versi snapshot.
+      # Hands the Windows binary to the installer job.
       - uses: actions/upload-artifact@v6
         with:
           name: windows-build
@@ -63,11 +67,11 @@ jobs:
           retention-days: 1
 
   installer:
-    name: Installer Windows
+    name: Windows installer
     needs: goreleaser
     runs-on: windows-latest
     permissions:
-      # Hanya dibutuhkan untuk mengunggah installer ke draft rilis dari tag.
+      # Only needed to upload the installer to the draft release from a tag.
       contents: write
     steps:
       - uses: actions/checkout@v5
@@ -75,16 +79,16 @@ jobs:
         with:
           name: windows-build
           path: dist
-      - name: Siapkan binary dan versi
+      - name: Extract binary and read version
         shell: pwsh
         run: |
           $meta = Get-Content dist/metadata.json | ConvertFrom-Json
           $zip = Get-ChildItem dist -Filter "*_windows_amd64.zip" | Select-Object -First 1
           Expand-Archive $zip.FullName -DestinationPath build/windows -Force
           Add-Content -Path $env:GITHUB_ENV -Value "APP_VERSION=$($meta.version)"
-      - name: Pasang Inno Setup
+      - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
-      - name: Bangun installer
+      - name: Build installer
         shell: pwsh
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
@@ -95,14 +99,16 @@ jobs:
           Set-Content -Path "$($setup.FullName).sha256" -Value "$hash  $($setup.Name)" -Encoding ascii
           Add-Content -Path $env:GITHUB_ENV -Value "SETUP_PATH=$($setup.FullName)"
       - if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        name: Unggah ke draft rilis
+        name: Upload to draft release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" "$env:SETUP_PATH" "$env:SETUP_PATH.sha256" --clobber
+      # GitHub always serves workflow artifacts as a zip named after the
+      # artifact, so the name mirrors the installer file inside it.
       - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v6
         with:
-          name: installer
+          name: yt-to-mp3_${{ env.APP_VERSION }}_windows_amd64_setup
           path: dist/*_setup.exe*
           retention-days: 7

@@ -11,6 +11,14 @@ import (
 // menit cukup untuk batas yang dihitung dalam menit.
 const idleCheckInterval = time.Minute
 
+// Setelah jendela aplikasi ditutup, aplikasi berhenti begitu tidak dipakai
+// selama windowCloseGrace. Jeda ini membedakan jendela yang ditutup dari muat
+// ulang halaman, yang polling-nya kembali dalam dua detik.
+const (
+	windowCloseGrace = 10 * time.Second
+	windowCloseCheck = 2 * time.Second
+)
+
 // ActiveCounter menghitung job yang sedang berjalan dan yang antre.
 type ActiveCounter interface {
 	CountActive(ctx context.Context) (active, queued int, err error)
@@ -40,11 +48,31 @@ type IdleDeps struct {
 type IdleMonitor struct {
 	d IdleDeps
 
-	mu       sync.Mutex
-	lastBusy time.Time
+	mu           sync.Mutex
+	lastBusy     time.Time
+	windowClosed bool
 
+	wake chan struct{}
 	done chan struct{}
 	once sync.Once
+}
+
+// WindowClosed memberi tahu bahwa jendela aplikasi ditutup.
+//
+// Menutup jendela adalah niat berhenti yang jelas, jadi aplikasi berhenti
+// begitu tidak ada job dan tidak ada UI yang aktif selama windowCloseGrace,
+// tanpa menunggu batas idle yang dihitung dalam menit. Job yang masih
+// berjalan tetap diselesaikan lebih dulu. Berlaku walau idle shutdown
+// dimatikan di setelan: setelan itu tentang tab yang ditinggal terbuka,
+// bukan jendela yang sengaja ditutup.
+func (m *IdleMonitor) WindowClosed() {
+	m.mu.Lock()
+	m.windowClosed = true
+	m.mu.Unlock()
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
 }
 
 // NewIdleMonitor membuat monitor idle.
@@ -55,7 +83,12 @@ func NewIdleMonitor(d IdleDeps) *IdleMonitor {
 	if d.Interval <= 0 {
 		d.Interval = idleCheckInterval
 	}
-	return &IdleMonitor{d: d, lastBusy: d.Now(), done: make(chan struct{})}
+	return &IdleMonitor{
+		d:        d,
+		lastBusy: d.Now(),
+		wake:     make(chan struct{}, 1),
+		done:     make(chan struct{}),
+	}
 }
 
 // Done ditutup ketika aplikasi dinyatakan idle.
@@ -70,10 +103,18 @@ func (m *IdleMonitor) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-m.wake:
+			// Menit terlalu kasar setelah jendela ditutup; pengguna menunggu
+			// aplikasi benar-benar berhenti.
+			ticker.Reset(windowCloseCheck)
 		case <-ticker.C:
 			if m.Idle(ctx) {
-				m.d.Log.Info("tidak dipakai melewati batas idle, berhenti",
-					"batas", m.d.Timeout())
+				if m.closed() {
+					m.d.Log.Info("jendela aplikasi ditutup dan tidak ada job, berhenti")
+				} else {
+					m.d.Log.Info("tidak dipakai melewati batas idle, berhenti",
+						"batas", m.d.Timeout())
+				}
 				m.once.Do(func() { close(m.done) })
 				return
 			}
@@ -93,6 +134,9 @@ func (m *IdleMonitor) Run(ctx context.Context) {
 // tidak bisa memastikan keadaan justru bisa memutus job yang sedang jalan.
 func (m *IdleMonitor) Idle(ctx context.Context) bool {
 	timeout := m.d.Timeout()
+	if m.closed() && (timeout <= 0 || timeout > windowCloseGrace) {
+		timeout = windowCloseGrace
+	}
 	if timeout <= 0 {
 		return false
 	}
@@ -112,6 +156,12 @@ func (m *IdleMonitor) Idle(ctx context.Context) bool {
 		since = last
 	}
 	return now.Sub(since) >= timeout
+}
+
+func (m *IdleMonitor) closed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.windowClosed
 }
 
 func (m *IdleMonitor) jobsBusy(ctx context.Context) bool {

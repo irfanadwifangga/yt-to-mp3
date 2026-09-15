@@ -9,6 +9,12 @@ import { messageFor, messageForCode } from "./messages";
 import { SettingsDialog, type SettingsSection } from "./SettingsDialog";
 import { Toasts, type Toast } from "./Toasts";
 
+/**
+ * Nama aplikasi yang dilihat pengguna, sama dengan version.DisplayName di
+ * backend. Nama teknis yt-to-mp3 (folder data, exe) sengaja tidak dipakai di UI.
+ */
+const APP_NAME = "Youtube To MP3 Converter";
+
 /** Notifikasi yang terlihat sekaligus; yang lebih lama digeser keluar. */
 const MAX_TOASTS = 4;
 
@@ -187,9 +193,9 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Jumlah job berjalan tampil di judul tab, terlihat walau tab di belakang.
+  // Jumlah job berjalan tampil di judul jendela, terlihat walau jendela di belakang.
   useEffect(() => {
-    document.title = active.length > 0 ? `(${active.length}) yt-to-mp3` : "yt-to-mp3";
+    document.title = active.length > 0 ? `(${active.length}) ${APP_NAME}` : APP_NAME;
   }, [active.length]);
 
   async function handleQuit() {
@@ -222,7 +228,7 @@ export function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          yt-to-mp3
+          {APP_NAME}
         </div>
 
         <div className="topbar-actions">

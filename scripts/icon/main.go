@@ -1,11 +1,13 @@
-// Command icon membuat ikon aplikasi Windows dari tanda merek SPA.
+// Command icon menggambar ikon aplikasi dari satu definisi geometri.
 //
-//	go run ./scripts/icon -o packaging/windows/yt-to-mp3.ico
+//	go run ./scripts/icon -o packaging/windows/yt-to-mp3.ico -png-dir web/public -svg web/public/favicon.svg
 //
-// Bentuknya sama dengan .brand-mark di web/src/index.css: kotak membulat
-// yang terisi hijau dari bawah seperti level meter. Ikon digambar dari kode,
-// bukan disimpan sebagai berkas desain, supaya proporsinya tidak menyimpang
-// dari UI. Hasilnya di-commit; jalankan ulang hanya bila tanda merek berubah.
+// Bentuknya menggabungkan ciri khas UI dengan tanda audio: sampul yang
+// terisi warna dari bawah (seperti sampul job yang sedang dikonversi) dan
+// gelombang suara tiga bar di atasnya, "video menjadi audio". ICO, PNG, dan
+// SVG diturunkan dari definisi yang sama supaya tidak pernah menyimpang satu
+// sama lain. Hasilnya di-commit; jalankan ulang hanya bila tanda merek
+// berubah.
 package main
 
 import (
@@ -18,88 +20,233 @@ import (
 	"image/png"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 var (
-	// signal sama dengan --signal pada tema terang.
-	signal = color.NRGBA{R: 0x2e, G: 0x7d, B: 0x55, A: 0xff}
-	// track sengaja lebih gelap daripada --line di UI: ikon harus tetap
-	// terbaca di taskbar terang maupun gelap, sedangkan --line nyaris
-	// hilang di latar putih.
-	track = color.NRGBA{R: 0x6f, G: 0x7a, B: 0x73, A: 0xff}
+	// cover adalah sampul yang belum terisi. Di taskbar gelap bagian navy
+	// ini menyatu dengan latar; bentuk ikon tetap terbaca lewat isian biru
+	// dan bar terang. Dipilih pengguna dari perbandingan beberapa palet.
+	cover = color.NRGBA{R: 0x13, G: 0x23, B: 0x3f, A: 0xff}
+	// fill satu keluarga dengan --signal UI (#2563eb terang, #60a5fa gelap).
+	fill = color.NRGBA{R: 0x3b, G: 0x82, B: 0xf6, A: 0xff}
+	// wave terang supaya kontras di atas sampul navy maupun isian biru.
+	wave = color.NRGBA{R: 0xe8, G: 0xf1, B: 0xff, A: 0xff}
 )
 
-// fillRatio sama dengan batas 55% pada gradient .brand-mark.
-const fillRatio = 0.55
+// Geometri dalam satuan sisi tile (0..1).
+const (
+	cornerRadius = 0.2
+	fillLevel    = 0.5 // tinggi bagian terisi dari bawah
+	barWidth     = 0.16
+	barGap       = 0.11
+)
+
+// barHeights membentuk gelombang: bar tengah paling tinggi. Tiga bar, bukan
+// lebih, supaya bentuknya masih terbaca di ukuran 16 px.
+var barHeights = []float64{0.34, 0.6, 0.42}
 
 // sizes mencakup ukuran yang diminta Explorer, taskbar, dan Start Menu pada
 // berbagai skala DPI.
 var sizes = []int{16, 20, 24, 32, 40, 48, 64, 128, 256}
 
+// pngSizes adalah ikon PNG untuk SPA. Jendela aplikasi Edge memakai ikon
+// halaman untuk judul jendela dan taskbar.
+var pngSizes = []int{32, 192}
+
 func main() {
 	out := flag.String("o", "packaging/windows/yt-to-mp3.ico", "berkas ICO keluaran")
+	pngDir := flag.String("png-dir", "", "direktori untuk icon-32.png dan icon-192.png (opsional)")
+	svgOut := flag.String("svg", "", "berkas favicon SVG (opsional)")
+	preview := flag.String("preview", "", "PNG pratinjau di latar terang dan gelap (opsional)")
 	flag.Parse()
 
 	data, err := buildICO(sizes)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "susun ikon:", err)
-		os.Exit(1)
+		fail("susun ikon", err)
 	}
-	if err := os.WriteFile(*out, data, 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "tulis ikon:", err)
-		os.Exit(1)
+	write(*out, data)
+
+	if *pngDir != "" {
+		for _, s := range pngSizes {
+			write(filepath.Join(*pngDir, fmt.Sprintf("icon-%d.png", s)), encodePNG(render(s)))
+		}
 	}
-	fmt.Printf("%s: %d ukuran, %d byte\n", *out, len(sizes), len(data))
+	if *svgOut != "" {
+		write(*svgOut, []byte(buildSVG()))
+	}
+	if *preview != "" {
+		write(*preview, encodePNG(previewSheet()))
+	}
 }
 
-// render menggambar tanda merek pada kanvas persegi berukuran size.
-func render(size int) *image.NRGBA {
-	img := image.NewNRGBA(image.Rect(0, 0, size, size))
-	s := float64(size)
+func write(path string, data []byte) {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		fail("tulis "+path, err)
+	}
+	fmt.Printf("%s: %d byte\n", path, len(data))
+}
 
+func fail(what string, err error) {
+	fmt.Fprintf(os.Stderr, "%s: %v\n", what, err)
+	os.Exit(1)
+}
+
+func encodePNG(img image.Image) []byte {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		fail("susun PNG", err)
+	}
+	return buf.Bytes()
+}
+
+// layout adalah geometri ikon pada kanvas berukuran tertentu.
+type layout struct {
+	x0, y0, side, radius float64
+	split                float64 // batas atas bagian hijau
+	bars                 []bar
+}
+
+type bar struct{ cx, cy, w, h float64 }
+
+func layoutFor(size float64) layout {
 	// Sedikit ruang kosong di tepi, seperti ikon Windows lain, supaya ikon
 	// tidak tampak lebih besar daripada tetangganya di taskbar.
-	pad := math.Max(1, math.Round(s/16))
-	x0, y0, x1, y1 := pad, pad, s-pad, s-pad
-	radius := (x1 - x0) * 0.17 // 3px pada kotak 1,1rem di UI
-	split := y1 - (y1-y0)*fillRatio
+	pad := math.Max(1, math.Round(size/16))
+	side := size - 2*pad
+	l := layout{
+		x0: pad, y0: pad, side: side,
+		radius: side * cornerRadius,
+		split:  pad + side*(1-fillLevel),
+	}
 
-	// Supersampling per piksel untuk tepi sudut yang halus.
+	total := float64(len(barHeights))*barWidth + float64(len(barHeights)-1)*barGap
+	x := pad + side*(1-total)/2
+	for _, h := range barHeights {
+		w := side * barWidth
+		l.bars = append(l.bars, bar{cx: x + w/2, cy: pad + side/2, w: w, h: side * h})
+		x += w + side*barGap
+	}
+	return l
+}
+
+// colorAt mengembalikan warna titik dan apakah titik itu bagian dari ikon.
+func (l layout) colorAt(x, y float64) (color.NRGBA, bool) {
+	if !insideRounded(x, y, l.x0, l.y0, l.x0+l.side, l.y0+l.side, l.radius) {
+		return color.NRGBA{}, false
+	}
+	for _, b := range l.bars {
+		if insideCapsule(x, y, b) {
+			return wave, true
+		}
+	}
+	if y >= l.split {
+		return fill, true
+	}
+	return cover, true
+}
+
+// render menggambar ikon pada kanvas persegi berukuran size.
+func render(size int) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	l := layoutFor(float64(size))
+
+	// Supersampling per piksel untuk tepi yang halus: warna dirata-rata dari
+	// sampel yang mengenai ikon, alpha dari porsi sampel itu.
 	const ss = 4
 	for py := range size {
 		for px := range size {
-			var green, gray int
+			var r, g, b, hit int
 			for sy := range ss {
 				for sx := range ss {
-					x := float64(px) + (float64(sx)+0.5)/ss
-					y := float64(py) + (float64(sy)+0.5)/ss
-					if !insideRounded(x, y, x0, y0, x1, y1, radius) {
+					c, ok := l.colorAt(float64(px)+(float64(sx)+0.5)/ss, float64(py)+(float64(sy)+0.5)/ss)
+					if !ok {
 						continue
 					}
-					if y >= split {
-						green++
-					} else {
-						gray++
-					}
+					r, g, b, hit = r+int(c.R), g+int(c.G), b+int(c.B), hit+1
 				}
 			}
-			covered := green + gray
-			if covered == 0 {
+			if hit == 0 {
 				continue
 			}
-			c := mix(signal, track, green, gray)
-			c.A = uint8(255 * covered / (ss * ss))
-			img.SetNRGBA(px, py, c)
+			img.SetNRGBA(px, py, color.NRGBA{
+				R: uint8(r / hit), G: uint8(g / hit), B: uint8(b / hit),
+				A: uint8(255 * hit / (ss * ss)),
+			})
 		}
 	}
 	return img
 }
 
-// mix mencampur dua warna sesuai porsi sampel masing-masing.
-func mix(a, b color.NRGBA, na, nb int) color.NRGBA {
-	n := na + nb
-	ch := func(x, y uint8) uint8 { return uint8((int(x)*na + int(y)*nb) / n) }
-	return color.NRGBA{R: ch(a.R, b.R), G: ch(a.G, b.G), B: ch(a.B, b.B), A: 0xff}
+// buildSVG menulis geometri yang sama sebagai favicon vektor.
+func buildSVG() string {
+	const size = 64
+	l := layoutFor(size)
+	hex := func(c color.NRGBA) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
+	f := func(v float64) string {
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
+	}
+
+	var s strings.Builder
+	fmt.Fprintf(&s, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d">`+"\n", size, size)
+	s.WriteString("  <!-- Dibuat scripts/icon; ubah geometrinya di sana, bukan di berkas ini. -->\n")
+	fmt.Fprintf(&s, `  <clipPath id="tile"><rect x="%s" y="%s" width="%s" height="%s" rx="%s"/></clipPath>`+"\n",
+		f(l.x0), f(l.y0), f(l.side), f(l.side), f(l.radius))
+	s.WriteString(`  <g clip-path="url(#tile)">` + "\n")
+	fmt.Fprintf(&s, `    <rect x="%s" y="%s" width="%s" height="%s" fill="%s"/>`+"\n",
+		f(l.x0), f(l.y0), f(l.side), f(l.split-l.y0), hex(cover))
+	fmt.Fprintf(&s, `    <rect x="%s" y="%s" width="%s" height="%s" fill="%s"/>`+"\n",
+		f(l.x0), f(l.split), f(l.side), f(l.y0+l.side-l.split), hex(fill))
+	s.WriteString("  </g>\n")
+	for _, b := range l.bars {
+		fmt.Fprintf(&s, `  <rect x="%s" y="%s" width="%s" height="%s" rx="%s" fill="%s"/>`+"\n",
+			f(b.cx-b.w/2), f(b.cy-b.h/2), f(b.w), f(b.h), f(b.w/2), hex(wave))
+	}
+	s.WriteString("</svg>\n")
+	return s.String()
+}
+
+// previewSheet menampilkan ikon pada ukuran kecil yang diperbesar tanpa
+// penghalusan, di atas latar taskbar terang dan gelap.
+func previewSheet() *image.NRGBA {
+	previewSizes := []int{16, 24, 32, 48}
+	const scale, gap = 6, 24
+	backgrounds := []color.NRGBA{{0xf3, 0xf3, 0xf3, 0xff}, {0x20, 0x20, 0x20, 0xff}}
+
+	width := gap
+	for _, s := range previewSizes {
+		width += s*scale + gap
+	}
+	rowH := 48*scale + 2*gap
+	sheet := image.NewNRGBA(image.Rect(0, 0, width, rowH*len(backgrounds)))
+
+	for row, bg := range backgrounds {
+		for y := row * rowH; y < (row+1)*rowH; y++ {
+			for x := range width {
+				sheet.SetNRGBA(x, y, bg)
+			}
+		}
+		x := gap
+		for _, s := range previewSizes {
+			icon := render(s)
+			top := row*rowH + gap + (48-s)*scale/2
+			for iy := range s * scale {
+				for ix := range s * scale {
+					c := icon.NRGBAAt(ix/scale, iy/scale)
+					sheet.SetNRGBA(x+ix, top+iy, blend(bg, c))
+				}
+			}
+			x += s*scale + gap
+		}
+	}
+	return sheet
+}
+
+func blend(bg, fg color.NRGBA) color.NRGBA {
+	a := int(fg.A)
+	ch := func(b, f uint8) uint8 { return uint8((int(f)*a + int(b)*(255-a)) / 255) }
+	return color.NRGBA{R: ch(bg.R, fg.R), G: ch(bg.G, fg.G), B: ch(bg.B, fg.B), A: 0xff}
 }
 
 // insideRounded melaporkan apakah titik berada di dalam persegi bersudut
@@ -111,6 +258,15 @@ func insideRounded(x, y, x0, y0, x1, y1, r float64) bool {
 	cx := math.Min(math.Max(x, x0+r), x1-r)
 	cy := math.Min(math.Max(y, y0+r), y1-r)
 	dx, dy := x-cx, y-cy
+	return dx*dx+dy*dy <= r*r
+}
+
+// insideCapsule melaporkan apakah titik berada di dalam bar berujung bulat.
+func insideCapsule(x, y float64, b bar) bool {
+	r := b.w / 2
+	half := math.Max(0, b.h/2-r)
+	dy := math.Max(0, math.Abs(y-b.cy)-half)
+	dx := x - b.cx
 	return dx*dx+dy*dy <= r*r
 }
 
@@ -131,11 +287,7 @@ func buildICO(sizes []int) ([]byte, error) {
 		if s < 1 || s > 256 {
 			return nil, fmt.Errorf("ukuran %d di luar 1..256", s)
 		}
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, render(s)); err != nil {
-			return nil, err
-		}
-		images[i] = buf.Bytes()
+		images[i] = encodePNG(render(s))
 	}
 
 	var out bytes.Buffer

@@ -1,10 +1,10 @@
-name: Regresi tool
+name: Tool regression
 
-# Menaikkan versi yt-dlp atau FFmpeg adalah perubahan yang dapat merusak
-# konversi tanpa satu baris kode pun berubah. Workflow ini memasang tool
-# persis dari manifest ter-pin di setiap OS rilis, lalu menjalankan test
-# integrasi FFmpeg dengan binary hasil pasang tersebut. Jadwal mingguan
-# menangkap URL hulu yang mati atau berubah isi walau manifest tidak disentuh.
+# Bumping yt-dlp or FFmpeg can break conversions without a single line of
+# code changing. This workflow installs the tools exactly as pinned in the
+# manifest on every release OS, then runs the FFmpeg integration tests with
+# those installed binaries. The weekly schedule catches upstream URLs that
+# disappear or change content even when the manifest is untouched.
 
 on:
   push:
@@ -34,8 +34,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-latest adalah arm64, macos-15-intel amd64; keduanya punya entri
-        # manifest sendiri.
+        # macos-latest is arm64 and macos-15-intel is amd64; each has its own
+        # manifest entry.
         os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     env:
@@ -47,7 +47,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Pasang tool dari manifest
+      - name: Install tools from manifest
         run: go test -tags toolinstall -run TestInstallDariManifest -v ./internal/infrastructure/tools/
-      - name: Konversi dengan tool hasil pasang
+      - name: Convert with installed tools
         run: go test -tags integration -run Integrasi -v ./internal/infrastructure/ffmpeg/

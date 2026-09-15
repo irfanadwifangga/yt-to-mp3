@@ -8,11 +8,11 @@
   },
   "StringFileInfo": {
     "CompanyName": "Irfana Dwi Fangga",
-    "FileDescription": "yt-to-mp3",
+    "FileDescription": "Youtube To MP3 Converter",
     "InternalName": "yt-to-mp3",
     "LegalCopyright": "Copyright (c) 2026 Irfana Dwi Fangga",
     "OriginalFilename": "yt-to-mp3.exe",
-    "ProductName": "yt-to-mp3"
+    "ProductName": "Youtube To MP3 Converter"
   },
   "VarFileInfo": {
     "Translation": {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"image/png"
+	"strings"
 	"testing"
 )
 
@@ -34,24 +35,54 @@ func TestBuildICO(t *testing.T) {
 		if b := img.Bounds(); b.Dx() != want || b.Dy() != want {
 			t.Errorf("gambar %d = %dx%d, mau %d", i, b.Dx(), b.Dy(), want)
 		}
-		if e.Width != uint8(want%256) {
-			t.Errorf("entri %d lebar = %d", i, e.Width)
+	}
+}
+
+// Ikon terbaca sebagai sampul yang terisi dari bawah dengan gelombang suara
+// di atasnya.
+func TestRenderMengikutiTandaMerek(t *testing.T) {
+	img := render(64)
+
+	checks := []struct {
+		name string
+		x, y int
+		want string
+	}{
+		{"sudut transparan", 0, 0, "transparan"},
+		{"bar tengah", 32, 32, "wave"},
+		{"sampul di atas bar", 32, 8, "cover"},
+		{"isian hijau di bawah bar", 32, 56, "fill"},
+		{"celah antarbar di atas batas isian", 24, 20, "cover"},
+	}
+	for _, c := range checks {
+		got := img.NRGBAAt(c.x, c.y)
+		var ok bool
+		switch c.want {
+		case "transparan":
+			ok = got.A == 0
+		case "wave":
+			ok = got == wave
+		case "cover":
+			ok = got == cover
+		case "fill":
+			ok = got == fill
+		}
+		if !ok {
+			t.Errorf("%s (%d,%d) = %v, mau %s", c.name, c.x, c.y, got, c.want)
 		}
 	}
 }
 
-// Tanda merek terbaca sebagai level meter: sudut transparan, bawah hijau,
-// atas abu-abu.
-func TestRenderMengikutiTandaMerek(t *testing.T) {
-	img := render(64)
-
-	if img.NRGBAAt(0, 0).A != 0 {
-		t.Error("sudut seharusnya transparan")
+// SVG harus memuat geometri yang sama: tile, dua bagian latar, dan satu
+// rect per bar.
+func TestBuildSVG(t *testing.T) {
+	svg := buildSVG()
+	if n := strings.Count(svg, "<rect"); n != 3+len(barHeights) {
+		t.Errorf("jumlah rect = %d, mau %d", n, 3+len(barHeights))
 	}
-	if got := img.NRGBAAt(32, 56); got != signal {
-		t.Errorf("bagian bawah = %v, mau %v", got, signal)
-	}
-	if got := img.NRGBAAt(32, 12); got != track {
-		t.Errorf("bagian atas = %v, mau %v", got, track)
+	for _, want := range []string{"#13233f", "#3b82f6", "#e8f1ff", `clip-path="url(#tile)"`} {
+		if !strings.Contains(svg, want) {
+			t.Errorf("SVG tidak memuat %s", want)
+		}
 	}
 }

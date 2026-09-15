@@ -78,6 +78,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-031 | Binary FFmpeg diunduh saat runtime dari rilis berversi: GyanD (Windows) dan martin-riedl.de (Linux, macOS) | Proyek FFmpeg tidak mendistribusikan build statis resmi. Mengunduh saat runtime membuat rilis kita tidak pernah menjadi distributor FFmpeg, sehingga kewajiban LGPL/GPL tidak menempel pada artifact rilis. Keduanya dirujuk halaman unduhan ffmpeg.org. Rencana awal (BtbN dan evermeet.cx) ditinggalkan: BtbN hanya menyediakan snapshot master yang dirotasi, sehingga checksum ter-pin basi, dan evermeet.cx tidak punya build arm64 |
 | ADR-032 | Dependensi pure-Go `github.com/ulikunitz/xz` | Build FFmpeg untuk Linux hanya tersedia sebagai `.tar.xz` dan stdlib tidak punya dekoder xz. Paket ini pure Go sehingga ADR-011 tetap terjaga |
 | ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi. **Pengecualian yt-dlp:** atas permintaan eksplisit pengguna, yt-dlp boleh diperbarui ke rilis terbaru dengan checksum dari `SHA2-256SUMS` rilis yang sama (seperti `yt-dlp -U`), karena yt-dlp rusak mengikuti perubahan YouTube lebih cepat daripada siklus rilis aplikasi. Verifikasi tetap wajib; yang berubah hanya asal checksum. FFmpeg tidak mendapat pengecualian ini |
+| ADR-034 | Di Windows, UI dibuka sebagai jendela aplikasi Microsoft Edge (`--app`) dengan profil khusus di direktori data | Memberi jendela sendiri tanpa tab dan address bar tanpa dependensi baru: Edge ada di setiap Windows 10/11, sedangkan Wails butuh cgo di macOS/Linux (bertentangan dengan ADR-011) dan Electron/Tauri membawa runtime puluhan MB. Profil khusus membuat proses Edge hidup selama jendela terbuka, sehingga penutupannya bisa dideteksi. Tanpa Edge, atau di macOS/Linux, UI tetap dibuka di browser default |
 
 ## 5. Struktur folder
 
@@ -561,8 +562,14 @@ Koneksi SQLite: `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`, deng
 
 Ringkasan; urutan lengkap ada di [architecture.md §7–§9](architecture.md).
 
-- **Single instance** dijaga lock file. Launch kedua membaca `runtime.json`, membuka browser ke instance yang sudah jalan, lalu keluar (ADR-022).
-- **Cara keluar** ada tiga: tombol Quit di SPA (`POST /api/shutdown`), idle shutdown setelah 30 menit tanpa job dan tanpa koneksi, dan sinyal OS. Tidak ada tray icon (ADR-021).
+- **Single instance** dijaga lock file. Launch kedua membaca `runtime.json`, membuka UI ke instance yang sudah jalan, lalu keluar (ADR-022).
+- **Membuka UI**: di Windows sebagai jendela aplikasi Edge dengan profil `<data_dir>/window` (ADR-034), selain itu di browser default.
+  - Proses Edge dengan profil khusus itu hidup selama jendela terbuka, jadi berakhirnya proses menandakan jendela ditutup.
+  - Proses yang keluar kurang dari 5 detik setelah diluncurkan dianggap meneruskan permintaan ke jendela lain, bukan penutupan.
+- **Cara keluar** ada empat: tombol Quit di SPA (`POST /api/shutdown`), menutup jendela aplikasi, idle shutdown setelah 30 menit tanpa job dan tanpa koneksi, dan sinyal OS. Tidak ada tray icon (ADR-021).
+  - Menutup jendela memanggil `IdleMonitor.WindowClosed`: batas idle diganti jeda 10 detik dan pemeriksaan dipercepat menjadi tiap 2 detik.
+  - Job yang masih berjalan diselesaikan dulu. UI yang dibuka ulang dalam jeda itu, lewat polling atau SSE, membatalkan penghentian.
+  - Aturan ini berlaku walau idle shutdown dimatikan, karena setelan itu tentang tab yang ditinggal terbuka, bukan jendela yang sengaja ditutup.
 - **Crash recovery** berjalan sebelum listener dibuka: job non-terminal jadi `INTERRUPTED`, temp yatim dibersihkan, baris `files` yang filenya hilang ditandai.
 - **Housekeeping** saat startup lalu per jam: pangkas `job_events`, GC temp, kedaluwarsa cache metadata, rekonsiliasi `files.missing` dua arah. Rotasi log dikerjakan writer log saat hari berganti.
 - **Log** ditulis ke `<data_dir>/logs/app.log` dan terminal. URL bertoken hanya dicetak ke terminal, karena berkas log lazim dilampirkan pada laporan bug.
@@ -701,12 +708,13 @@ Teknis:
   - Proses anak (yt-dlp, FFmpeg, probe versi) dijalankan dengan `CREATE_NO_WINDOW` **hanya** bila aplikasi tidak punya console. Tanpa flag itu setiap proses anak membuka jendela console yang berkedip. Dengan console, anak mewarisinya dan `CTRL_BREAK` tetap sampai.
   - Dari build tanpa console, `CTRL_BREAK` tidak bisa dikirim, sehingga `Terminate` langsung menutup job object alih-alih menunggu masa tenggang 5 detik. Diukur pada build GUI: pembatalan saat mengunduh selesai dalam 248 ms tanpa proses tersisa, dan selama konversi tidak ada proses anak yang punya jendela.
   - Hook pre-build menjalankan `goversioninfo` untuk menyematkan ikon (`packaging/windows/yt-to-mp3.ico`, digambar `scripts/icon` dari tanda merek), info versi, dan manifest (Common Controls 6, DPI per monitor, `asInvoker`). Berkas `.syso` tidak di-commit; build lokal memakai `make winres`.
-- **Installer Windows**: job `installer` di workflow Rilis berjalan di runner Windows setelah GoReleaser. Job itu mengekstrak exe dari zip, memasang Inno Setup lewat Chocolatey, lalu membangun `yt-to-mp3_<version>_windows_amd64_setup.exe` beserta `.sha256` dari `packaging/windows/yt-to-mp3.iss`. Pada tag, installer diunggah ke draft rilis yang sama; pada snapshot, diunggah sebagai artifact.
+- **Installer Windows**: job **Windows installer** di workflow **Release** berjalan di runner Windows setelah GoReleaser. Nama workflow, job, dan step memakai bahasa Inggris supaya bisa dibaca kontributor dari mana pun; artifact snapshot dinamai sesuai berkas di dalamnya (`yt-to-mp3_<version>_windows_amd64_setup`, `yt-to-mp3_<version>_archives`), karena GitHub selalu menyajikan artifact sebagai zip bernama artifact itu. Job itu mengekstrak exe dari zip, memasang Inno Setup lewat Chocolatey, lalu membangun `yt-to-mp3_<version>_windows_amd64_setup.exe` beserta `.sha256` dari `packaging/windows/yt-to-mp3.iss`. Pada tag, installer diunggah ke draft rilis yang sama; pada snapshot, diunggah sebagai artifact.
   - Installer dipasang per pengguna tanpa admin ke `%LOCALAPPDATA%\Programs\yt-to-mp3`, membuat shortcut Start Menu (shortcut desktop opsional), dan terdaftar di Apps & features.
   - `CloseApplications` menutup instance yang masih berjalan sebelum berkas diganti, karena aplikasi tanpa jendela mudah terlupa masih hidup.
   - Uninstall tidak menyentuh data aplikasi maupun hasil konversi.
   - `AppId` tidak boleh diganti setelah rilis pertama.
-  - Inno Setup tidak tersedia di mesin pengembangan, jadi skrip installer hanya tervalidasi lewat workflow Rilis (jalankan manual untuk snapshot).
+  - Nama tampilan "Youtube To MP3 Converter" (`version.DisplayName`, judul jendela, `ProductName`, nama shortcut) terpisah dari nama teknis `yt-to-mp3`. Nama teknis dipakai untuk folder data, exe, folder instalasi, dan `AppId`; mengubahnya membuat pengguna lama kehilangan riwayat dan tool, dan installer tidak mengenali instalasi lama. Shortcut lama bernama `yt-to-mp3` dihapus lewat `[InstallDelete]` supaya pembaruan tidak meninggalkan dua shortcut.
+  - Inno Setup tidak tersedia di mesin pengembangan, jadi skrip installer hanya tervalidasi lewat workflow Release (jalankan manual untuk snapshot).
 - **Signing**: belum ada, keputusan sadar untuk rilis awal. Di Windows, SmartScreen memperingatkan exe dan installer yang belum ditandatangani; catatan rilis memuat langkah "More info → Run anyway". macOS perlu codesign dan notarization agar Gatekeeper tidak memblokir. Menambahkan signing nanti hanya menyentuh pipeline rilis.
 - Logging `log/slog` terstruktur ke `<data_dir>/logs/app.log`, rotasi harian, retensi 7 hari.
 
