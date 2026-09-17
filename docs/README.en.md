@@ -161,6 +161,19 @@ The Windows build differs from the other targets ([planning §25](yt-to-mp3-go-p
 
 For a local build with the icon and version info, run `make winres` before `go build`. `make icon` redraws the icons from the brand mark.
 
+## Architecture overview
+
+![Architecture overview of Youtube To MP3 Converter: backend, embedded UI, local state and platform, and conversion tools](diagram-ytmp3.png)
+
+The diagram shows how the pieces fit together at runtime:
+
+- **Backend** — `cmd/app/main.go` assembles everything: the single instance guard, the local HTTP API with its live SSE job stream, the job scheduler, and the conversion pipeline. `internal/adapters` only bridges infrastructure types to the application ports.
+- **Embedded UI** — the React app is embedded into the binary with `go:embed` and served by the same local server. It calls the API through `api.ts` and follows job progress over SSE through `useJobStream.ts`.
+- **Local state and platform** — SQLite stores jobs, history, and settings, with its schema evolved by embedded migrations. The filesystem store writes MP3 output through atomic commits. The app window (`internal/browser`), native dialogs (`internal/dialog`), and "Show in folder" talk to the operating system.
+- **Conversion tools** — the pipeline runs yt-dlp to download audio and FFmpeg to probe and transcode, both as local subprocesses. Managed copies of both tools are installed and updated from inside the app.
+
+Settings, housekeeping, idle shutdown, and update checks are left out of the diagram for readability. [architecture.md](architecture.md) (in Indonesian) covers every component.
+
 ## Project structure
 
 ```text

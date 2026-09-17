@@ -161,6 +161,19 @@ Build Windows berbeda dari target lain ([planning §25](yt-to-mp3-go-planning.md
 
 Untuk build lokal dengan ikon dan info versi, jalankan `make winres` sebelum `go build`. Ikon digambar ulang dari tanda merek dengan `make icon`.
 
+## Gambaran arsitektur
+
+![Gambaran arsitektur Youtube To MP3 Converter: backend, UI tersemat, state lokal dan platform, serta tool konversi](diagram-ytmp3.png)
+
+Diagram ini menunjukkan bagaimana komponen saling terhubung saat aplikasi berjalan:
+
+- **Backend** — `cmd/app/main.go` merakit semuanya: penjaga single instance, API HTTP lokal beserta stream progress job lewat SSE, scheduler job, dan pipeline konversi. `internal/adapters` hanya menjembatani tipe infrastructure ke port application.
+- **UI tersemat** — aplikasi React disematkan ke binary lewat `go:embed` dan disajikan server lokal yang sama. UI memanggil API lewat `api.ts` dan mengikuti progress job lewat SSE dengan `useJobStream.ts`.
+- **State lokal dan platform** — SQLite menyimpan job, riwayat, dan setelan, dengan skema yang dikembangkan lewat migrasi tersemat. Store berkas menulis MP3 hasil lewat commit atomik. Jendela aplikasi (`internal/browser`), dialog native (`internal/dialog`), dan "Tampilkan di folder" berinteraksi dengan sistem operasi.
+- **Tool konversi** — pipeline menjalankan yt-dlp untuk mengunduh audio dan FFmpeg untuk memeriksa serta mengonversi, keduanya sebagai subprocess lokal. Salinan terkelola kedua tool dipasang dan diperbarui dari dalam aplikasi.
+
+Setelan, housekeeping, idle shutdown, dan cek pembaruan tidak digambar supaya diagram tetap mudah dibaca. Semua komponen dibahas lengkap di [architecture.md](architecture.md).
+
 ## Struktur
 
 ```text

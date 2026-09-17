@@ -28,6 +28,15 @@ Konsekuensi praktis:
 
 ## 2. Peta komponen
 
+![Diagram gambaran umum arsitektur: backend, UI tersemat, state lokal dan platform, serta tool konversi](diagram-ytmp3.png)
+
+Diagram di atas adalah gambaran umum saat aplikasi berjalan, dikelompokkan menjadi empat area: backend, UI tersemat, state lokal dan platform, serta tool konversi. Supaya tetap mudah dibaca, ada dua penyederhanaan yang perlu diketahui saat mencocokkannya dengan kode:
+
+- **Kotak "Adapter composition root [adapters.go]"** digambar sebagai yang menyalakan API, scheduler, dan pipeline. Dalam kode, perakitan seluruh dependensi terjadi di `cmd/app/main.go`, sesuai aturan wiring di §1. `internal/adapters` hanya berisi jembatan tipe infrastructure ke port application, dan dipakai bersama oleh `cmd/app` serta test E2E.
+- **Panah "opens dialogs and files"** menuju satu kotak "Window & OS integration [window.go]". Dalam kode, tanggung jawab itu terbagi tiga: dialog pemilih folder di `internal/dialog`, "Tampilkan di folder" di `internal/browser/reveal_*.go`, dan jendela aplikasi Edge di `internal/browser/window.go`.
+
+Settings service, housekeeper, idle monitor, dan tool service (cek pembaruan) tidak digambar; tabel di bawah mencakup semuanya.
+
 | Komponen | Paket | Tanggung jawab |
 | --- | --- | --- |
 | HTTP handler | `api` | Decode/encode, status code, tidak ada logika bisnis |
