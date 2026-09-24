@@ -144,7 +144,7 @@ func fakeYTDLP(args []string) int {
 // diunduh terpisah, masing-masing melaporkan progres 0 sampai 100, lalu
 // digabung ke satu berkas. Resolusi yang diminta wajib sampai ke yt-dlp.
 func fakeVideoDownload(template, sortOrder, mergeFormat string) int {
-	if !strings.HasPrefix(sortOrder, "res:720,") {
+	if sortOrder != "res:720" && !strings.HasPrefix(sortOrder, "res:720,") {
 		fmt.Fprintf(os.Stderr, "ERROR: urutan format %q tidak membatasi 720p\n", sortOrder)
 		return 2
 	}
@@ -639,4 +639,74 @@ func TestE2EKonversiVideo(t *testing.T) {
 	}
 
 	s.assertTempBersih(t, res.Job.ID)
+}
+
+// Setiap format keluaran menempuh jalur job lengkap dengan preset dari
+// migrasi: nama berkas, MIME, dan codec hasilnya sesuai format.
+func TestE2ESemuaFormat(t *testing.T) {
+	tests := []struct {
+		preset, ext, mime, video, audio string
+	}{
+		{"m4a_192", "m4a", "audio/mp4", "", "aac"},
+		{"m4a_alac", "m4a", "audio/mp4", "", "alac"},
+		{"opus_source", "opus", "audio/ogg", "", "opus"},
+		{"ogg_q6", "ogg", "audio/ogg", "", "vorbis"},
+		{"flac", "flac", "audio/flac", "", "flac"},
+		{"wav_pcm16", "wav", "audio/wav", "", "pcm_s16le"},
+		{"mkv_720", "mkv", "video/x-matroska", "mpeg4", "flac"},
+		{"mov_720", "mov", "video/quicktime", "h264", "aac"},
+		{"webm_720", "webm", "video/webm", "vp9", "opus"},
+		{"avi_720", "avi", "video/x-msvideo", "mpeg4", "mp3"},
+		{"flv_720", "flv", "video/x-flv", "h264", "aac"},
+	}
+	s := newStack(t, "ok")
+	for _, tc := range tests {
+		t.Run(tc.preset, func(t *testing.T) {
+			res, err := s.service.Create(context.Background(), application.CreateRequest{
+				URL: testURL, PresetID: tc.preset, Title: "Uji " + tc.preset,
+			})
+			if err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+			s.wait(t, res.Job.ID, domain.StatusCompleted)
+
+			file, err := s.files.GetByJob(context.Background(), res.Job.ID)
+			if err != nil {
+				t.Fatalf("berkas hasil tidak tercatat: %v", err)
+			}
+			if file.Filename != "Uji "+tc.preset+"."+tc.ext || file.MIME != tc.mime {
+				t.Errorf("berkas = %s (%s), mau .%s (%s)", file.Filename, file.MIME, tc.ext, tc.mime)
+			}
+
+			out, err := exec.Command(s.ffprobe, "-v", "error", "-print_format", "json",
+				"-show_streams", file.Path).Output()
+			if err != nil {
+				t.Fatalf("ffprobe: %v", err)
+			}
+			var probe struct {
+				Streams []struct {
+					CodecType   string `json:"codec_type"`
+					CodecName   string `json:"codec_name"`
+					Disposition struct {
+						AttachedPic int `json:"attached_pic"`
+					} `json:"disposition"`
+				} `json:"streams"`
+			}
+			if err := json.Unmarshal(out, &probe); err != nil {
+				t.Fatalf("urai ffprobe: %v", err)
+			}
+			var video, audio string
+			for _, st := range probe.Streams {
+				switch {
+				case st.CodecType == "audio":
+					audio = st.CodecName
+				case st.CodecType == "video" && st.Disposition.AttachedPic == 0:
+					video = st.CodecName
+				}
+			}
+			if video != tc.video || audio != tc.audio {
+				t.Errorf("stream = video %q audio %q, mau %q %q", video, audio, tc.video, tc.audio)
+			}
+		})
+	}
 }

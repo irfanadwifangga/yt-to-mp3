@@ -220,11 +220,21 @@ type Preset struct {
 	Channels    int        `json:"channels"`
 	// MaxHeight membatasi resolusi video; nil berarti tertinggi yang
 	// tersedia. Selalu nil pada preset audio.
-	MaxHeight  *int   `json:"max_height,omitempty"`
-	ExtraArgs  string `json:"-"`
-	SortOrder  int    `json:"-"`
-	Deprecated bool   `json:"deprecated"`
+	MaxHeight *int `json:"max_height,omitempty"`
+	// Passthrough mengizinkan stream sumber disalin apa adanya bila
+	// codecnya sudah sesuai format, alih-alih di-encode ulang.
+	Passthrough bool   `json:"passthrough"`
+	ExtraArgs   string `json:"-"`
+	SortOrder   int    `json:"-"`
+	Deprecated  bool   `json:"deprecated"`
 }
+
+// Mode encode audio sebuah preset.
+const (
+	ModeCBR      = "cbr"
+	ModeVBR      = "vbr"
+	ModeLossless = "lossless" // tanpa bitrate maupun kualitas: FLAC, ALAC, WAV
+)
 
 // IsVideo melaporkan apakah preset menghasilkan berkas video.
 func (p *Preset) IsVideo() bool {

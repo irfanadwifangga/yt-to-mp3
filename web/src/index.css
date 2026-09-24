@@ -634,13 +634,11 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-.kind-format {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  opacity: 0.8;
+.preview-actions select.format-select {
+  flex: 0 0 auto;
 }
 
+.preview-body > .hint.format-hint,
 .preview-body > .hint.warn {
   margin: 0.5rem 0 0;
 }

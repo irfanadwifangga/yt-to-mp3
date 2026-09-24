@@ -12,9 +12,12 @@ Konverter video YouTube menjadi audio MP3 atau video MP4 berbentuk aplikasi desk
 - **Progress live** per job lewat SSE, ditampilkan sebagai sampul video yang terisi warna dari bawah ke atas. Membatalkan job menghentikan seluruh process tree, termasuk FFmpeg yang dijalankan yt-dlp, lalu membersihkan berkas sementara.
 - **Daftar selesai** — buka folder hasil di file manager, simpan salinan, coba lagi yang gagal, atau hapus dari daftar (dengan atau tanpa berkasnya). Riwayat panjang dimuat bertahap.
 - **Auto-retry** — kegagalan jaringan sementara diulang otomatis hingga 3 kali dengan jeda bertambah. Bila YouTube membatasi permintaan (HTTP 429), jedanya lebih panjang dan job paralel diturunkan ke satu selama beberapa menit.
-- **Audio atau video** — pilih **Audio (MP3)** atau **Video (MP4)** sebelum konversi.
+- **Audio atau video, dalam banyak format** — pilih **Audio** atau **Video**, lalu format dan kualitasnya:
+  - Audio: MP3, M4A (AAC atau ALAC lossless), Opus (stream asli YouTube, disalin tanpa encode ulang), Ogg Vorbis, FLAC, dan WAV.
+  - Video: MP4, MKV (stream asli YouTube tanpa encode ulang, cepat sampai 4K), MOV, WebM, AVI (Xvid + MP3 untuk pemutar lama), dan FLV.
+  - Setiap format disertai satu kalimat penjelasan kegunaannya.
 - **Lima preset MP3**: 128, 192, 256, 320 kbps CBR, dan VBR V0. Keluaran 48 kHz stereo dengan tag ID3v2.3 dan sampul persegi tersemat.
-- **MP4 dalam 360p, 480p, 720p, 1080p, atau resolusi terbaik yang tersedia**, selalu video H.264 dengan audio AAC supaya berkasnya bisa diputar di perangkat apa pun, termasuk pemutar bawaan Windows, TV, dan ponsel lama. Sampai 1080p, stream H.264 dari YouTube disalin apa adanya (cepat, tanpa penurunan kualitas). Sumber tanpa H.264 di resolusi yang dipilih, termasuk semua resolusi di atas 1080p, di-encode ulang; prosesnya jauh lebih lama dan aplikasi memperingatkannya lebih dulu. Pilihan kualitas di atas resolusi sumber diberi tanda.
+- **Video dalam 360p, 480p, 720p, 1080p, atau resolusi terbaik yang tersedia**. MP4 selalu video H.264 dengan audio AAC supaya berkasnya bisa diputar di perangkat apa pun, termasuk pemutar bawaan Windows, TV, dan ponsel lama. Sampai 1080p, stream H.264 dari YouTube disalin apa adanya (cepat, tanpa penurunan kualitas). Sumber tanpa H.264 di resolusi yang dipilih, termasuk semua resolusi di atas 1080p, di-encode ulang; prosesnya jauh lebih lama dan aplikasi memperingatkannya lebih dulu. Pilihan kualitas di atas resolusi sumber diberi tanda.
 - **Judul dan artis bisa disunting sebelum konversi**, terisi saran yang sudah dirapikan (tanpa `(Official Video)` dan sejenisnya). Keduanya dipakai untuk tag dan nama berkas. Untuk video yang terhubung ke YouTube Music, saran diambil dari katalog, dan tag album serta tahun rilis ikut ditulis.
 - **Peringatan konversi ganda** bila video yang sama pernah dikonversi dengan format dan kualitas yang sama.
 - **Setelan dalam dialog** (tombol **Setelan** atau `Ctrl+,`), dengan folder keluaran dipilih lewat dialog folder bawaan sistem operasi.
@@ -254,7 +257,7 @@ Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka 
 - **Build Windows tanpa console tidak menampilkan log di mana pun selain berkas** `logs/app.log` di direktori data. Untuk melihat log langsung, jalankan dari source dengan `go run ./cmd/app`.
 - **Jendela aplikasi di Windows adalah Microsoft Edge dengan profil terpisah**, bukan jendela native. Bila Edge tidak ada, UI jatuh ke browser default, dan menutup tab itu tidak langsung menghentikan aplikasi; idle shutdown yang mengakhirinya kemudian.
 
-Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan format video selain MP4 (H.264 + AAC). Daftar lengkapnya di [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
+Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan pilihan codec atau parameter encoder bebas (setiap format punya satu codec tujuan yang tetap). Daftar lengkapnya di [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
 
 ## Dokumentasi
 

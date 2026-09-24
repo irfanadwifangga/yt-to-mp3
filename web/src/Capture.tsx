@@ -11,7 +11,7 @@ import {
 import { Cover } from "./Cover";
 import { CloseIcon, FolderIcon, MusicIcon, VideoIcon } from "./icons";
 import { t } from "./i18n";
-import { formatDuration, formatTime, messageFor, presetLabel } from "./messages";
+import { formatDuration, formatHint, formatTime, messageFor, presetLabel } from "./messages";
 
 /**
  * Pola longgar yang memicu analisis otomatis.
@@ -34,6 +34,14 @@ const TYPE_DELAY_MS = 600;
 const DEFAULT_VIDEO_HEIGHT = 1080;
 
 const KINDS: readonly PresetKind[] = ["audio", "video"];
+
+/**
+ * Wadah yang videonya harus H.264. YouTube tidak menyajikan H.264 di atas
+ * 1080p, jadi resolusi lebih tinggi pada wadah ini pasti di-encode ulang.
+ * Sama dengan format ber-PreferVideo "h264" di domain.OutputFormat, kecuali
+ * AVI yang memang selalu di-encode dan cepat.
+ */
+const H264_FORMATS = new Set(["mp4", "mov", "flv"]);
 
 interface Props {
   /**
@@ -61,6 +69,9 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   // Sengaja bertahan setelah konversi: pengguna yang sedang mengambil video
   // biasanya mengambil video lagi untuk tautan berikutnya.
   const [kind, setKind] = useState<PresetKind | null>(null);
+  // Format yang dipilih dalam jenis itu; null berarti mengikuti preset
+  // bawaan jenisnya.
+  const [format, setFormat] = useState<string | null>(null);
   const [result, setResult] = useState<Metadata | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Kode error disimpan terpisah dari teksnya supaya kegagalan karena
@@ -78,17 +89,25 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   // menampilkan pratinjau video yang salah.
   const analyzed = useRef("");
 
-  const kindOf = (id: string) => presets.find((p) => p.id === id)?.kind;
-  const activeKind: PresetKind = kind ?? kindOf(defaultPreset) ?? "audio";
-  const choices = presets.filter((p) => p.kind === activeKind);
-  const kinds = KINDS.filter((k) => presets.some((p) => p.kind === k));
+  const presetOf = (id: string) => presets.find((p) => p.id === id);
+  // Dibaca defaultFor, jadi wajib dideklarasikan sebelum pemanggilannya.
   const sourceHeight = result?.video_height ?? 0;
+  const activeKind: PresetKind = kind ?? presetOf(defaultPreset)?.kind ?? "audio";
+  const kinds = KINDS.filter((k) => presets.some((p) => p.kind === k));
+  // Format mengikuti urutan preset, jadi MP3 dan MP4 tetap di depan.
+  const formats = [...new Set(presets.filter((p) => p.kind === activeKind).map((p) => p.format))];
+  const activeFormat =
+    format && formats.includes(format) ? format : (presetOf(defaultFor(activeKind))?.format ?? "");
+  const choices = presets.filter((p) => p.kind === activeKind && p.format === activeFormat);
 
-  /** Preset awal untuk satu jenis: preset bawaan bila jenisnya sama. */
-  function defaultFor(k: PresetKind): string {
-    const fallback = presets.find((p) => p.id === defaultPreset && p.kind === k);
+  /**
+   * Preset awal untuk satu jenis, dan bila diberikan satu format: preset
+   * bawaan bila cocok, lalu untuk video resolusi yang wajar.
+   */
+  function defaultFor(k: PresetKind, f?: string): string {
+    const ofKind = presets.filter((p) => p.kind === k && (!f || p.format === f));
+    const fallback = ofKind.find((p) => p.id === defaultPreset);
     if (fallback) return fallback.id;
-    const ofKind = presets.filter((p) => p.kind === k);
     if (k === "video") {
       // Resolusi setinggi mungkin sampai 1080p, tetapi tidak melebihi
       // sumber: pilihan 1080p untuk video 480p hanya membingungkan.
@@ -103,12 +122,28 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   }
 
   const selected =
-    presetId && kindOf(presetId) === activeKind ? presetId : defaultFor(activeKind);
-  const selectedPreset = presets.find((p) => p.id === selected);
+    presetId && presetOf(presetId)?.kind === activeKind && presetOf(presetId)?.format === activeFormat
+      ? presetId
+      : defaultFor(activeKind, activeFormat);
+  const selectedPreset = presetOf(selected);
 
   function chooseKind(k: PresetKind) {
     setKind(k);
+    setFormat(null);
     setPresetId("");
+  }
+
+  /** Berganti format mempertahankan resolusi yang sudah dipilih. */
+  function chooseFormat(f: string) {
+    setFormat(f);
+    const same = presets.find(
+      (p) =>
+        p.kind === activeKind &&
+        p.format === f &&
+        selectedPreset?.kind === "video" &&
+        p.max_height === selectedPreset.max_height,
+    );
+    setPresetId(same?.id ?? "");
   }
 
   /** Label pilihan kualitas beserta perbandingannya dengan sumber. */
@@ -123,12 +158,14 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   }
 
   // YouTube tidak menyajikan H.264 di atas 1080p, jadi video yang lebih
-  // tinggi pasti di-encode ulang: jauh lebih lama dan membebani CPU.
+  // tinggi dalam wadah H.264 pasti di-encode ulang: jauh lebih lama dan
+  // membebani CPU.
   const outputHeight =
     selectedPreset?.kind === "video" && sourceHeight > 0
       ? Math.min(selectedPreset.max_height ?? sourceHeight, sourceHeight)
       : 0;
-  const slowEncode = outputHeight > DEFAULT_VIDEO_HEIGHT;
+  const slowEncode = H264_FORMATS.has(activeFormat) && outputHeight > DEFAULT_VIDEO_HEIGHT;
+  const hint = formatHint(activeFormat);
 
   async function analyze(target: string) {
     const link = target.trim();
@@ -438,23 +475,37 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
                       onClick={() => chooseKind(k)}>
                       {k === "video" ? <VideoIcon /> : <MusicIcon />}
                       {k === "video" ? t("capture.kindVideo") : t("capture.kindAudio")}
-                      <span className="kind-format">
-                        {presets.find((p) => p.kind === k)?.format.toUpperCase()}
-                      </span>
                     </button>
                   ))}
                 </div>
               )}
-              <select
-                value={selected}
-                onChange={(e) => setPresetId(e.target.value)}
-                aria-label={t("capture.preset")}>
-                {choices.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {qualityLabel(p)}
-                  </option>
-                ))}
-              </select>
+              {formats.length > 1 && (
+                <select
+                  className="format-select"
+                  value={activeFormat}
+                  onChange={(e) => chooseFormat(e.target.value)}
+                  aria-label={t("capture.format")}>
+                  {formats.map((f) => (
+                    <option key={f} value={f}>
+                      {f.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {/* Format dengan satu pilihan, seperti WAV, tidak butuh
+                  pilihan kualitas; penjelasannya ada di bawah. */}
+              {choices.length > 1 && (
+                <select
+                  value={selected}
+                  onChange={(e) => setPresetId(e.target.value)}
+                  aria-label={t("capture.preset")}>
+                  {choices.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {qualityLabel(p)}
+                    </option>
+                  ))}
+                </select>
+              )}
               <button
                 type="button"
                 className="btn primary"
@@ -470,6 +521,7 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
                 {t("capture.clear")}
               </button>
             </div>
+            {hint && <p className="hint format-hint">{hint}</p>}
             {slowEncode && (
               <p className="hint warn" role="note">
                 {t("capture.slowEncode", { height: outputHeight })}

@@ -12,14 +12,14 @@ func intPtr(v int) *int { return &v }
 
 func cbrPreset() *domain.Preset {
 	return &domain.Preset{
-		ID: "mp3_standard", Codec: "libmp3lame", Mode: "cbr",
+		ID: "mp3_standard", Format: "mp3", Codec: "libmp3lame", Mode: "cbr",
 		BitrateKbps: intPtr(192), SampleRate: intPtr(48000), Channels: 2,
 	}
 }
 
 func vbrPreset() *domain.Preset {
 	return &domain.Preset{
-		ID: "mp3_vbr_v0", Codec: "libmp3lame", Mode: "vbr",
+		ID: "mp3_vbr_v0", Format: "mp3", Codec: "libmp3lame", Mode: "vbr",
 		VBRQuality: intPtr(0), SampleRate: intPtr(48000), Channels: 2,
 	}
 }
@@ -265,25 +265,132 @@ func TestBuildArgsVideoEncodeUlang(t *testing.T) {
 	}
 }
 
-func TestProbeResultMP4Ready(t *testing.T) {
+func TestCopyPlan(t *testing.T) {
+	h264 := &ProbeResult{HasVideo: true, VideoCodec: "h264", PixFmt: "yuv420p", HasAudio: true, Codec: "aac"}
+	vp9 := &ProbeResult{HasVideo: true, VideoCodec: "vp9", PixFmt: "yuv420p", HasAudio: true, Codec: "opus"}
+	h264Hi10 := &ProbeResult{HasVideo: true, VideoCodec: "h264", PixFmt: "yuv420p10le", HasAudio: true, Codec: "aac"}
+	opus := &ProbeResult{HasAudio: true, Codec: "opus"}
+	aac := &ProbeResult{HasAudio: true, Codec: "aac"}
+
+	video := func(format string) *domain.Preset {
+		return &domain.Preset{Kind: domain.KindVideo, Format: format, Passthrough: true}
+	}
 	tests := []struct {
-		name       string
-		res        ProbeResult
-		video, aud bool
+		name         string
+		preset       *domain.Preset
+		src          *ProbeResult
+		video, audio bool
 	}{
-		{"h264 aac", ProbeResult{VideoCodec: "h264", PixFmt: "yuv420p", Codec: "aac"}, true, true},
-		{"vp9 opus", ProbeResult{VideoCodec: "vp9", PixFmt: "yuv420p", Codec: "opus"}, false, false},
-		{"av1", ProbeResult{VideoCodec: "av1", PixFmt: "yuv420p", Codec: "aac"}, false, true},
+		{"mp4 dari h264 aac", video("mp4"), h264, true, true},
+		{"mp4 dari vp9 opus", video("mp4"), vp9, false, false},
 		// H.264 10-bit sah, tetapi banyak pemutar perangkat keras menolaknya.
-		{"h264 10-bit", ProbeResult{VideoCodec: "h264", PixFmt: "yuv420p10le", Codec: "aac"}, false, true},
+		{"mp4 dari h264 10-bit", video("mp4"), h264Hi10, false, true},
+		{"mov dari h264 aac", video("mov"), h264, true, true},
+		{"flv dari vp9 opus", video("flv"), vp9, false, false},
+		{"webm dari vp9 opus", video("webm"), vp9, true, true},
+		{"webm dari h264 aac", video("webm"), h264, false, false},
+		// MKV menampung apa pun, termasuk H.264 10-bit.
+		{"mkv dari vp9 opus", video("mkv"), vp9, true, true},
+		{"mkv dari h264 10-bit", video("mkv"), h264Hi10, true, true},
+		{"avi dari h264", video("avi"), h264, false, false},
+		{"opus asli dari opus", &domain.Preset{Format: "opus", Passthrough: true}, opus, false, true},
+		{"opus asli dari aac", &domain.Preset{Format: "opus", Passthrough: true}, aac, false, false},
+		// Preset tanpa passthrough selalu di-encode ke kualitas pilihannya.
+		{"m4a dari aac", &domain.Preset{Format: "m4a"}, aac, false, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.res.MP4ReadyVideo(); got != tc.video {
-				t.Errorf("MP4ReadyVideo() = %v, mau %v", got, tc.video)
+			f, ok := domain.FormatOf(tc.preset.Format)
+			if !ok {
+				t.Fatalf("format %s tidak dikenal", tc.preset.Format)
 			}
-			if got := tc.res.MP4ReadyAudio(); got != tc.aud {
-				t.Errorf("MP4ReadyAudio() = %v, mau %v", got, tc.aud)
+			v, a := copyPlan(tc.preset, f, tc.src)
+			if v != tc.video || a != tc.audio {
+				t.Errorf("copyPlan() = video %v audio %v, mau %v %v", v, a, tc.video, tc.audio)
+			}
+		})
+	}
+}
+
+func TestBuildArgsPerFormat(t *testing.T) {
+	video := func(format, codec string) *domain.Preset {
+		return &domain.Preset{
+			Kind: domain.KindVideo, Format: format, Codec: codec, Mode: domain.ModeCBR,
+			BitrateKbps: intPtr(160), Channels: 2, Passthrough: true,
+		}
+	}
+	lossless := func(format, codec string) *domain.Preset {
+		return &domain.Preset{Format: format, Codec: codec, Mode: domain.ModeLossless, Channels: 2}
+	}
+	tests := []struct {
+		name    string
+		in      TranscodeInput
+		want    map[string]string
+		without []string
+	}{
+		{
+			"webm encode ulang ke vp9",
+			TranscodeInput{Preset: video("webm", "libopus")},
+			map[string]string{"-c:v": "libvpx-vp9", "-deadline": "realtime", "-c:a": "libopus", "-b:a": "160k"},
+			[]string{"-movflags", "-id3v2_version"},
+		},
+		{
+			"avi xvid dan mp3",
+			TranscodeInput{Preset: video("avi", "libmp3lame")},
+			map[string]string{"-c:v": "mpeg4", "-vtag": "xvid", "-c:a": "libmp3lame"},
+			[]string{"-movflags"},
+		},
+		{
+			"mov salin dengan faststart",
+			TranscodeInput{Preset: video("mov", "aac"), CopyVideo: true, CopyAudio: true},
+			map[string]string{"-c:v": "copy", "-c:a": "copy", "-movflags": "+faststart"},
+			[]string{"-b:a"},
+		},
+		{
+			"flac 16-bit dengan sampul",
+			TranscodeInput{Preset: lossless("flac", "flac"), CoverPath: "cover.jpg"},
+			map[string]string{"-c:a": "flac", "-sample_fmt": "s16", "-disposition:v:0": "attached_pic"},
+			[]string{"-b:a", "-q:a", "-ar", "-id3v2_version"},
+		},
+		{
+			"alac di m4a",
+			TranscodeInput{Preset: lossless("m4a", "alac")},
+			map[string]string{"-c:a": "alac", "-sample_fmt": "s16p", "-movflags": "+faststart"},
+			[]string{"-b:a"},
+		},
+		// WAV dan Ogg tidak menyematkan sampul walau thumbnail tersedia.
+		{
+			"wav tanpa sampul",
+			TranscodeInput{Preset: lossless("wav", "pcm_s16le"), CoverPath: "cover.jpg"},
+			map[string]string{"-c:a": "pcm_s16le"},
+			[]string{"-disposition:v:0", "-sample_fmt", "-b:a"},
+		},
+		{
+			"opus disalin",
+			TranscodeInput{Preset: &domain.Preset{Format: "opus", Codec: "libopus", Mode: domain.ModeCBR, BitrateKbps: intPtr(160), Passthrough: true}, CopyAudio: true},
+			map[string]string{"-c:a": "copy"},
+			[]string{"-b:a", "-ac"},
+		},
+		{
+			"vorbis vbr",
+			TranscodeInput{Preset: &domain.Preset{Format: "ogg", Codec: "libvorbis", Mode: domain.ModeVBR, VBRQuality: intPtr(6), Channels: 2}},
+			map[string]string{"-c:a": "libvorbis", "-q:a": "6"},
+			[]string{"-b:a"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.in.MediaPath, tc.in.OutputPath = "in.mkv", "out"
+			args := BuildArgs(tc.in)
+			for flag, value := range tc.want {
+				if v, _ := argValue(args, flag); v != value {
+					t.Errorf("%s = %q, mau %q", flag, v, value)
+				}
+			}
+			for _, flag := range tc.without {
+				if slices.Contains(args, flag) {
+					t.Errorf("argv tidak boleh memuat %s: %v", flag, args)
+				}
 			}
 		})
 	}

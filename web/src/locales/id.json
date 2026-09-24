@@ -22,6 +22,7 @@
   "capture.failed": "Analisis gagal",
   "capture.unknown": "Channel tidak diketahui",
   "capture.preset": "Kualitas",
+  "capture.format": "Format",
   "capture.convert": "Konversi",
   "capture.convertAgain": "Konversi lagi",
   "capture.queueing": "Mengantre…",
@@ -181,6 +182,20 @@
   "format.unknownDuration": "durasi tidak diketahui",
 
   "preset.videoBest": "Terbaik",
+  "preset.original": "Asli, tanpa encode ulang",
+
+  "formatHint.mp3": "Bisa diputar di mana saja, lengkap dengan tag dan sampul.",
+  "formatHint.m4a": "AAC, atau ALAC yang lossless, lengkap dengan tag dan sampul. Cocok untuk perangkat Apple dan iTunes.",
+  "formatHint.opus": "Stream audio asli YouTube, disalin tanpa encode ulang: kualitas terbaik untuk ukurannya. Sebagian pemutar lama tidak bisa memutarnya.",
+  "formatHint.ogg": "Ogg Vorbis, format terbuka untuk pemutar dan game yang memakainya. Tanpa sampul.",
+  "formatHint.flac": "Lossless, lengkap dengan tag dan sampul. Tidak menambah kualitas melebihi sumber YouTube, tetapi cocok untuk pustaka yang hanya menerima lossless.",
+  "formatHint.wav": "PCM tanpa kompresi untuk editing audio. Sekitar 10 MB per menit, tag minim, tanpa sampul.",
+  "formatHint.mp4": "H.264 + AAC yang bisa diputar di perangkat apa pun.",
+  "formatHint.mkv": "Menyimpan video dan audio asli YouTube tanpa encode ulang, tetap cepat sampai 4K. Sebagian TV dan pemutar bawaan tidak bisa memutarnya.",
+  "formatHint.mov": "H.264 + AAC untuk perangkat Apple dan editor video.",
+  "formatHint.webm": "VP9 + Opus untuk web, umumnya tanpa encode ulang.",
+  "formatHint.avi": "MPEG-4 (Xvid) + MP3 untuk pemutar lama. Videonya selalu di-encode ulang.",
+  "formatHint.flv": "H.264 + AAC dalam berkas video Flash, untuk perangkat lunak lama yang memerlukannya.",
 
   "common.error": "Terjadi kesalahan",
   "common.network": "Tidak dapat menghubungi server.",

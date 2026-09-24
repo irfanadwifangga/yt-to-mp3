@@ -20,7 +20,7 @@ import (
 // Database dengan versi lebih tinggi menolak dibuka: itu berarti aplikasi
 // lebih lama daripada datanya, dan menjalankannya akan merusak dengan cara
 // yang membingungkan.
-const SchemaVersion = 6
+const SchemaVersion = 7
 
 // pragmas berlaku per koneksi. journal_mode bersifat persisten di berkas,
 // sisanya harus diset ulang setiap koneksi baru, sehingga dipasang lewat DSN.

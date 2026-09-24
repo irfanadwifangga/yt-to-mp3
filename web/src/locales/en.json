@@ -22,6 +22,7 @@
   "capture.failed": "Analysis failed",
   "capture.unknown": "Unknown channel",
   "capture.preset": "Quality",
+  "capture.format": "Format",
   "capture.convert": "Convert",
   "capture.convertAgain": "Convert again",
   "capture.queueing": "Queueing…",
@@ -181,6 +182,20 @@
   "format.unknownDuration": "unknown duration",
 
   "preset.videoBest": "Best available",
+  "preset.original": "Original, no re-encoding",
+
+  "formatHint.mp3": "Plays everywhere, with tags and cover art.",
+  "formatHint.m4a": "AAC, or lossless ALAC, with tags and cover art. Suits Apple devices and iTunes.",
+  "formatHint.opus": "YouTube's own audio stream, copied without re-encoding: the best quality for its size. Some older players cannot play it.",
+  "formatHint.ogg": "Ogg Vorbis, an open format for players and games that prefer it. No cover art.",
+  "formatHint.flac": "Lossless, with tags and cover art. It cannot add quality beyond YouTube's source, but suits lossless-only libraries.",
+  "formatHint.wav": "Uncompressed PCM for audio editing. About 10 MB per minute, with minimal tags and no cover art.",
+  "formatHint.mp4": "H.264 + AAC that plays on any device.",
+  "formatHint.mkv": "Keeps YouTube's original video and audio without re-encoding, fast even at 4K. Some TVs and built-in players cannot play it.",
+  "formatHint.mov": "H.264 + AAC for Apple devices and video editors.",
+  "formatHint.webm": "VP9 + Opus for the web, usually without re-encoding.",
+  "formatHint.avi": "MPEG-4 (Xvid) + MP3 for older players. The video is always re-encoded.",
+  "formatHint.flv": "H.264 + AAC in a Flash video file, for older software that requires it.",
 
   "common.error": "Something went wrong",
   "common.network": "Cannot reach the server.",

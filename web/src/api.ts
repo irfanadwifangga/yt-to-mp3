@@ -257,6 +257,8 @@ export interface Preset {
   /** Batas resolusi video dalam satuan label "p"; kosong berarti tertinggi
    *  yang tersedia. Hanya ada pada preset video. */
   max_height?: number;
+  /** Stream sumber disalin apa adanya bila codecnya sudah sesuai format. */
+  passthrough: boolean;
 }
 
 /** Sama dengan domain.MaxTagRunes di backend. */

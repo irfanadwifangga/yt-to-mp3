@@ -133,7 +133,7 @@ CREATE TABLE presets (
   label        TEXT NOT NULL,
   format       TEXT NOT NULL,
   codec        TEXT NOT NULL,
-  mode         TEXT NOT NULL CHECK (mode IN ('cbr','vbr')),
+  mode         TEXT NOT NULL CHECK (mode IN ('cbr','vbr','lossless')),
   bitrate_kbps INTEGER,
   vbr_quality  INTEGER,
   sample_rate  INTEGER,  -- NULL = ikuti sumber, hanya untuk preset lossless
@@ -144,8 +144,11 @@ CREATE TABLE presets (
   -- migrasi 00006
   kind         TEXT NOT NULL DEFAULT 'audio' CHECK (kind IN ('audio','video')),
   max_height   INTEGER CHECK (max_height IS NULL OR max_height > 0),
+  -- migrasi 00007: salin stream sumber bila codecnya sudah sesuai format
+  passthrough  INTEGER NOT NULL DEFAULT 0 CHECK (passthrough IN (0, 1)),
   CHECK ((mode = 'cbr' AND bitrate_kbps IS NOT NULL)
-      OR (mode = 'vbr' AND vbr_quality  IS NOT NULL))
+      OR (mode = 'vbr' AND vbr_quality  IS NOT NULL)
+      OR (mode = 'lossless' AND bitrate_kbps IS NULL AND vbr_quality IS NULL))
 );
 ```
 
@@ -231,5 +234,6 @@ Seluruh kebijakan di atas dijalankan `application.Housekeeper`: satu putaran seb
 | 4 | `00004_jobs_tags.sql` | Kolom `jobs.tag_title` dan `jobs.tag_artist` untuk suntingan tag sebelum konversi (planning §7). Disimpan per job, bukan di `media_items`, karena cache metadata dibagi semua job untuk video yang sama dan dapat diambil ulang |
 | 5 | `00005_media_release.sql` | Kolom `media_items.track`, `artist`, `album`, `release_year` dari katalog YouTube Music, dipakai untuk saran tag serta tag album dan tahun (planning §12.2). Baris cache lama tidak diisi ulang; TTL 24 jam membuatnya terisi pada analisis berikutnya |
 | 6 | `00006_video_presets.sql` | Kolom `presets.kind` dan `presets.max_height`, seed lima preset MP4, dan kolom `media_items.video_height` (planning §11, ADR-035). `TestMigrasiPresetVideoBisaDibalik` membuktikan migrasi ini bisa dibalik dan diterapkan ulang |
+| 7 | `00007_more_formats.sql` | Tabel `presets` dibangun ulang: mode `lossless` (tanpa bitrate maupun kualitas VBR) dan kolom `passthrough`, lalu seed 7 preset audio dan 25 preset video baru (ADR-036). Migrasi ini `NO TRANSACTION` karena `PRAGMA foreign_keys = OFF` tidak berlaku di dalam transaksi; ia mengelola `BEGIN`/`COMMIT` sendiri dan menggagalkan diri bila ada job yang merujuk preset yang hilang. `TestMigrasiFormatMenjagaRiwayat` membuktikan riwayat tetap utuh dan foreign key kembali ditegakkan |
 
 `TestMigrateDariSkemaVersi1` membangun database lewat `goose UpTo(1)`, mengisinya dengan SQL mentah, lalu menjalankan `Migrate` penuh dan memeriksa data tetap utuh. `TestRiwayatBerfilterStatusMemakaiIndeks` memeriksa `EXPLAIN QUERY PLAN` supaya regresi indeks tertangkap walau tidak terlihat pada database kecil.

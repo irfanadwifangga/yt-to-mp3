@@ -16,22 +16,39 @@ vi.mock("./api", async (importOriginal) => {
 const LINK = "https://www.youtube.com/watch?v=fJ9rUzIMcZQ";
 const OTHER_LINK = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 
+const audio = (id: string, format: string, over: Partial<Preset> = {}): Preset => ({
+  id,
+  label: "Standard",
+  kind: "audio",
+  format,
+  mode: "cbr",
+  bitrate_kbps: 192,
+  channels: 2,
+  passthrough: false,
+  ...over,
+});
+
+/** Lima kualitas video yang sama untuk setiap format, seperti seed migrasi. */
+const video = (format: string): Preset[] =>
+  [360, 720, 1080, 0].map((h) => ({
+    id: `${format}_${h || "best"}`,
+    label: h ? `${h}p` : "Best",
+    kind: "video",
+    format,
+    mode: "cbr",
+    bitrate_kbps: 192,
+    channels: 2,
+    passthrough: true,
+    ...(h ? { max_height: h } : {}),
+  }));
+
 const presets: Preset[] = [
-  { id: "mp3_standard", label: "Standard", kind: "audio", format: "mp3", mode: "cbr", bitrate_kbps: 192, channels: 2 },
-  { id: "mp3_high", label: "High", kind: "audio", format: "mp3", mode: "cbr", bitrate_kbps: 320, channels: 2 },
-  ...[360, 720, 1080].map(
-    (h): Preset => ({
-      id: `mp4_${h}`,
-      label: `${h}p`,
-      kind: "video",
-      format: "mp4",
-      mode: "cbr",
-      bitrate_kbps: 192,
-      channels: 2,
-      max_height: h,
-    }),
-  ),
-  { id: "mp4_best", label: "Best", kind: "video", format: "mp4", mode: "cbr", bitrate_kbps: 192, channels: 2 },
+  audio("mp3_standard", "mp3"),
+  audio("mp3_high", "mp3", { label: "High", bitrate_kbps: 320 }),
+  audio("opus_source", "opus", { label: "Original", bitrate_kbps: 160, passthrough: true }),
+  audio("wav_pcm16", "wav", { label: "PCM 16-bit", mode: "lossless", bitrate_kbps: undefined }),
+  ...video("mp4"),
+  ...video("mkv"),
 ];
 
 function metadata(over: Partial<Metadata> = {}): Metadata {
@@ -88,6 +105,7 @@ const artistField = () => screen.getByLabelText<HTMLInputElement>(t("capture.tag
 const qualityField = () => screen.getByLabelText<HTMLSelectElement>(t("capture.preset"));
 const qualityOptions = () => [...qualityField().options].map((o) => o.textContent);
 const kindButton = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) });
+const formatField = () => screen.getByLabelText<HTMLSelectElement>(t("capture.format"));
 
 describe("Capture", () => {
   it("menganalisis tautan lengkap yang diketik, sekali saja", async () => {
@@ -289,5 +307,49 @@ describe("Capture", () => {
     // Kembali ke audio memakai preset audio pertama, bukan preset video.
     await user.click(kindButton(t("capture.kindAudio")));
     expect(qualityField().value).toBe("mp3_standard");
+  });
+
+  it("berganti format video dengan resolusi yang sama", async () => {
+    vi.mocked(api.metadata).mockResolvedValue(metadata());
+    vi.mocked(api.createJob).mockResolvedValue(queuedJob);
+    const { user, input } = setup();
+
+    await user.click(input);
+    await user.paste(LINK);
+    await titleField();
+    await user.click(kindButton(t("capture.kindVideo")));
+    await user.selectOptions(qualityField(), "mp4_720");
+
+    expect([...formatField().options].map((o) => o.textContent)).toEqual(["MP4", "MKV"]);
+    await user.selectOptions(formatField(), "mkv");
+
+    expect(qualityField().value).toBe("mkv_720");
+    expect(screen.getByText(t("formatHint.mkv"))).toBeTruthy();
+    // MKV menyalin sumber apa adanya, jadi tidak ada peringatan encode ulang
+    // walau resolusinya tinggi.
+    await user.selectOptions(qualityField(), "mkv_best");
+    expect(screen.queryByRole("note")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: t("capture.convert") }));
+    expect(api.createJob).toHaveBeenCalledWith(LINK, "mkv_best", expect.anything());
+  });
+
+  it("menyembunyikan pilihan kualitas untuk format dengan satu pilihan", async () => {
+    vi.mocked(api.metadata).mockResolvedValue(metadata());
+    vi.mocked(api.createJob).mockResolvedValue(queuedJob);
+    const { user, input } = setup();
+
+    await user.click(input);
+    await user.paste(LINK);
+    await titleField();
+
+    expect([...formatField().options].map((o) => o.textContent)).toEqual(["MP3", "OPUS", "WAV"]);
+    await user.selectOptions(formatField(), "wav");
+
+    expect(screen.queryByLabelText(t("capture.preset"))).toBeNull();
+    expect(screen.getByText(t("formatHint.wav"))).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: t("capture.convert") }));
+    expect(api.createJob).toHaveBeenCalledWith(LINK, "wav_pcm16", expect.anything());
   });
 });

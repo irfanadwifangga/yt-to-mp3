@@ -12,9 +12,12 @@ A local desktop app that converts YouTube videos to MP3 audio or MP4 video (tech
 - **Live progress** per job over SSE, shown as the video cover filling with color from the bottom up. Cancelling a job stops the whole process tree, including the FFmpeg that yt-dlp runs, then cleans up temporary files.
 - **Finished list** — open the output folder in your file manager, save a copy, retry failed jobs, or remove them from the list (with or without the file). Long histories load incrementally.
 - **Auto-retry** — transient network failures are retried automatically up to 3 times with growing delays. When YouTube rate-limits requests (HTTP 429), the delay is longer and parallel jobs drop to one for a few minutes.
-- **Audio or video** — switch between **Audio (MP3)** and **Video (MP4)** before converting.
+- **Audio or video, in many formats** — pick **Audio** or **Video**, then a format and quality:
+  - Audio: MP3, M4A (AAC or lossless ALAC), Opus (YouTube's original stream, copied without re-encoding), Ogg Vorbis, FLAC, and WAV.
+  - Video: MP4, MKV (YouTube's original streams without re-encoding, fast up to 4K), MOV, WebM, AVI (Xvid + MP3 for older players), and FLV.
+  - Each format shows a one-line explanation of what it is for.
 - **Five MP3 presets**: 128, 192, 256, and 320 kbps CBR, plus VBR V0. 48 kHz stereo output with ID3v2.3 tags and an embedded square cover.
-- **MP4 in 360p, 480p, 720p, 1080p, or the best available resolution**, always H.264 video with AAC audio so the file plays on any device, including the players built into Windows, TVs, and older phones. Up to 1080p, YouTube's own H.264 stream is copied as is (fast, no quality loss). Sources without H.264 at the chosen resolution, which covers everything above 1080p, are re-encoded; that takes much longer and the app warns about it first. Quality options above the source's resolution are marked.
+- **Video in 360p, 480p, 720p, 1080p, or the best available resolution**. MP4 is always H.264 video with AAC audio so the file plays on any device, including the players built into Windows, TVs, and older phones. Up to 1080p, YouTube's own H.264 stream is copied as is (fast, no quality loss). Sources without H.264 at the chosen resolution, which covers everything above 1080p, are re-encoded; that takes much longer and the app warns about it first. Quality options above the source's resolution are marked.
 - **Edit title and artist before converting**, prefilled with cleaned-up suggestions (without `(Official Video)` and the like). Both are used for tags and the file name. For videos linked to YouTube Music, suggestions come from the catalog, and album and release year tags are written as well.
 - **Duplicate conversion warning** when the same video was already converted with the same format and quality.
 - **Settings dialog** (the **Settings** button or `Ctrl+,`), with the output folder picked through the operating system's native folder dialog.
@@ -254,7 +257,7 @@ A local server is not a private server: any website the user has open can send r
 - **The Windows build has no console, so logs are only available in** `logs/app.log` in the data directory. To see logs live, run from source with `go run ./cmd/app`.
 - **The Windows app window is Microsoft Edge running with a separate profile**, not a native window. If Edge is missing, the UI falls back to the default browser, and closing that tab no longer quits the app right away; idle shutdown ends it later.
 
-Deliberately unsupported: playlists, live streams, videos that require sign-in or are age-restricted, and video formats other than MP4 (H.264 + AAC). The full list is in the [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
+Deliberately unsupported: playlists, live streams, videos that require sign-in or are age-restricted, and free choice of codecs or encoder parameters (each format has one fixed target codec). The full list is in the [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
 
 ## Documentation
 

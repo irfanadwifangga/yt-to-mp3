@@ -47,6 +47,16 @@ type Selection struct {
 	// MaxHeight membatasi resolusi video dalam satuan label "p" YouTube,
 	// yaitu sisi terpendek bingkai. Nol berarti tertinggi yang tersedia.
 	MaxHeight int
+
+	// PreferVideo dan PreferAudio adalah codec yang didahulukan pada
+	// resolusi yang sama, supaya hasilnya cukup disalin ke wadah tujuan.
+	// Kosong berarti codec terbaik tanpa syarat.
+	PreferVideo string
+	PreferAudio string
+
+	// Thumbnail meminta sampul untuk disematkan; hanya bermakna untuk
+	// unduhan audio ke wadah yang mendukung sampul.
+	Thumbnail bool
 }
 
 // DownloadResult menunjuk berkas hasil unduhan.
@@ -63,31 +73,38 @@ type DownloadResult struct {
 // formatArgs memilih stream yang diunduh.
 func formatArgs(sel Selection) []string {
 	if !sel.Video {
-		return []string{
-			// Hanya trek audio yang diunduh. Tanpa ini yt-dlp mengambil
-			// stream video lengkap lalu membuangnya, sepuluh kali lipat
-			// bandwidth untuk hasil yang sama. Lihat ADR-015.
-			"-f", "bestaudio/best",
-
-			"--write-thumbnail",
-			"--convert-thumbnail", "jpg",
+		// Hanya trek audio yang diunduh. Tanpa ini yt-dlp mengambil stream
+		// video lengkap lalu membuangnya, sepuluh kali lipat bandwidth untuk
+		// hasil yang sama. Lihat ADR-015.
+		args := []string{"-f", "bestaudio/best"}
+		if sel.Thumbnail {
+			args = append(args, "--write-thumbnail", "--convert-thumbnail", "jpg")
 		}
+		return args
 	}
 
 	// Urutan kriteria: resolusi lebih dulu, supaya pilihan 720p memang
-	// menghasilkan 720p, lalu H.264 dan AAC. Keduanya codec yang dapat
-	// disalin apa adanya ke MP4 yang diputar di mana saja; sumber tanpa
-	// H.264 pada resolusi itu tetap diunduh lalu di-encode ulang oleh
-	// transcoder. Lihat planning §12.1.
-	res := "res"
+	// menghasilkan 720p, lalu codec yang cukup disalin ke wadah tujuan,
+	// misalnya H.264 dan AAC untuk MP4. Sumber tanpa codec itu pada
+	// resolusi tersebut tetap diunduh lalu di-encode ulang oleh transcoder.
+	// Lihat planning §12.1.
+	sort := []string{"res"}
 	if sel.MaxHeight > 0 {
 		// res:N berarti setinggi mungkin tetapi tidak melebihi N, atau yang
 		// terkecil bila sumber tidak punya resolusi serendah itu.
-		res = "res:" + strconv.Itoa(sel.MaxHeight)
+		sort[0] = "res:" + strconv.Itoa(sel.MaxHeight)
+	}
+	// vcodec:X berarti codec terbaik yang tidak lebih "tinggi" dari X,
+	// sehingga X sendiri yang didahulukan bila tersedia.
+	if sel.PreferVideo != "" {
+		sort = append(sort, "vcodec:"+sel.PreferVideo)
+	}
+	if sel.PreferAudio != "" {
+		sort = append(sort, "acodec:"+sel.PreferAudio)
 	}
 	return []string{
 		"-f", "bv*+ba/b",
-		"-S", res + ",vcodec:h264,acodec:aac",
+		"-S", strings.Join(sort, ","),
 
 		// MKV menampung codec apa pun, jadi penggabungan video dan audio
 		// oleh yt-dlp tidak pernah gagal karena kombinasi codec. Wadah MP4

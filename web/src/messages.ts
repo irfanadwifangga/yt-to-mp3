@@ -42,7 +42,16 @@ export function presetLabel(p: Preset): string {
   if (p.kind === "video") {
     return p.max_height ? `${p.max_height}p` : t("preset.videoBest");
   }
+  // Lossless tidak punya bitrate; labelnya sendiri sudah menjelaskan isinya.
+  if (p.mode === "lossless") return p.label;
+  if (p.passthrough) return t("preset.original");
   return `${p.label} — ${p.bitrate_kbps ? `${p.bitrate_kbps} kbps` : "VBR"}`;
+}
+
+/** Penjelasan singkat sebuah format keluaran, kosong bila belum ada teksnya. */
+export function formatHint(format: string): string {
+  const key = `formatHint.${format}`;
+  return has(key) ? t(key) : "";
 }
 
 /** Label preset beserta formatnya, untuk tempat yang mencampur audio dan video. */

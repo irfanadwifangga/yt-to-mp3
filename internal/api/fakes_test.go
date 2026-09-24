@@ -139,6 +139,7 @@ func newFakePresets() *fakePresets {
 	}, {
 		ID: "mp4_720", Label: "720p", Kind: domain.KindVideo, Format: "mp4",
 		Codec: "aac", Mode: "cbr", BitrateKbps: &bitrate, Channels: 2, MaxHeight: &height,
+		Passthrough: true,
 	}}}
 }
 
