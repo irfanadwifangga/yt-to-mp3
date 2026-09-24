@@ -92,17 +92,19 @@ func (s *Server) handleToolCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.toolsView(r))
 }
 
-// handleToolUpdate memperbarui yt-dlp ke rilis terbaru atas permintaan
-// pengguna. FFmpeg sengaja tidak diterima; versinya mengikuti manifest yang
-// di-pin di rilis aplikasi.
+// handleToolUpdate memperbarui yt-dlp atau FFmpeg ke rilis terbaru atas
+// permintaan pengguna. Apakah platform ini mengizinkannya diputuskan layanan
+// tool; lihat field updatable pada GET /api/tools.
 func (s *Server) handleToolUpdate(w http.ResponseWriter, r *http.Request) {
 	var req installRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, CodeBadRequest, "Body bukan JSON yang valid.")
 		return
 	}
-	if req.Name != "yt-dlp" {
-		writeError(w, http.StatusBadRequest, CodeBadRequest, "Hanya yt-dlp yang dapat diperbarui dari aplikasi.")
+	switch req.Name {
+	case "yt-dlp", "ffmpeg":
+	default:
+		writeError(w, http.StatusBadRequest, CodeBadRequest, "Nama tool tidak dikenal.")
 		return
 	}
 

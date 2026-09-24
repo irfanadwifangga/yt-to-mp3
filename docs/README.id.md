@@ -248,7 +248,7 @@ Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka 
 
 ## Keterbatasan yang diketahui
 
-- **FFmpeg yang dipasang aplikasi hanya maju lewat rilis aplikasi.** yt-dlp bisa diperbarui langsung dari **Setelan → Tool** (diverifikasi dengan `SHA2-256SUMS` rilis resminya), tetapi FFmpeg tetap mengikuti manifest yang di-pin; untuk memajukannya, jalankan `make update-tools` lalu commit.
+- **Pembaruan FFmpeg satu klik hanya di Windows.** yt-dlp bisa diperbarui dari **Setelan → Tool** di semua sistem (diverifikasi dengan `SHA2-256SUMS` rilis resminya). Di Windows, FFmpeg juga bisa (diverifikasi dengan digest SHA-256 yang diterbitkan GitHub untuk berkas rilisnya); salinan barunya dipasang di folder tool milik aplikasi, dan FFmpeg yang dipasang lewat winget dibiarkan apa adanya. Di Linux dan macOS, FFmpeg tetap mengikuti manifest yang di-pin; untuk memajukannya, jalankan `make update-tools` lalu commit.
 - **Binary dan installer belum ditandatangani**, sehingga SmartScreen di Windows dan Gatekeeper di macOS memperingatkan saat pertama dijalankan.
 - **Aplikasi hanya memberi tahu bila ada versi baru**, tidak memperbarui dirinya sendiri; unduh installer baru dari halaman rilis. Cek ini membaca rilis GitHub `irfanadwifangga/yt-to-mp3`, jadi baru berfungsi setelah rilis diterbitkan di repositori publik.
 - **Build Windows tanpa console tidak menampilkan log di mana pun selain berkas** `logs/app.log` di direktori data. Untuk melihat log langsung, jalankan dari source dengan `go run ./cmd/app`.

@@ -101,6 +101,7 @@
   "tools.updateFailed": "Pembaruan gagal",
   "tools.updateViaRelease": "Diperbarui bersama rilis aplikasi",
   "tools.updateViaPackageManager": "Perbarui lewat package manager",
+  "tools.updateManagedHint": "Memasang versi baru di folder tool milik aplikasi dan memakainya mulai sekarang. Salinan dari package manager dibiarkan apa adanya.",
   "tools.checkNow": "Cek pembaruan",
   "tools.checking": "Memeriksa…",
   "tools.checkFailed": "Cek pembaruan gagal",

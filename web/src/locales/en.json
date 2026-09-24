@@ -101,6 +101,7 @@
   "tools.updateFailed": "Update failed",
   "tools.updateViaRelease": "Updated with app releases",
   "tools.updateViaPackageManager": "Update with your package manager",
+  "tools.updateManagedHint": "Installs the new version into the app's own tools folder and uses it from then on. The copy from your package manager is left untouched.",
   "tools.checkNow": "Check for updates",
   "tools.checking": "Checking…",
   "tools.checkFailed": "Update check failed",

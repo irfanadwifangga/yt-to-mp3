@@ -25,6 +25,11 @@ type ToolStatus struct {
 	Latest          string `json:"latest_version,omitempty"`
 	UpdateAvailable bool   `json:"update_available"`
 
+	// Updatable berarti tool dapat diperbarui ke rilis terbaru dari
+	// aplikasi dengan satu klik. Selain itu, pembaruannya mengikuti rilis
+	// aplikasi atau package manager.
+	Updatable bool `json:"updatable"`
+
 	// Path sengaja tidak punya tag JSON: path filesystem tidak pernah
 	// menyeberang batas API.
 	Path string `json:"-"`

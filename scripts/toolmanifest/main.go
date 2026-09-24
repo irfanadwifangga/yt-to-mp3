@@ -185,9 +185,7 @@ func ffmpegTool(ctx context.Context, version string) (tools.Tool, error) {
 	version = rel.TagName
 	fmt.Println("    versi:", version)
 
-	// Build essentials sudah memuat libmp3lame dan jauh lebih kecil daripada
-	// full build.
-	name := fmt.Sprintf("ffmpeg-%s-essentials_build.zip", version)
+	name := tools.FFmpegWindowsAsset(version)
 	asset, ok := rel.asset(name)
 	if !ok {
 		return tools.Tool{}, fmt.Errorf("aset %s tidak ada di rilis GyanD", name)

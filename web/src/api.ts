@@ -39,6 +39,8 @@ export interface ToolStatus {
   /** Versi rilis terbaru dari cek pembaruan terakhir. */
   latest_version?: string;
   update_available: boolean;
+  /** Dapat diperbarui ke rilis terbaru dengan satu klik dari aplikasi. */
+  updatable: boolean;
 }
 
 export interface Health {

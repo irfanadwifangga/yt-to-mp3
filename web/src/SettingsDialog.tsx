@@ -552,12 +552,19 @@ function ToolAction({ name, tool, busy, onInstall, onUpdate }: ToolActionProps) 
 
   if (!tool.update_available) return null;
 
-  // Hanya yt-dlp yang dapat diperbarui dari aplikasi. FFmpeg mengikuti
-  // manifest ter-pin di rilis aplikasi, atau package manager bila berasal
-  // dari PATH.
-  if (name === "yt-dlp") {
+  // Server yang memutuskan tool mana yang dapat diperbarui satu klik di
+  // platform ini: yt-dlp di mana saja, FFmpeg hanya di Windows. Sisanya
+  // mengikuti rilis aplikasi, atau package manager bila berasal dari PATH.
+  if (tool.updatable) {
     return (
-      <button type="button" className="btn small primary" onClick={onUpdate} disabled={busy !== null}>
+      <button
+        type="button"
+        className="btn small primary"
+        onClick={onUpdate}
+        disabled={busy !== null}
+        // Salinan baru dipasang di folder aplikasi dan didahulukan; salinan
+        // milik package manager dibiarkan apa adanya.
+        title={tool.source === "path" ? t("tools.updateManagedHint") : undefined}>
         {busy === name ? t("tools.updating") : t("tools.update")}
       </button>
     );

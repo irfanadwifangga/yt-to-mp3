@@ -248,7 +248,7 @@ A local server is not a private server: any website the user has open can send r
 
 ## Known limitations
 
-- **FFmpeg installed by the app only moves forward with app releases.** yt-dlp can be updated directly from **Settings → Tools** (verified against the `SHA2-256SUMS` of its official release), but FFmpeg follows the pinned manifest; to move it forward, run `make update-tools` and commit.
+- **One-click FFmpeg updates are Windows only.** yt-dlp can be updated from **Settings → Tools** on every system (verified against the `SHA2-256SUMS` of its official release). On Windows, FFmpeg can be too (verified against the SHA-256 digest GitHub publishes for the release file); the new copy goes into the app's own tools folder, and an FFmpeg installed with winget is left untouched. On Linux and macOS, FFmpeg follows the pinned manifest; to move it forward, run `make update-tools` and commit.
 - **The binaries and installer are not signed**, so SmartScreen on Windows and Gatekeeper on macOS warn on first launch.
 - **The app only tells you when a new version is available**; it does not update itself, so download the new installer from the Releases page. The check reads GitHub releases of `irfanadwifangga/yt-to-mp3`, so it only works once releases are published in a public repository.
 - **The Windows build has no console, so logs are only available in** `logs/app.log` in the data directory. To see logs live, run from source with `go run ./cmd/app`.

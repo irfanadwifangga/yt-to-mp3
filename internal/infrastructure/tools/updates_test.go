@@ -133,6 +133,100 @@ func TestInstallLatestYTDLPTanpaEntriChecksum(t *testing.T) {
 	wantCode(t, err, domain.CodeToolInstallFailed)
 }
 
+// fakeFFmpegRelease menambahkan rilis GyanD 9.1 ke server GitHub palsu:
+// daftar aset dengan digest dan arsip essentials-nya.
+func fakeFFmpegRelease(t *testing.T, digest string, archive []byte) *Manager {
+	t.Helper()
+	name := FFmpegWindowsAsset("9.1")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/GyanD/codexffmpeg/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"9.1"}`))
+	})
+	mux.HandleFunc("/repos/GyanD/codexffmpeg/releases/tags/9.1", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"tag_name":"9.1","assets":[{"name":"ffmpeg-9.1-full_build.zip","digest":"sha256:%s"},{"name":%q,"digest":%q}]}`,
+			sum([]byte("lain")), name, digest)
+	})
+	mux.HandleFunc("/GyanD/codexffmpeg/releases/download/9.1/"+name, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(archive)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	return &Manager{
+		dir:              filepath.Join(dir, "tools"),
+		tmpDir:           filepath.Join(dir, "tmp"),
+		log:              slog.New(slog.NewTextHandler(io.Discard, nil)),
+		client:           srv.Client(),
+		cache:            make(map[string]cacheEntry),
+		now:              time.Now,
+		githubAPI:        srv.URL,
+		githubDownload:   srv.URL,
+		platformOverride: "windows/amd64",
+	}
+}
+
+func TestInstallLatestFFmpegWindows(t *testing.T) {
+	archive := zipOf(t, map[string]string{
+		"ffmpeg-9.1-essentials_build/bin/ffmpeg.exe":  "ffmpeg baru",
+		"ffmpeg-9.1-essentials_build/bin/ffprobe.exe": "ffprobe baru",
+		"ffmpeg-9.1-essentials_build/README.txt":      "bukan yang dicari",
+	})
+	m := fakeFFmpegRelease(t, "sha256:"+sum(archive), archive)
+
+	if !m.CanUpdate(FFmpeg) || m.CanUpdate(FFprobe) {
+		t.Errorf("CanUpdate ffmpeg=%v ffprobe=%v, mau true dan false", m.CanUpdate(FFmpeg), m.CanUpdate(FFprobe))
+	}
+	version, err := m.InstallLatest(context.Background(), FFmpeg)
+	if err != nil {
+		t.Fatalf("InstallLatest() error = %v", err)
+	}
+	if version != "9.1" {
+		t.Errorf("versi = %q, mau 9.1", version)
+	}
+	for file, want := range map[string]string{"ffmpeg": "ffmpeg baru", "ffprobe": "ffprobe baru"} {
+		got, err := os.ReadFile(filepath.Join(m.dir, normalizeTarget(file)))
+		if err != nil || string(got) != want {
+			t.Errorf("%s = %q, %v; mau %q", file, got, err, want)
+		}
+	}
+}
+
+// Digest GitHub tetap wajib cocok; arsip yang disusupi tidak pernah
+// diekstrak.
+func TestInstallLatestFFmpegMenolakChecksumSalah(t *testing.T) {
+	archive := zipOf(t, map[string]string{"bin/ffmpeg.exe": "x", "bin/ffprobe.exe": "y"})
+	m := fakeFFmpegRelease(t, "sha256:"+sum([]byte("arsip lain")), archive)
+
+	_, err := m.InstallLatestFFmpeg(context.Background())
+	wantCode(t, err, domain.CodeChecksumMismatch)
+	if entries, _ := os.ReadDir(m.dir); len(entries) != 0 {
+		t.Errorf("berkas terpasang walau checksum gagal: %d", len(entries))
+	}
+}
+
+// Aset tanpa digest ditolak; menghitung hash dari unduhan yang sama tidak
+// memverifikasi apa pun.
+func TestInstallLatestFFmpegTanpaDigest(t *testing.T) {
+	archive := zipOf(t, map[string]string{"bin/ffmpeg.exe": "x", "bin/ffprobe.exe": "y"})
+	m := fakeFFmpegRelease(t, "", archive)
+
+	_, err := m.InstallLatestFFmpeg(context.Background())
+	wantCode(t, err, domain.CodeToolInstallFailed)
+}
+
+// Di luar Windows FFmpeg mengikuti manifest; tidak ada unduhan apa pun.
+func TestInstallLatestFFmpegHanyaWindows(t *testing.T) {
+	m := fakeFFmpegRelease(t, "", nil)
+	m.platformOverride = "linux/amd64"
+
+	if m.CanUpdate(FFmpeg) {
+		t.Error("CanUpdate(ffmpeg) di Linux seharusnya false")
+	}
+	_, err := m.InstallLatest(context.Background(), FFmpeg)
+	wantCode(t, err, domain.CodeToolManifest)
+}
+
 func TestUpdateStateFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tool-updates.json")
 	store := NewUpdateStateFile(path)

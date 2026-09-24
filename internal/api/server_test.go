@@ -440,11 +440,11 @@ func TestToolCheckDanUpdate(t *testing.T) {
 		}
 	})
 
-	// FFmpeg mengikuti manifest ter-pin; hanya yt-dlp yang boleh diperbarui
-	// dari checksum rilis hulunya.
-	t.Run("hanya yt-dlp yang dapat diperbarui", func(t *testing.T) {
+	// Hanya nama tool yang dikenal yang diteruskan; apakah platform ini
+	// mengizinkan pembaruannya diputuskan layanan tool.
+	t.Run("hanya yt-dlp dan ffmpeg yang diteruskan", func(t *testing.T) {
 		h := newHarness(t)
-		for _, name := range []string{"ffmpeg", "rm -rf"} {
+		for _, name := range []string{"ffprobe", "rm -rf"} {
 			rec := h.do(t, http.MethodPost, "/api/tools/update", `{"name":"`+name+`"}`)
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("%s: status = %d, mau 400", name, rec.Code)
@@ -454,12 +454,14 @@ func TestToolCheckDanUpdate(t *testing.T) {
 			t.Errorf("updated = %v, mau kosong", h.tools.updated)
 		}
 
-		rec := h.do(t, http.MethodPost, "/api/tools/update", `{"name":"yt-dlp"}`)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, mau 200 (body: %s)", rec.Code, rec.Body.String())
+		for _, name := range []string{"yt-dlp", "ffmpeg"} {
+			rec := h.do(t, http.MethodPost, "/api/tools/update", `{"name":"`+name+`"}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s: status = %d, mau 200 (body: %s)", name, rec.Code, rec.Body.String())
+			}
 		}
-		if len(h.tools.updated) != 1 || h.tools.updated[0] != "yt-dlp" {
-			t.Errorf("updated = %v, mau [yt-dlp]", h.tools.updated)
+		if strings.Join(h.tools.updated, ",") != "yt-dlp,ffmpeg" {
+			t.Errorf("updated = %v, mau [yt-dlp ffmpeg]", h.tools.updated)
 		}
 	})
 }
