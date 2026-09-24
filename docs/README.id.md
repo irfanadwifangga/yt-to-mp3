@@ -1,8 +1,8 @@
-# Youtube To MP3 Converter
+# YouTube to MP3 & MP4
 
 [English](README.en.md) · **Bahasa Indonesia**
 
-Konverter audio YouTube menjadi MP3 berbentuk aplikasi desktop-lokal (nama teknis: `yt-to-mp3`, dipakai untuk repositori, exe, dan direktori data): satu binary Go yang menjalankan server di loopback dan menyajikan SPA React yang tersemat di dalamnya. Tidak ada layanan cloud; semua pekerjaan dan data tinggal di mesinmu.
+Konverter video YouTube menjadi audio MP3 atau video MP4 berbentuk aplikasi desktop-lokal (nama teknis: `yt-to-mp3`, dipakai untuk repositori, exe, dan direktori data): satu binary Go yang menjalankan server di loopback dan menyajikan SPA React yang tersemat di dalamnya. Tidak ada layanan cloud; semua pekerjaan dan data tinggal di mesinmu.
 
 > **Status: fungsi inti dan hardening selesai.** Analisis, antrean, konversi, riwayat, setelan, pemasangan tool sekali klik, log, housekeeping, dan idle shutdown sudah berjalan, dan target NFR terukur lolos. Pipeline rilis sudah disiapkan, tetapi belum ada rilis yang diterbitkan dan binary belum ditandatangani. Baca [Keterbatasan yang diketahui](#keterbatasan-yang-diketahui) sebelum memakai.
 
@@ -12,9 +12,11 @@ Konverter audio YouTube menjadi MP3 berbentuk aplikasi desktop-lokal (nama tekni
 - **Progress live** per job lewat SSE, ditampilkan sebagai sampul video yang terisi warna dari bawah ke atas. Membatalkan job menghentikan seluruh process tree, termasuk FFmpeg yang dijalankan yt-dlp, lalu membersihkan berkas sementara.
 - **Daftar selesai** — buka folder hasil di file manager, simpan salinan, coba lagi yang gagal, atau hapus dari daftar (dengan atau tanpa berkasnya). Riwayat panjang dimuat bertahap.
 - **Auto-retry** — kegagalan jaringan sementara diulang otomatis hingga 3 kali dengan jeda bertambah. Bila YouTube membatasi permintaan (HTTP 429), jedanya lebih panjang dan job paralel diturunkan ke satu selama beberapa menit.
+- **Audio atau video** — pilih **Audio (MP3)** atau **Video (MP4)** sebelum konversi.
 - **Lima preset MP3**: 128, 192, 256, 320 kbps CBR, dan VBR V0. Keluaran 48 kHz stereo dengan tag ID3v2.3 dan sampul persegi tersemat.
+- **MP4 dalam 360p, 480p, 720p, 1080p, atau resolusi terbaik yang tersedia**, selalu video H.264 dengan audio AAC supaya berkasnya bisa diputar di perangkat apa pun, termasuk pemutar bawaan Windows, TV, dan ponsel lama. Sampai 1080p, stream H.264 dari YouTube disalin apa adanya (cepat, tanpa penurunan kualitas). Sumber tanpa H.264 di resolusi yang dipilih, termasuk semua resolusi di atas 1080p, di-encode ulang; prosesnya jauh lebih lama dan aplikasi memperingatkannya lebih dulu. Pilihan kualitas di atas resolusi sumber diberi tanda.
 - **Judul dan artis bisa disunting sebelum konversi**, terisi saran yang sudah dirapikan (tanpa `(Official Video)` dan sejenisnya). Keduanya dipakai untuk tag dan nama berkas. Untuk video yang terhubung ke YouTube Music, saran diambil dari katalog, dan tag album serta tahun rilis ikut ditulis.
-- **Peringatan konversi ganda** bila video yang sama pernah dikonversi dengan preset yang sama.
+- **Peringatan konversi ganda** bila video yang sama pernah dikonversi dengan format dan kualitas yang sama.
 - **Setelan dalam dialog** (tombol **Setelan** atau `Ctrl+,`), dengan folder keluaran dipilih lewat dialog folder bawaan sistem operasi.
 - **Bahasa Indonesia dan Inggris**, serta tema terang, gelap, atau mengikuti sistem.
 - **Jendela sendiri di Windows** — UI dibuka sebagai jendela aplikasi Microsoft Edge tanpa tab maupun address bar. Sistem lain memakai browser default.
@@ -22,7 +24,7 @@ Konverter audio YouTube menjadi MP3 berbentuk aplikasi desktop-lokal (nama tekni
 
 ## Instalasi
 
-**Windows:** unduh `yt-to-mp3_<versi>_windows_amd64_setup.exe` dari halaman Releases lalu jalankan. Tidak perlu hak admin. Installer membuat shortcut di Start Menu, dan aplikasi bisa di-uninstall dari **Settings → Apps**. Uninstall tidak menghapus riwayat maupun berkas MP3 hasil konversi.
+**Windows:** unduh `yt-to-mp3_<versi>_windows_amd64_setup.exe` dari halaman Releases lalu jalankan. Tidak perlu hak admin. Installer membuat shortcut di Start Menu, dan aplikasi bisa di-uninstall dari **Settings → Apps**. Uninstall tidak menghapus riwayat maupun berkas hasil konversi.
 
 Installer dan exe belum ditandatangani, sehingga SmartScreen dapat menampilkan "Windows protected your PC". Pilih **More info** lalu **Run anyway**. Cocokkan berkas dengan `.sha256` di halaman rilis bila ingin memastikan unduhannya utuh.
 
@@ -36,8 +38,8 @@ Aplikasi terbuka di jendelanya sendiri. Menutup jendela menghentikan aplikasi be
 | --- | --- | --- |
 | Go | 1.27+ | Membangun backend |
 | Node.js | 24+ | Membangun SPA; tidak dibutuhkan saat aplikasi berjalan |
-| yt-dlp | terbaru | Membaca metadata dan mengunduh audio |
-| FFmpeg dan ffprobe | dengan `libmp3lame`; diuji pada 9.0.1 | Konversi dan verifikasi hasil |
+| yt-dlp | terbaru | Membaca metadata dan mengunduh audio atau video |
+| FFmpeg dan ffprobe | dengan `libmp3lame` dan `libx264`; diuji pada 9.0.1 | Konversi dan verifikasi hasil |
 
 Build pertama mengunduh modul Go dan paket npm, jadi butuh jaringan sekali. Seluruh dependensi Go murni Go (tanpa cgo), sehingga cross-compile tidak memerlukan toolchain C.
 
@@ -163,14 +165,14 @@ Untuk build lokal dengan ikon dan info versi, jalankan `make winres` sebelum `go
 
 ## Gambaran arsitektur
 
-![Gambaran arsitektur Youtube To MP3 Converter: backend, UI tersemat, state lokal dan platform, serta tool konversi](diagram-ytmp3.png)
+![Gambaran arsitektur YouTube to MP3 & MP4: backend, UI tersemat, state lokal dan platform, serta tool konversi](diagram-ytmp3.png)
 
 Diagram ini menunjukkan bagaimana komponen saling terhubung saat aplikasi berjalan:
 
 - **Backend** — `cmd/app/main.go` merakit semuanya: penjaga single instance, API HTTP lokal beserta stream progress job lewat SSE, scheduler job, dan pipeline konversi. `internal/adapters` hanya menjembatani tipe infrastructure ke port application.
 - **UI tersemat** — aplikasi React disematkan ke binary lewat `go:embed` dan disajikan server lokal yang sama. UI memanggil API lewat `api.ts` dan mengikuti progress job lewat SSE dengan `useJobStream.ts`.
-- **State lokal dan platform** — SQLite menyimpan job, riwayat, dan setelan, dengan skema yang dikembangkan lewat migrasi tersemat. Store berkas menulis MP3 hasil lewat commit atomik. Jendela aplikasi (`internal/browser`), dialog native (`internal/dialog`), dan "Tampilkan di folder" berinteraksi dengan sistem operasi.
-- **Tool konversi** — pipeline menjalankan yt-dlp untuk mengunduh audio dan FFmpeg untuk memeriksa serta mengonversi, keduanya sebagai subprocess lokal. Salinan terkelola kedua tool dipasang dan diperbarui dari dalam aplikasi.
+- **State lokal dan platform** — SQLite menyimpan job, riwayat, dan setelan, dengan skema yang dikembangkan lewat migrasi tersemat. Store berkas menulis MP3 dan MP4 hasil lewat commit atomik. Jendela aplikasi (`internal/browser`), dialog native (`internal/dialog`), dan "Tampilkan di folder" berinteraksi dengan sistem operasi.
+- **Tool konversi** — pipeline menjalankan yt-dlp untuk mengunduh audio atau video dan FFmpeg untuk memeriksa serta mengonversi, keduanya sebagai subprocess lokal. Salinan terkelola kedua tool dipasang dan diperbarui dari dalam aplikasi.
 
 Setelan, housekeeping, idle shutdown, dan cek pembaruan tidak digambar supaya diagram tetap mudah dibaca. Semua komponen dibahas lengkap di [architecture.md](architecture.md).
 
@@ -252,7 +254,7 @@ Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka 
 - **Build Windows tanpa console tidak menampilkan log di mana pun selain berkas** `logs/app.log` di direktori data. Untuk melihat log langsung, jalankan dari source dengan `go run ./cmd/app`.
 - **Jendela aplikasi di Windows adalah Microsoft Edge dengan profil terpisah**, bukan jendela native. Bila Edge tidak ada, UI jatuh ke browser default, dan menutup tab itu tidak langsung menghentikan aplikasi; idle shutdown yang mengakhirinya kemudian.
 
-Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan keluaran video. Daftar lengkapnya di [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
+Sengaja tidak didukung: playlist, siaran langsung, video yang butuh login atau dibatasi usia, dan format video selain MP4 (H.264 + AAC). Daftar lengkapnya di [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
 
 ## Dokumentasi
 

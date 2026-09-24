@@ -44,6 +44,7 @@ const (
 	roleEnv   = "YT2MP3_E2E_ROLE"
 	modeEnv   = "YT2MP3_E2E_MODE"
 	audioEnv  = "YT2MP3_E2E_AUDIO"
+	videoEnv  = "YT2MP3_E2E_VIDEO"
 	markerEnv = "YT2MP3_E2E_MARKER"
 )
 
@@ -61,7 +62,8 @@ func TestMain(m *testing.M) {
 
 // fakeYTDLP meniru antarmuka baris perintah yt-dlp yang dipakai aplikasi.
 //
-//	ok         menulis audio fixture sebagai hasil unduhan
+//	ok         menulis audio fixture sebagai hasil unduhan, atau video
+//	           fixture bila yang diminta video
 //	fail-once  gagal sementara pada panggilan unduh pertama, lalu berhasil
 //	slow       mulai mengunduh lalu menggantung, untuk menguji pembatalan
 func fakeYTDLP(args []string) int {
@@ -74,7 +76,7 @@ func fakeYTDLP(args []string) int {
 		return 0
 	}
 
-	var template, ffmpegLocation string
+	var template, ffmpegLocation, sortOrder, mergeFormat string
 	for i, a := range args {
 		if i+1 >= len(args) {
 			break
@@ -84,6 +86,10 @@ func fakeYTDLP(args []string) int {
 			template = args[i+1]
 		case "--ffmpeg-location":
 			ffmpegLocation = args[i+1]
+		case "-S":
+			sortOrder = args[i+1]
+		case "--merge-output-format":
+			mergeFormat = args[i+1]
 		}
 	}
 	if template == "" {
@@ -113,6 +119,10 @@ func fakeYTDLP(args []string) int {
 		return 0
 	}
 
+	if mergeFormat != "" {
+		return fakeVideoDownload(template, sortOrder, mergeFormat)
+	}
+
 	audio, err := os.ReadFile(os.Getenv(audioEnv))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ERROR:", err)
@@ -120,10 +130,36 @@ func fakeYTDLP(args []string) int {
 	}
 	total := len(audio)
 	for _, done := range []int{0, total / 2, total} {
-		fmt.Printf("YTDLP_PROGRESS %d %d NA\n", done, total)
+		fmt.Printf("YTDLP_PROGRESS %d %d NA none opus\n", done, total)
 	}
 	target := strings.Replace(template, "%(ext)s", "wav", 1)
 	if err := os.WriteFile(target, audio, 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		return 1
+	}
+	return 0
+}
+
+// fakeVideoDownload meniru unduhan video yt-dlp: stream video dan audio
+// diunduh terpisah, masing-masing melaporkan progres 0 sampai 100, lalu
+// digabung ke satu berkas. Resolusi yang diminta wajib sampai ke yt-dlp.
+func fakeVideoDownload(template, sortOrder, mergeFormat string) int {
+	if !strings.HasPrefix(sortOrder, "res:720,") {
+		fmt.Fprintf(os.Stderr, "ERROR: urutan format %q tidak membatasi 720p\n", sortOrder)
+		return 2
+	}
+	video, err := os.ReadFile(os.Getenv(videoEnv))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		return 1
+	}
+	for _, part := range []string{"vp9 none", "none opus"} {
+		for _, done := range []int{0, 500, 1000} {
+			fmt.Printf("YTDLP_PROGRESS %d 1000 NA %s\n", done, part)
+		}
+	}
+	target := strings.Replace(template, "%(ext)s", mergeFormat, 1)
+	if err := os.WriteFile(target, video, 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		return 1
 	}
@@ -169,7 +205,21 @@ func (e *events) Publish(ev application.StreamEvent) {
 	e.list = append(e.list, ev)
 }
 
+// snapshot mengembalikan salinan event milik satu job sesuai urutan siar.
+func (e *events) snapshot(jobID string) []application.StreamEvent {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var out []application.StreamEvent
+	for _, ev := range e.list {
+		if ev.JobID == jobID {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
 type stack struct {
+	events  *events
 	jobs    *db.JobRepository
 	files   *db.FileRepository
 	service *application.JobService
@@ -223,10 +273,21 @@ func newStack(t *testing.T, mode string) *stack {
 		"-c:a", "pcm_s16le", audio).CombinedOutput(); err != nil {
 		t.Fatalf("buat fixture: %v\n%s", err, out)
 	}
+	// Video fixture sengaja bukan H.264 dan AAC, seperti sumber VP9 dan
+	// Opus dari YouTube, supaya jalur encode ulang ikut teruji. MPEG-4 Part 2
+	// dan FLAC adalah encoder bawaan setiap build FFmpeg.
+	video := filepath.Join(root, "fixture.mkv")
+	if out, err := exec.Command(ffmpegBin, "-hide_banner", "-y",
+		"-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=25:duration=5",
+		"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=5",
+		"-ac", "2", "-shortest", "-c:v", "mpeg4", "-c:a", "flac", video).CombinedOutput(); err != nil {
+		t.Fatalf("buat fixture video: %v\n%s", err, out)
+	}
 
 	t.Setenv(roleEnv, "ytdlp")
 	t.Setenv(modeEnv, mode)
 	t.Setenv(audioEnv, audio)
+	t.Setenv(videoEnv, video)
 	t.Setenv(markerEnv, filepath.Join(root, "marker"))
 
 	database, err := db.Open(ctx, filepath.Join(root, "app.db"), log)
@@ -254,6 +315,7 @@ func newStack(t *testing.T, mode string) *stack {
 	prov := provider{real: manager, fake: os.Args[0]}
 	resolver := ytdlp.NewResolver(prov, log)
 	pub := &events{}
+	s.events = pub
 
 	pipeline := application.NewPipeline(application.PipelineDeps{
 		Repo: s.jobs, Closer: s.jobs, Presets: presets, Cache: media, Resolver: resolver,
@@ -504,4 +566,77 @@ func TestE2ETagSuntingan(t *testing.T) {
 	if probe.Format.Tags["title"] != "Lagu Suntingan" || probe.Format.Tags["artist"] != "Artis Suntingan" {
 		t.Errorf("tag = %v", probe.Format.Tags)
 	}
+}
+
+// Preset video menghasilkan MP4 H.264 dan AAC bernama judul video, dengan
+// progres unduhan dua bagian yang tidak pernah mundur.
+func TestE2EKonversiVideo(t *testing.T) {
+	s := newStack(t, "ok")
+	res, err := s.service.Create(context.Background(), application.CreateRequest{
+		URL: testURL, PresetID: "mp4_720",
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	s.wait(t, res.Job.ID, domain.StatusCompleted)
+
+	file, err := s.files.GetByJob(context.Background(), res.Job.ID)
+	if err != nil {
+		t.Fatalf("berkas hasil tidak tercatat: %v", err)
+	}
+	if file.Filename != testTitle+".mp4" || file.MIME != "video/mp4" {
+		t.Errorf("berkas = %s (%s), mau %s.mp4 video/mp4", file.Filename, file.MIME, testTitle)
+	}
+
+	out, err := exec.Command(s.ffprobe, "-v", "error", "-print_format", "json",
+		"-show_streams", "-show_format", file.Path).Output()
+	if err != nil {
+		t.Fatalf("ffprobe: %v", err)
+	}
+	var probe struct {
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+			Height    int    `json:"height"`
+		} `json:"streams"`
+		Format struct {
+			FormatName string            `json:"format_name"`
+			Tags       map[string]string `json:"tags"`
+		} `json:"format"`
+	}
+	if err := json.Unmarshal(out, &probe); err != nil {
+		t.Fatalf("urai ffprobe: %v", err)
+	}
+	var videoOK, audioOK bool
+	for _, st := range probe.Streams {
+		videoOK = videoOK || (st.CodecType == "video" && st.CodecName == "h264" && st.Height == 720)
+		audioOK = audioOK || (st.CodecType == "audio" && st.CodecName == "aac")
+	}
+	if !videoOK || !audioOK {
+		t.Errorf("stream hasil = %+v, mau h264 720p dan aac", probe.Streams)
+	}
+	if !strings.Contains(probe.Format.FormatName, "mp4") {
+		t.Errorf("wadah = %s, mau mp4", probe.Format.FormatName)
+	}
+	if got := probe.Format.Tags["title"]; got != testTitle {
+		t.Errorf("tag title = %q", got)
+	}
+
+	// Progres unduhan video dan audio digabung jadi satu rentang yang tidak
+	// mundur, sehingga bar di UI tidak melompat ke nol di tengah unduhan.
+	last := -1.0
+	for _, ev := range s.events.snapshot(res.Job.ID) {
+		if ev.Type != application.StreamProgress || ev.Phase != "downloading" || ev.Percent == nil {
+			continue
+		}
+		if *ev.Percent < last {
+			t.Errorf("progres unduhan mundur dari %.1f ke %.1f", last, *ev.Percent)
+		}
+		last = *ev.Percent
+	}
+	if last < 0 {
+		t.Error("tidak ada progres unduhan yang disiarkan")
+	}
+
+	s.assertTempBersih(t, res.Job.ID)
 }

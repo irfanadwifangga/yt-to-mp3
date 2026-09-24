@@ -5,21 +5,37 @@ import {
   isTerminal,
   MAX_AUTO_RETRIES,
   updateYtdlpAndRetry,
-  type Job
+  type Job,
+  type Preset
 } from "./api";
 import { Cover } from "./Cover";
 import { DownloadIcon, FolderIcon } from "./icons";
 import { t } from "./i18n";
-import { formatTime, messageFor, messageForCode, phaseLabel, statusLabel } from "./messages";
+import {
+  formatTime,
+  messageFor,
+  messageForCode,
+  phaseLabel,
+  presetFullLabel,
+  statusLabel
+} from "./messages";
 import { useJobStream } from "./useJobStream";
 
 interface Props {
   jobs: Job[];
+  /** Untuk menampilkan format dan kualitas tiap job, misalnya "MP4 · 720p". */
+  presets: Preset[];
   onChanged: () => void;
 }
 
+/** Format dan kualitas job; kosong untuk preset yang sudah tidak ditawarkan. */
+function formatLabel(presets: Preset[], job: Job): string {
+  const preset = presets.find((p) => p.id === job.preset_id);
+  return preset ? presetFullLabel(preset) : "";
+}
+
 /** Job yang masih berjalan atau menunggu giliran. */
-export function ActiveList({ jobs, onChanged }: Props) {
+export function ActiveList({ jobs, presets, onChanged }: Props) {
   return (
     <section className="block" aria-labelledby="active-title">
       <h2 id="active-title" className="block-title">
@@ -31,7 +47,12 @@ export function ActiveList({ jobs, onChanged }: Props) {
       ) : (
         <ul className="list">
           {jobs.map((job) => (
-            <ActiveJob key={job.id} job={job} onChanged={onChanged} />
+            <ActiveJob
+              key={job.id}
+              job={job}
+              format={formatLabel(presets, job)}
+              onChanged={onChanged}
+            />
           ))}
         </ul>
       )}
@@ -44,7 +65,15 @@ function secondsUntil(iso: string): number {
   return Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 1000));
 }
 
-function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
+function ActiveJob({
+  job,
+  format,
+  onChanged
+}: {
+  job: Job;
+  format: string;
+  onChanged: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +139,7 @@ function ActiveJob({ job, onChanged }: { job: Job; onChanged: () => void }) {
               {percent == null ? t("queue.calculating") : `${percent.toFixed(0)}%`}
             </span>
           )}
+          {format && <span className="mono">{format}</span>}
         </p>
         {retrying && <p className="item-hint">{messageForCode(job.error_code)}</p>}
         {error && (
@@ -142,6 +172,7 @@ interface FinishedProps extends Props {
 /** Job yang sudah selesai, gagal, atau dibatalkan. */
 export function FinishedList({
   jobs,
+  presets,
   onChanged,
   onRemoved,
   hasMore,
@@ -159,7 +190,13 @@ export function FinishedList({
       ) : (
         <ul className="list">
           {jobs.map((job) => (
-            <FinishedJob key={job.id} job={job} onChanged={onChanged} onRemoved={onRemoved} />
+            <FinishedJob
+              key={job.id}
+              job={job}
+              preset={presets.find((p) => p.id === job.preset_id)}
+              onChanged={onChanged}
+              onRemoved={onRemoved}
+            />
           ))}
         </ul>
       )}
@@ -194,11 +231,12 @@ type Action = "download" | "reveal" | "retry" | "update" | "delete";
 
 interface FinishedJobProps {
   job: Job;
+  preset?: Preset;
   onChanged: () => void;
   onRemoved: (id: string) => void;
 }
 
-function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
+function FinishedJob({ job, preset, onChanged, onRemoved }: FinishedJobProps) {
   const [busy, setBusy] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -249,6 +287,7 @@ function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
         <p className="item-meta">
           <span className={`tag tag-${tone}`}>{statusLabel(job.status)}</span>
           <span className="mono">{formatTime(job.finished_at ?? job.created_at)}</span>
+          {preset && <span className="mono">{presetFullLabel(preset)}</span>}
         </p>
         {job.error_code && job.status === "failed" && (
           <p className="item-error">{messageForCode(job.error_code)}</p>
@@ -332,7 +371,7 @@ function FinishedJob({ job, onChanged, onRemoved }: FinishedJobProps) {
                   title={t("history.saveCopyHint")}
                   onClick={() =>
                     void run("download", () =>
-                      downloadFile(job.file_id!, job.file_name || `${title}.mp3`)
+                      downloadFile(job.file_id!, job.file_name || `${title}.${preset?.format ?? "mp3"}`)
                     )
                   }>
                   <DownloadIcon />

@@ -13,7 +13,7 @@ import { Toasts, type Toast } from "./Toasts";
  * Nama aplikasi yang dilihat pengguna, sama dengan version.DisplayName di
  * backend. Nama teknis yt-to-mp3 (folder data, exe) sengaja tidak dipakai di UI.
  */
-const APP_NAME = "Youtube To MP3 Converter";
+const APP_NAME = "YouTube to MP3 & MP4";
 
 /** Notifikasi yang terlihat sekaligus; yang lebih lama digeser keluar. */
 const MAX_TOASTS = 4;
@@ -299,9 +299,10 @@ export function App() {
           defaultPreset={defaultPreset}
           onQueued={handleQueued}
         />
-        <ActiveList jobs={active} onChanged={refresh} />
+        <ActiveList jobs={active} presets={presets} onChanged={refresh} />
         <FinishedList
           jobs={finished}
+          presets={presets}
           onChanged={refresh}
           onRemoved={removeFinished}
           hasMore={Boolean(cursor)}

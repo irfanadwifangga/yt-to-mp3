@@ -88,6 +88,56 @@ func TestMigrateDariSkemaVersi1(t *testing.T) {
 	if events != 1 {
 		t.Errorf("event = %d, mau 1", events)
 	}
+
+	// Preset yang dirujuk riwayat lama tetap preset audio setelah kolom
+	// kind ditambahkan.
+	preset, err := db.NewPresetRepository(d).Get(ctx, "mp3_standard")
+	if err != nil {
+		t.Fatalf("baca preset lama: %v", err)
+	}
+	if preset.IsVideo() || preset.MaxHeight != nil {
+		t.Errorf("preset lama = %+v, mau audio tanpa max_height", preset)
+	}
+}
+
+// Migrasi 00006 bisa dibalik tanpa menyisakan preset video maupun kolom
+// barunya, lalu diterapkan lagi dengan hasil yang sama.
+func TestMigrasiPresetVideoBisaDibalik(t *testing.T) {
+	ctx := context.Background()
+	d := openTemp(t)
+
+	provider, err := goose.NewProvider(goose.DialectSQLite3, d.Write(), migrations.FS)
+	if err != nil {
+		t.Fatalf("NewProvider() error = %v", err)
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("Up() error = %v", err)
+	}
+	if _, err := provider.DownTo(ctx, 5); err != nil {
+		t.Fatalf("DownTo(5) error = %v", err)
+	}
+
+	var count int
+	if err := d.Read().QueryRowContext(ctx, `SELECT COUNT(*) FROM presets`).Scan(&count); err != nil {
+		t.Fatalf("hitung preset: %v", err)
+	}
+	if count != 5 {
+		t.Errorf("jumlah preset setelah Down = %d, mau 5", count)
+	}
+	if _, err := d.Read().ExecContext(ctx, `SELECT kind FROM presets`); err == nil {
+		t.Error("kolom kind masih ada setelah Down")
+	}
+
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("Up() ulang error = %v", err)
+	}
+	if err := d.Read().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM presets WHERE kind = 'video'`).Scan(&count); err != nil {
+		t.Fatalf("hitung preset video: %v", err)
+	}
+	if count != 5 {
+		t.Errorf("preset video setelah Up ulang = %d, mau 5", count)
+	}
 }
 
 // Riwayat berfilter status harus dilayani indeks tanpa sort sementara.

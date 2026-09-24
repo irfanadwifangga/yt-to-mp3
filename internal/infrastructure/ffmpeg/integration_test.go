@@ -14,6 +14,7 @@
 package ffmpeg_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,7 +147,7 @@ func (e env) transcode(t *testing.T, preset *domain.Preset, audio, cover string)
 	var updates int
 
 	err := ffmpeg.NewTranscoder(e.tools, e.log).Transcode(context.Background(), ffmpeg.TranscodeInput{
-		AudioPath:  audio,
+		MediaPath:  audio,
 		CoverPath:  cover,
 		OutputPath: out,
 		Preset:     preset,
@@ -179,7 +181,7 @@ func TestIntegrasiKonversiCBRLengkap(t *testing.T) {
 	if !res.HasAudio || res.Codec != "mp3" || res.SampleRate != 48000 {
 		t.Errorf("hasil = %+v, mau mp3 48000 Hz", res)
 	}
-	if err := prober.Verify(context.Background(), out, fixtureDuration); err != nil {
+	if err := prober.Verify(context.Background(), out, fixtureDuration, domain.KindAudio); err != nil {
 		t.Errorf("Verify() error = %v", err)
 	}
 
@@ -221,7 +223,7 @@ func TestIntegrasiKonversiVBR(t *testing.T) {
 		VBRQuality: intPtr(0), SampleRate: intPtr(48000), Channels: 2,
 	}, audio, cover)
 
-	if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration); err != nil {
+	if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration, domain.KindAudio); err != nil {
 		t.Errorf("Verify() error = %v", err)
 	}
 }
@@ -237,7 +239,7 @@ func TestIntegrasiVerifyMenolakDurasiMenyimpang(t *testing.T) {
 		BitrateKbps: intPtr(128), SampleRate: intPtr(48000), Channels: 2,
 	}, audio, cover)
 
-	err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, time.Minute)
+	err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, time.Minute, domain.KindAudio)
 	var derr *domain.Error
 	if !errors.As(err, &derr) || derr.Code != domain.CodeVerifyFailed {
 		t.Errorf("Verify() error = %v, mau %s", err, domain.CodeVerifyFailed)
@@ -265,7 +267,7 @@ func TestIntegrasiSampulRusakTidakMenggagalkan(t *testing.T) {
 			t.Error("sampul rusak seharusnya tidak ikut disematkan")
 		}
 	}
-	if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration); err != nil {
+	if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration, domain.KindAudio); err != nil {
 		t.Errorf("Verify() error = %v", err)
 	}
 }
@@ -280,7 +282,7 @@ func TestIntegrasiTagDataRilis(t *testing.T) {
 	info := media()
 	info.Artist, info.Album, info.ReleaseYear = "Yiruma", "The Best", 2011
 	err := ffmpeg.NewTranscoder(e.tools, e.log).Transcode(context.Background(), ffmpeg.TranscodeInput{
-		AudioPath: audio, CoverPath: cover, OutputPath: out, Timeout: 2 * time.Minute, Media: info,
+		MediaPath: audio, CoverPath: cover, OutputPath: out, Timeout: 2 * time.Minute, Media: info,
 		Preset: &domain.Preset{ID: "mp3_standard", Format: "mp3", Codec: "libmp3lame", Mode: "cbr",
 			BitrateKbps: intPtr(192), SampleRate: intPtr(48000), Channels: 2},
 	}, func(ffmpeg.Progress) {})
@@ -291,5 +293,117 @@ func TestIntegrasiTagDataRilis(t *testing.T) {
 	tags := e.inspect(t, out).Format.Tags
 	if tags["artist"] != "Yiruma" || tags["album"] != "The Best" || tags["date"] != "2011" {
 		t.Errorf("tag = %v", tags)
+	}
+}
+
+// videoFixture membuat video sumber sintetis dalam wadah MKV, seperti hasil
+// penggabungan yt-dlp.
+func (e env) videoFixture(t *testing.T, name string, codecArgs ...string) string {
+	t.Helper()
+	path := filepath.Join(e.dir, name+".mkv")
+	args := []string{"-hide_banner", "-y",
+		"-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=5",
+		"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=5",
+		"-ac", "2", "-shortest"}
+	args = append(args, codecArgs...)
+	out, err := exec.Command(e.ffmpeg, append(args, path)...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("buat fixture video: %v\n%s", err, out)
+	}
+	return path
+}
+
+// transcodeVideo mengonversi src ke MP4 dan mengembalikan log rencana
+// konversinya, supaya keputusan salin atau encode ulang dapat diperiksa:
+// keduanya sama-sama menghasilkan H.264.
+func (e env) transcodeVideo(t *testing.T, src string) (string, string) {
+	t.Helper()
+	out := filepath.Join(e.dir, filepath.Base(src)+".mp4")
+	var logBuf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logBuf, nil))
+	var updates int
+	err := ffmpeg.NewTranscoder(e.tools, log).Transcode(context.Background(), ffmpeg.TranscodeInput{
+		MediaPath: src, OutputPath: out, Media: media(), Timeout: 2 * time.Minute,
+		Preset: &domain.Preset{
+			ID: "mp4_720", Kind: domain.KindVideo, Format: "mp4", Codec: "aac", Mode: "cbr",
+			BitrateKbps: intPtr(192), Channels: 2, MaxHeight: intPtr(720),
+		},
+	}, func(ffmpeg.Progress) { updates++ })
+	if err != nil {
+		t.Fatalf("Transcode() error = %v", err)
+	}
+	if updates == 0 {
+		t.Error("tidak ada satu pun laporan progress dari ffmpeg")
+	}
+	if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration, domain.KindVideo); err != nil {
+		t.Errorf("Verify() error = %v", err)
+	}
+	return out, logBuf.String()
+}
+
+func (e env) assertMP4(t *testing.T, path string) {
+	t.Helper()
+	info := e.inspect(t, path)
+	var video, audio bool
+	for _, s := range info.Streams {
+		switch s.CodecType {
+		case "video":
+			video = s.CodecName == "h264" && s.Width == 640 && s.Height == 360
+		case "audio":
+			audio = s.CodecName == "aac"
+		}
+	}
+	if !video || !audio {
+		t.Errorf("stream hasil = %+v, mau h264 640x360 dan aac", info.Streams)
+	}
+	if got := info.Format.Tags["title"]; got != "Nada Uji 水平線" {
+		t.Errorf("tag title = %q", got)
+	}
+	if got := info.Format.Tags["artist"]; got != "yt-to-mp3" {
+		t.Errorf("tag artist = %q", got)
+	}
+}
+
+// Sumber H.264 dan AAC disalin apa adanya ke MP4.
+func TestIntegrasiVideoSalinStream(t *testing.T) {
+	e := setup(t)
+	src := e.videoFixture(t, "h264", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac")
+
+	out, plan := e.transcodeVideo(t, src)
+	e.assertMP4(t, out)
+	if !strings.Contains(plan, "salin_video=true") || !strings.Contains(plan, "salin_audio=true") {
+		t.Errorf("stream H.264 dan AAC seharusnya disalin; rencana: %s", plan)
+	}
+}
+
+// Sumber yang bukan H.264 dan AAC di-encode ulang supaya MP4-nya diputar di
+// mana saja. Fixture memakai MPEG-4 Part 2 dan FLAC, encoder bawaan FFmpeg,
+// sebagai pengganti VP9 dan Opus yang tidak selalu ada di setiap build.
+func TestIntegrasiVideoEncodeUlang(t *testing.T) {
+	e := setup(t)
+	src := e.videoFixture(t, "mpeg4", "-c:v", "mpeg4", "-c:a", "flac")
+
+	out, plan := e.transcodeVideo(t, src)
+	e.assertMP4(t, out)
+	if !strings.Contains(plan, "salin_video=false") || !strings.Contains(plan, "salin_audio=false") {
+		t.Errorf("stream MPEG-4 dan FLAC seharusnya di-encode ulang; rencana: %s", plan)
+	}
+}
+
+// MP4 yang hanya berisi suara bukan hasil yang diminta preset video.
+func TestIntegrasiVerifyVideoMenolakAudioSaja(t *testing.T) {
+	e := setup(t)
+	audio, cover := e.fixture(t)
+
+	out, _ := e.transcode(t, &domain.Preset{
+		ID: "mp3_standard", Format: "mp3", Codec: "libmp3lame", Mode: "cbr",
+		BitrateKbps: intPtr(192), SampleRate: intPtr(48000), Channels: 2,
+	}, audio, cover)
+
+	// Sampul yang disematkan juga stream video, tetapi bukan video.
+	err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration, domain.KindVideo)
+	var derr *domain.Error
+	if !errors.As(err, &derr) || derr.Code != domain.CodeVerifyFailed {
+		t.Errorf("Verify() error = %v, mau %s", err, domain.CodeVerifyFailed)
 	}
 }

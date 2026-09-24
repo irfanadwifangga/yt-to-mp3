@@ -117,13 +117,14 @@ func TestSeedPreset(t *testing.T) {
 	if err := d.Read().QueryRow(`SELECT count(*) FROM presets`).Scan(&count); err != nil {
 		t.Fatalf("hitung preset: %v", err)
 	}
-	if count != 5 {
-		t.Errorf("jumlah preset = %d, mau 5", count)
+	if count != 10 {
+		t.Errorf("jumlah preset = %d, mau 10", count)
 	}
 
 	// 48 kHz adalah keputusan sadar yang menyesuaikan sumber Opus (ADR-030);
 	// kalau seed-nya bergeser diam-diam, seluruh output ikut berubah.
-	rows, err := d.Read().Query(`SELECT id, sample_rate FROM presets ORDER BY sort_order`)
+	rows, err := d.Read().Query(
+		`SELECT id, sample_rate FROM presets WHERE kind = 'audio' ORDER BY sort_order`)
 	if err != nil {
 		t.Fatalf("query preset: %v", err)
 	}
@@ -150,6 +151,43 @@ func TestSeedPreset(t *testing.T) {
 	}
 	if quality == nil || *quality != 0 {
 		t.Errorf("vbr_quality = %v, mau 0", quality)
+	}
+}
+
+// Preset video menghasilkan MP4 dengan batas resolusi yang menaik, dan
+// Terbaik tanpa batas. Audionya AAC mengikuti sample rate sumber.
+func TestSeedPresetVideo(t *testing.T) {
+	d := migrated(t)
+	presets := db.NewPresetRepository(d)
+
+	list, err := presets.List(context.Background(), false)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	want := map[string]int{"mp4_360": 360, "mp4_480": 480, "mp4_720": 720, "mp4_1080": 1080, "mp4_best": 0}
+	var order []string
+	for _, p := range list {
+		if !p.IsVideo() {
+			if p.MaxHeight != nil {
+				t.Errorf("preset audio %s punya max_height %d", p.ID, *p.MaxHeight)
+			}
+			continue
+		}
+		order = append(order, p.ID)
+		if p.Format != "mp4" || p.Codec != "aac" || p.SampleRate != nil {
+			t.Errorf("preset %s = %s/%s/%v, mau mp4/aac/ikut sumber", p.ID, p.Format, p.Codec, p.SampleRate)
+		}
+		got := 0
+		if p.MaxHeight != nil {
+			got = *p.MaxHeight
+		}
+		if got != want[p.ID] {
+			t.Errorf("preset %s: max_height = %d, mau %d", p.ID, got, want[p.ID])
+		}
+	}
+	if strings.Join(order, ",") != "mp4_360,mp4_480,mp4_720,mp4_1080,mp4_best" {
+		t.Errorf("urutan preset video = %v", order)
 	}
 }
 

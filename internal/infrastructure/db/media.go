@@ -33,8 +33,8 @@ func (r *MediaRepository) Upsert(ctx context.Context, info *domain.MediaInfo, ra
 		INSERT INTO media_items
 			(source_key, title, uploader, duration_ms, thumbnail_url,
 			 source_codec, sample_rate, is_live, raw_json, fetched_at,
-			 track, artist, album, release_year)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 track, artist, album, release_year, video_height)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(source_key) DO UPDATE SET
 			title         = excluded.title,
 			uploader      = excluded.uploader,
@@ -48,13 +48,14 @@ func (r *MediaRepository) Upsert(ctx context.Context, info *domain.MediaInfo, ra
 			track         = excluded.track,
 			artist        = excluded.artist,
 			album         = excluded.album,
-			release_year  = excluded.release_year`,
+			release_year  = excluded.release_year,
+			video_height  = excluded.video_height`,
 		info.SourceKey, info.Title, nullString(info.Uploader), info.DurationMS,
 		nullString(info.ThumbnailURL), nullString(info.SourceCodec),
 		nullInt(info.SampleRate), boolToInt(info.IsLive), nullString(rawJSON),
 		formatTime(r.now()),
 		nullString(info.Track), nullString(info.Artist), nullString(info.Album),
-		nullInt(info.ReleaseYear))
+		nullInt(info.ReleaseYear), nullInt(info.VideoHeight))
 	if err != nil {
 		return fmt.Errorf("simpan metadata: %w", err)
 	}
@@ -80,16 +81,17 @@ func (r *MediaRepository) Get(ctx context.Context, sourceKey string) (*domain.Me
 		artist     sql.NullString
 		album      sql.NullString
 		year       sql.NullInt64
+		height     sql.NullInt64
 	)
 
 	err := r.db.Read().QueryRowContext(ctx, `
 		SELECT source_key, title, uploader, duration_ms, thumbnail_url,
 		       source_codec, sample_rate, is_live, fetched_at,
-		       track, artist, album, release_year
+		       track, artist, album, release_year, video_height
 		FROM media_items WHERE source_key = ?`, sourceKey).
 		Scan(&info.SourceKey, &info.Title, &uploader, &durationMS, &thumbnail,
 			&codec, &sampleRate, &isLive, &fetchedAt,
-			&track, &artist, &album, &year)
+			&track, &artist, &album, &year, &height)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
@@ -117,6 +119,7 @@ func (r *MediaRepository) Get(ctx context.Context, sourceKey string) (*domain.Me
 	info.Artist = artist.String
 	info.Album = album.String
 	info.ReleaseYear = int(year.Int64)
+	info.VideoHeight = int(height.Int64)
 
 	return &info, true, nil
 }

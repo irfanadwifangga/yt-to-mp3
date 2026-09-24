@@ -16,6 +16,11 @@ type MediaInfo struct {
 	SampleRate   int           `json:"sample_rate"`
 	IsLive       bool          `json:"is_live"`
 
+	// VideoHeight adalah resolusi video tertinggi yang ditawarkan sumber,
+	// nol bila tidak diketahui. UI memakainya untuk menandai pilihan
+	// kualitas yang melebihi sumber.
+	VideoHeight int `json:"video_height,omitempty"`
+
 	// Data rilis dari katalog YouTube Music. Hanya terisi untuk video yang
 	// terhubung ke katalog musik; kosong untuk unggahan biasa. Tahun unggah
 	// sengaja tidak dipakai sebagai pengganti ReleaseYear: video lagu tahun

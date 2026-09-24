@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, MAX_TAG_LENGTH, type Job, type Metadata, type Preset } from "./api";
+import {
+  api,
+  ApiError,
+  MAX_TAG_LENGTH,
+  type Job,
+  type Metadata,
+  type Preset,
+  type PresetKind,
+} from "./api";
 import { Cover } from "./Cover";
-import { CloseIcon, FolderIcon } from "./icons";
+import { CloseIcon, FolderIcon, MusicIcon, VideoIcon } from "./icons";
 import { t } from "./i18n";
 import { formatDuration, formatTime, messageFor, presetLabel } from "./messages";
 
@@ -17,6 +25,15 @@ const YOUTUBE_URL =
 
 /** Jeda setelah berhenti mengetik sebelum analisis berjalan. */
 const TYPE_DELAY_MS = 600;
+
+/**
+ * Resolusi video yang dipilih bila preset bawaan bukan video. 1080p adalah
+ * resolusi tertinggi yang YouTube sajikan dalam H.264, jadi hasilnya cukup
+ * disalin tanpa encode ulang yang lambat.
+ */
+const DEFAULT_VIDEO_HEIGHT = 1080;
+
+const KINDS: readonly PresetKind[] = ["audio", "video"];
 
 interface Props {
   /**
@@ -40,6 +57,10 @@ interface Props {
 export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   const [url, setUrl] = useState("");
   const [presetId, setPresetId] = useState("");
+  // Jenis keluaran yang dipilih; null berarti mengikuti preset bawaan.
+  // Sengaja bertahan setelah konversi: pengguna yang sedang mengambil video
+  // biasanya mengambil video lagi untuk tautan berikutnya.
+  const [kind, setKind] = useState<PresetKind | null>(null);
   const [result, setResult] = useState<Metadata | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Kode error disimpan terpisah dari teksnya supaya kegagalan karena
@@ -57,8 +78,57 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   // menampilkan pratinjau video yang salah.
   const analyzed = useRef("");
 
+  const kindOf = (id: string) => presets.find((p) => p.id === id)?.kind;
+  const activeKind: PresetKind = kind ?? kindOf(defaultPreset) ?? "audio";
+  const choices = presets.filter((p) => p.kind === activeKind);
+  const kinds = KINDS.filter((k) => presets.some((p) => p.kind === k));
+  const sourceHeight = result?.video_height ?? 0;
+
+  /** Preset awal untuk satu jenis: preset bawaan bila jenisnya sama. */
+  function defaultFor(k: PresetKind): string {
+    const fallback = presets.find((p) => p.id === defaultPreset && p.kind === k);
+    if (fallback) return fallback.id;
+    const ofKind = presets.filter((p) => p.kind === k);
+    if (k === "video") {
+      // Resolusi setinggi mungkin sampai 1080p, tetapi tidak melebihi
+      // sumber: pilihan 1080p untuk video 480p hanya membingungkan.
+      const target =
+        sourceHeight > 0 ? Math.min(DEFAULT_VIDEO_HEIGHT, sourceHeight) : DEFAULT_VIDEO_HEIGHT;
+      const capped = ofKind
+        .filter((p) => p.max_height && p.max_height <= target)
+        .sort((a, b) => (b.max_height ?? 0) - (a.max_height ?? 0));
+      if (capped[0]) return capped[0].id;
+    }
+    return ofKind[0]?.id ?? "";
+  }
+
   const selected =
-    presetId || presets.find((p) => p.id === defaultPreset)?.id || presets[0]?.id || "";
+    presetId && kindOf(presetId) === activeKind ? presetId : defaultFor(activeKind);
+  const selectedPreset = presets.find((p) => p.id === selected);
+
+  function chooseKind(k: PresetKind) {
+    setKind(k);
+    setPresetId("");
+  }
+
+  /** Label pilihan kualitas beserta perbandingannya dengan sumber. */
+  function qualityLabel(p: Preset): string {
+    const base = presetLabel(p);
+    if (p.kind !== "video" || sourceHeight <= 0) return base;
+    if (!p.max_height) return `${base} (${sourceHeight}p)`;
+    if (p.max_height > sourceHeight) {
+      return `${base} — ${t("capture.aboveSource", { height: sourceHeight })}`;
+    }
+    return base;
+  }
+
+  // YouTube tidak menyajikan H.264 di atas 1080p, jadi video yang lebih
+  // tinggi pasti di-encode ulang: jauh lebih lama dan membebani CPU.
+  const outputHeight =
+    selectedPreset?.kind === "video" && sourceHeight > 0
+      ? Math.min(selectedPreset.max_height ?? sourceHeight, sourceHeight)
+      : 0;
+  const slowEncode = outputHeight > DEFAULT_VIDEO_HEIGHT;
 
   async function analyze(target: string) {
     const link = target.trim();
@@ -320,6 +390,8 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
                     {t("capture.tagRestore")}
                   </button>
                 </>
+              ) : activeKind === "video" ? (
+                t("capture.tagHintVideo")
               ) : (
                 t("capture.tagHint")
               )}
@@ -327,12 +399,16 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
             <p className="preview-meta">
               <span>{result.uploader || t("capture.unknown")}</span>
               <span className="mono">{formatDuration(result.duration_ms)}</span>
-              {result.source_codec && (
-                <span className="mono">
-                  {result.source_codec}
-                  {result.sample_rate > 0 && ` · ${result.sample_rate / 1000} kHz`}
-                </span>
-              )}
+              {activeKind === "video"
+                ? sourceHeight > 0 && (
+                    <span className="mono">{t("capture.sourceMax", { height: sourceHeight })}</span>
+                  )
+                : result.source_codec && (
+                    <span className="mono">
+                      {result.source_codec}
+                      {result.sample_rate > 0 && ` · ${result.sample_rate / 1000} kHz`}
+                    </span>
+                  )}
             </p>
 
             {previous && (
@@ -351,13 +427,31 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
             )}
 
             <div className="preview-actions">
+              {kinds.length > 1 && (
+                <div className="kind-switch" role="group" aria-label={t("capture.kind")}>
+                  {kinds.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className="kind-option"
+                      aria-pressed={activeKind === k}
+                      onClick={() => chooseKind(k)}>
+                      {k === "video" ? <VideoIcon /> : <MusicIcon />}
+                      {k === "video" ? t("capture.kindVideo") : t("capture.kindAudio")}
+                      <span className="kind-format">
+                        {presets.find((p) => p.kind === k)?.format.toUpperCase()}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <select
                 value={selected}
                 onChange={(e) => setPresetId(e.target.value)}
                 aria-label={t("capture.preset")}>
-                {presets.map((p) => (
+                {choices.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {presetLabel(p)}
+                    {qualityLabel(p)}
                   </option>
                 ))}
               </select>
@@ -376,6 +470,11 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
                 {t("capture.clear")}
               </button>
             </div>
+            {slowEncode && (
+              <p className="hint warn" role="note">
+                {t("capture.slowEncode", { height: outputHeight })}
+              </p>
+            )}
           </div>
         </div>
       )}

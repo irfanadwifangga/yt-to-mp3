@@ -17,8 +17,21 @@ const LINK = "https://www.youtube.com/watch?v=fJ9rUzIMcZQ";
 const OTHER_LINK = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 
 const presets: Preset[] = [
-  { id: "mp3_standard", label: "Standard", format: "mp3", mode: "cbr", bitrate_kbps: 192, channels: 2 },
-  { id: "mp3_high", label: "High", format: "mp3", mode: "cbr", bitrate_kbps: 320, channels: 2 },
+  { id: "mp3_standard", label: "Standard", kind: "audio", format: "mp3", mode: "cbr", bitrate_kbps: 192, channels: 2 },
+  { id: "mp3_high", label: "High", kind: "audio", format: "mp3", mode: "cbr", bitrate_kbps: 320, channels: 2 },
+  ...[360, 720, 1080].map(
+    (h): Preset => ({
+      id: `mp4_${h}`,
+      label: `${h}p`,
+      kind: "video",
+      format: "mp4",
+      mode: "cbr",
+      bitrate_kbps: 192,
+      channels: 2,
+      max_height: h,
+    }),
+  ),
+  { id: "mp4_best", label: "Best", kind: "video", format: "mp4", mode: "cbr", bitrate_kbps: 192, channels: 2 },
 ];
 
 function metadata(over: Partial<Metadata> = {}): Metadata {
@@ -31,6 +44,7 @@ function metadata(over: Partial<Metadata> = {}): Metadata {
     thumbnail_url: "",
     source_codec: "opus",
     sample_rate: 48_000,
+    video_height: 1080,
     suggested_title: "Bohemian Rhapsody",
     suggested_artist: "Queen",
     previous_conversions: [],
@@ -51,10 +65,10 @@ const queuedJob: Job = {
   created_at: "2026-09-13T10:00:00Z",
 };
 
-function setup() {
+function setup(defaultPreset = "mp3_standard") {
   const onQueued = vi.fn();
   const user = userEvent.setup();
-  render(<Capture ready presets={presets} defaultPreset="mp3_standard" onQueued={onQueued} />);
+  render(<Capture ready presets={presets} defaultPreset={defaultPreset} onQueued={onQueued} />);
   // Label yang sama juga menamai section-nya, jadi dicari lewat peran.
   const input = screen.getByRole("textbox", { name: t("capture.label") });
   return { onQueued, user, input };
@@ -71,6 +85,9 @@ function deferred<T>() {
 
 const titleField = () => screen.findByLabelText<HTMLInputElement>(t("capture.tagTitle"));
 const artistField = () => screen.getByLabelText<HTMLInputElement>(t("capture.tagArtist"));
+const qualityField = () => screen.getByLabelText<HTMLSelectElement>(t("capture.preset"));
+const qualityOptions = () => [...qualityField().options].map((o) => o.textContent);
+const kindButton = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) });
 
 describe("Capture", () => {
   it("menganalisis tautan lengkap yang diketik, sekali saja", async () => {
@@ -198,5 +215,79 @@ describe("Capture", () => {
 
     await act(async () => slow.resolve(metadata()));
     expect((await titleField()).value).toBe("Never Gonna Give You Up");
+  });
+
+  it("beralih ke video dan hanya menawarkan kualitas video", async () => {
+    vi.mocked(api.metadata).mockResolvedValue(metadata());
+    vi.mocked(api.createJob).mockResolvedValue(queuedJob);
+    const { user, input } = setup();
+
+    await user.click(input);
+    await user.paste(LINK);
+    await titleField();
+
+    expect(kindButton(t("capture.kindAudio")).getAttribute("aria-pressed")).toBe("true");
+    expect(qualityOptions()).toEqual(["Standard — 192 kbps", "High — 320 kbps"]);
+
+    await user.click(kindButton(t("capture.kindVideo")));
+
+    expect(kindButton(t("capture.kindVideo")).getAttribute("aria-pressed")).toBe("true");
+    expect(qualityOptions()).toEqual(["360p", "720p", "1080p", `${t("preset.videoBest")} (1080p)`]);
+    // Tanpa preset video bawaan, pilihan awalnya 1080p: tertinggi yang
+    // masih H.264 sehingga cukup disalin.
+    expect(qualityField().value).toBe("mp4_1080");
+
+    await user.click(screen.getByRole("button", { name: t("capture.convert") }));
+    expect(api.createJob).toHaveBeenCalledWith(LINK, "mp4_1080", {
+      title: "Bohemian Rhapsody",
+      artist: "Queen",
+    });
+  });
+
+  it("tidak memilih resolusi di atas sumber dan menandainya", async () => {
+    vi.mocked(api.metadata).mockResolvedValue(metadata({ video_height: 720 }));
+    const { user, input } = setup();
+
+    await user.click(input);
+    await user.paste(LINK);
+    await titleField();
+    await user.click(kindButton(t("capture.kindVideo")));
+
+    expect(qualityField().value).toBe("mp4_720");
+    expect(qualityOptions()).toContain(`1080p — ${t("capture.aboveSource", { height: 720 })}`);
+    expect(screen.getByText(t("capture.sourceMax", { height: 720 }))).toBeTruthy();
+  });
+
+  it("memperingatkan encode ulang untuk video di atas 1080p", async () => {
+    vi.mocked(api.metadata).mockResolvedValue(metadata({ video_height: 2160 }));
+    const { user, input } = setup();
+
+    await user.click(input);
+    await user.paste(LINK);
+    await titleField();
+    await user.click(kindButton(t("capture.kindVideo")));
+
+    expect(screen.queryByText(t("capture.slowEncode", { height: 2160 }))).toBeNull();
+    await user.selectOptions(qualityField(), "mp4_best");
+    expect(screen.getByText(t("capture.slowEncode", { height: 2160 }))).toBeTruthy();
+  });
+
+  it("mulai dari video bila preset bawaan adalah video", async () => {
+    vi.mocked(api.metadata).mockResolvedValue(metadata());
+    const { user, input } = setup("mp4_720");
+
+    await user.click(input);
+    await user.paste(LINK);
+    await titleField();
+
+    expect(kindButton(t("capture.kindVideo")).getAttribute("aria-pressed")).toBe("true");
+    expect(qualityField().value).toBe("mp4_720");
+    // Judul dan artis masuk ke metadata video, bukan tag ID3.
+    await user.click(screen.getByRole("button", { name: t("capture.tagRestore") }));
+    expect(screen.getByText(t("capture.tagHintVideo"))).toBeTruthy();
+
+    // Kembali ke audio memakai preset audio pertama, bukan preset video.
+    await user.click(kindButton(t("capture.kindAudio")));
+    expect(qualityField().value).toBe("mp3_standard");
   });
 });

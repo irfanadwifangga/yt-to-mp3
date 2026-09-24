@@ -160,6 +160,8 @@ export interface Metadata {
   thumbnail_url: string;
   source_codec: string;
   sample_rate: number;
+  /** Resolusi video tertinggi sumber dalam satuan label "p"; 0 bila tidak diketahui. */
+  video_height: number;
   /** Tebakan tag yang rapi, misalnya tanpa "(Official Video)". */
   suggested_title: string;
   suggested_artist: string;
@@ -238,15 +240,21 @@ export interface Job {
   finished_at?: string;
 }
 
+export type PresetKind = "audio" | "video";
+
 export interface Preset {
   id: string;
   label: string;
+  kind: PresetKind;
   format: string;
   mode: string;
   bitrate_kbps?: number;
   vbr_quality?: number;
   sample_rate?: number;
   channels: number;
+  /** Batas resolusi video dalam satuan label "p"; kosong berarti tertinggi
+   *  yang tersedia. Hanya ada pada preset video. */
+  max_height?: number;
 }
 
 /** Sama dengan domain.MaxTagRunes di backend. */

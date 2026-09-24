@@ -389,14 +389,21 @@ func TestPresets(t *testing.T) {
 	var body struct {
 		Presets []struct {
 			ID         string `json:"id"`
+			Kind       string `json:"kind"`
 			SampleRate int    `json:"sample_rate"`
+			MaxHeight  int    `json:"max_height"`
 		} `json:"presets"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.Presets) != 1 || body.Presets[0].ID != "mp3_standard" {
+	if len(body.Presets) != 2 || body.Presets[0].ID != "mp3_standard" {
 		t.Fatalf("preset = %+v", body.Presets)
+	}
+	// UI mengelompokkan preset menurut kind dan menandai resolusi yang
+	// melebihi sumber lewat max_height; keduanya bagian kontrak.
+	if body.Presets[0].Kind != "audio" || body.Presets[1].Kind != "video" || body.Presets[1].MaxHeight != 720 {
+		t.Errorf("kind/max_height = %+v", body.Presets)
 	}
 	if body.Presets[0].SampleRate != 48000 {
 		t.Errorf("sample_rate = %d, mau 48000", body.Presets[0].SampleRate)

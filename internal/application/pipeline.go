@@ -15,8 +15,9 @@ import (
 )
 
 // Bobot fase pada progress keseluruhan. Unduhan mendominasi karena di
-// situlah waktu sebenarnya dihabiskan; transcode audio jauh lebih cepat
-// daripada mengambil berkasnya. Lihat docs planning "Model progress".
+// situlah waktu sebenarnya dihabiskan; transcode audio, dan video yang
+// cukup disalin, jauh lebih cepat daripada mengambil berkasnya. Lihat docs
+// planning "Model progress".
 const (
 	pctResolved    = 5
 	pctDownloaded  = 70
@@ -38,6 +39,17 @@ const (
 	convertFactor   = 1
 )
 
+// Video berukuran belasan kali audio, dan sumber tanpa H.264 harus
+// di-encode ulang, yang pada 4K bisa lebih lambat dari waktu nyata. Batas
+// audio akan memutus unduhan dan konversi video yang sebenarnya sehat.
+// Lihat planning §13.
+const (
+	minVideoDownloadTime = 20 * time.Minute
+	minVideoConvertTime  = 15 * time.Minute
+	videoDownloadFactor  = 10
+	videoConvertFactor   = 6
+)
+
 // diskSafetyFactor menyisakan ruang untuk berkas sumber, hasil, dan sisa
 // sementara yang hidup bersamaan di puncak pemakaian.
 const diskSafetyFactor = 1.5
@@ -47,27 +59,37 @@ const diskSafetyFactor = 1.5
 // disajikan YouTube.
 const assumedSourceKbps = 160
 
+// assumedVideoHeight dipakai perkiraan disk untuk preset video tanpa batas
+// resolusi pada sumber yang resolusinya belum diketahui.
+const assumedVideoHeight = 1080
+
 // DownloadRequest adalah permintaan unduhan.
 type DownloadRequest struct {
 	SourceKey string
 	TempDir   string
 	Timeout   time.Duration
+
+	// Video meminta stream video beserta audionya. MaxHeight membatasi
+	// resolusinya; nol berarti tertinggi yang tersedia.
+	Video     bool
+	MaxHeight int
 }
 
 // DownloadOutcome menunjuk berkas hasil unduhan.
 type DownloadOutcome struct {
-	AudioPath string
+	// MediaPath berisi audio saja, atau video beserta audionya.
+	MediaPath string
 	CoverPath string
 }
 
-// Downloader mengambil audio sumber.
+// Downloader mengambil media sumber.
 type Downloader interface {
 	Download(ctx context.Context, req DownloadRequest, onProgress func(*float64)) (*DownloadOutcome, error)
 }
 
 // TranscodeRequest adalah permintaan konversi.
 type TranscodeRequest struct {
-	AudioPath  string
+	MediaPath  string
 	CoverPath  string
 	OutputPath string
 	Preset     *domain.Preset
@@ -75,14 +97,15 @@ type TranscodeRequest struct {
 	Timeout    time.Duration
 }
 
-// Transcoder mengubah audio sumber menjadi format keluaran.
+// Transcoder mengubah media sumber menjadi format keluaran.
 type Transcoder interface {
 	Transcode(ctx context.Context, req TranscodeRequest, onProgress func(*float64)) error
 }
 
-// Verifier memastikan berkas hasil layak dianggap sukses.
+// Verifier memastikan berkas hasil layak dianggap sukses. Berkas video
+// wajib memuat stream video selain audio.
 type Verifier interface {
-	Verify(ctx context.Context, path string, expected time.Duration) error
+	Verify(ctx context.Context, path string, expected time.Duration, kind domain.PresetKind) error
 }
 
 // OutputStore mengelola berkas sementara dan memberi akses ke direktori
@@ -218,16 +241,22 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	if err := p.preflightDisk(out, media, preset); err != nil {
 		return err
 	}
+	limits := limitsFor(preset, media.Duration)
 
 	// Unduhan
 	if err := p.transition(ctx, job.ID, domain.StatusResolving, domain.StatusDownloading); err != nil {
 		return err
 	}
-	downloaded, err := p.downloader.Download(ctx, DownloadRequest{
+	req := DownloadRequest{
 		SourceKey: job.SourceKey,
 		TempDir:   tempDir,
-		Timeout:   phaseTimeout(media.Duration, downloadFactor, minDownloadTime),
-	}, func(pct *float64) {
+		Timeout:   limits.download,
+		Video:     preset.IsVideo(),
+	}
+	if preset.MaxHeight != nil {
+		req.MaxHeight = *preset.MaxHeight
+	}
+	downloaded, err := p.downloader.Download(ctx, req, func(pct *float64) {
 		p.publishProgress(job.ID, phaseDownload, scale(pct, pctResolved, pctDownloaded))
 	})
 	if err != nil {
@@ -254,12 +283,12 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	}()
 
 	err = p.transcoder.Transcode(ctx, TranscodeRequest{
-		AudioPath:  downloaded.AudioPath,
+		MediaPath:  downloaded.MediaPath,
 		CoverPath:  downloaded.CoverPath,
 		OutputPath: outTmp,
 		Preset:     preset,
 		Media:      media,
-		Timeout:    phaseTimeout(media.Duration, convertFactor, minConvertTime),
+		Timeout:    limits.convert,
 	}, func(pct *float64) {
 		p.publishProgress(job.ID, phaseConvert, scale(pct, pctDownloaded, pctConverted))
 	})
@@ -275,7 +304,7 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 
 	verifyCtx, cancel := context.WithTimeout(ctx, verifyTimeout)
 	defer cancel()
-	if err := p.verifier.Verify(verifyCtx, outTmp, media.Duration); err != nil {
+	if err := p.verifier.Verify(verifyCtx, outTmp, media.Duration, preset.Kind); err != nil {
 		return err
 	}
 
@@ -369,6 +398,11 @@ func (p *Pipeline) preflightDisk(out OutputTarget, media *domain.MediaInfo, pres
 	if preset.BitrateKbps != nil {
 		kbps += *preset.BitrateKbps
 	}
+	if preset.IsVideo() {
+		// Sumber dan hasil sama-sama memuat video pada resolusi yang sama,
+		// jadi porsi videonya dihitung dua kali.
+		kbps += 2 * videoKbps(videoHeightFor(preset, media))
+	}
 	needed := uint64(seconds * float64(kbps) * 1000 / 8 * diskSafetyFactor)
 
 	if free < needed {
@@ -377,6 +411,61 @@ func (p *Pipeline) preflightDisk(out OutputTarget, media *domain.MediaInfo, pres
 				needed/(1<<20), free/(1<<20)))
 	}
 	return nil
+}
+
+// videoHeightFor memperkirakan resolusi yang akan diunduh: batas preset,
+// kecuali sumbernya sendiri lebih rendah.
+func videoHeightFor(preset *domain.Preset, media *domain.MediaInfo) int {
+	height := media.VideoHeight
+	if preset.MaxHeight != nil && (height <= 0 || *preset.MaxHeight < height) {
+		height = *preset.MaxHeight
+	}
+	if height <= 0 {
+		height = assumedVideoHeight
+	}
+	return height
+}
+
+// videoKbps adalah perkiraan atas bitrate video H.264 per resolusi.
+//
+// Nilainya sengaja di atas bitrate yang lazim disajikan YouTube: hasil
+// encode ulang CRF 20 dari VP9 atau AV1 lebih besar daripada sumbernya, dan
+// preflight yang terlalu optimistis hanya memindahkan kegagalan ke 95%.
+func videoKbps(height int) int {
+	switch {
+	case height <= 360:
+		return 1_000
+	case height <= 480:
+		return 1_500
+	case height <= 720:
+		return 3_000
+	case height <= 1080:
+		return 6_000
+	case height <= 1440:
+		return 16_000
+	default:
+		return 40_000
+	}
+}
+
+// phaseLimits adalah batas waktu unduhan dan konversi satu job.
+type phaseLimits struct {
+	download time.Duration
+	convert  time.Duration
+}
+
+// limitsFor menurunkan batas waktu dari durasi media dan jenis preset.
+func limitsFor(preset *domain.Preset, duration time.Duration) phaseLimits {
+	if preset.IsVideo() {
+		return phaseLimits{
+			download: phaseTimeout(duration, videoDownloadFactor, minVideoDownloadTime),
+			convert:  phaseTimeout(duration, videoConvertFactor, minVideoConvertTime),
+		}
+	}
+	return phaseLimits{
+		download: phaseTimeout(duration, downloadFactor, minDownloadTime),
+		convert:  phaseTimeout(duration, convertFactor, minConvertTime),
+	}
 }
 
 // phaseTimeout menurunkan batas waktu dari durasi media.
@@ -461,6 +550,8 @@ func mimeFor(format string) string {
 		return "audio/flac"
 	case "wav":
 		return "audio/wav"
+	case "mp4":
+		return "video/mp4"
 	default:
 		return "application/octet-stream"
 	}

@@ -157,6 +157,11 @@ type metadataResponse struct {
 	SourceCodec  string `json:"source_codec"`
 	SampleRate   int    `json:"sample_rate"`
 
+	// VideoHeight adalah resolusi video tertinggi sumber dalam satuan label
+	// "p", nol bila tidak diketahui. UI menandai pilihan kualitas video yang
+	// melebihinya.
+	VideoHeight int `json:"video_height"`
+
 	// SuggestedTitle dan SuggestedArtist adalah tebakan tag yang rapi,
 	// misalnya tanpa "(Official Video)", untuk mengisi formulir awal.
 	SuggestedTitle  string `json:"suggested_title"`
@@ -202,6 +207,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		ThumbnailURL:        info.ThumbnailURL,
 		SourceCodec:         info.SourceCodec,
 		SampleRate:          info.SampleRate,
+		VideoHeight:         info.VideoHeight,
 		SuggestedTitle:      suggestedTitle,
 		SuggestedArtist:     suggestedArtist,
 		PreviousConversions: previous,

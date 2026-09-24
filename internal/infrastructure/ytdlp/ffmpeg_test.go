@@ -10,7 +10,7 @@ import (
 // bukan mencarinya sendiri lewat PATH.
 func TestDownloadArgsMenunjukFFmpeg(t *testing.T) {
 	const ffmpeg = `C:\Users\Nama Pengguna\tools\ffmpeg.exe`
-	args := downloadArgs("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "/tmp/job", ffmpeg)
+	args := downloadArgs("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "/tmp/job", ffmpeg, Selection{})
 
 	i := indexOf(args, "--ffmpeg-location")
 	if i == -1 || i+1 >= len(args) || args[i+1] != ffmpeg {

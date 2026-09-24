@@ -10,7 +10,10 @@
 
 ; Nama yang dilihat pengguna. Nama teknis (folder instalasi, nama exe, AppId)
 ; tetap yt-to-mp3 supaya pembaruan mengenali instalasi lama.
-#define DisplayName "Youtube To MP3 Converter"
+#define DisplayName "YouTube to MP3 & MP4"
+; Teks kotak centang memperlakukan & sebagai penanda tombol pintas, jadi di
+; sana & harus ditulis ganda supaya tampil apa adanya.
+#define DisplayNameLabel "YouTube to MP3 && MP4"
 
 #ifndef AppVersion
   #define AppVersion "0.0.0-dev"
@@ -62,10 +65,13 @@ Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignor
 ; meninggalkan dua shortcut untuk aplikasi yang sama.
 Type: files; Name: "{autoprograms}\yt-to-mp3.lnk"
 Type: files; Name: "{autodesktop}\yt-to-mp3.lnk"
+; Nama tampilan sebelum keluaran video MP4 ditambahkan.
+Type: files; Name: "{autoprograms}\Youtube To MP3 Converter.lnk"
+Type: files; Name: "{autodesktop}\Youtube To MP3 Converter.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#DisplayName}"; Filename: "{app}\yt-to-mp3.exe"
 Name: "{autodesktop}\{#DisplayName}"; Filename: "{app}\yt-to-mp3.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\yt-to-mp3.exe"; Description: "{cm:LaunchProgram,{#DisplayName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\yt-to-mp3.exe"; Description: "{cm:LaunchProgram,{#DisplayNameLabel}}"; Flags: nowait postinstall skipifsilent

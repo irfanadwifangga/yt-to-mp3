@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ import (
 // stem adalah nama dasar berkas unduhan di dalam direktori kerja job.
 const stem = "source"
 
-// Downloader mengambil audio sumber lewat yt-dlp.
+// Downloader mengambil media sumber lewat yt-dlp.
 type Downloader struct {
 	tools ToolProvider
 	log   *slog.Logger
@@ -34,23 +35,73 @@ type DownloadInput struct {
 	SourceKey string
 	TempDir   string
 	Timeout   time.Duration
+	Selection Selection
+}
+
+// Selection menentukan stream yang diunduh.
+type Selection struct {
+	// Video meminta stream video beserta audionya; tanpa itu hanya audio
+	// yang diunduh.
+	Video bool
+
+	// MaxHeight membatasi resolusi video dalam satuan label "p" YouTube,
+	// yaitu sisi terpendek bingkai. Nol berarti tertinggi yang tersedia.
+	MaxHeight int
 }
 
 // DownloadResult menunjuk berkas hasil unduhan.
 type DownloadResult struct {
-	AudioPath string
+	// MediaPath adalah audio untuk unduhan audio, atau video beserta
+	// audionya untuk unduhan video.
+	MediaPath string
 
-	// ThumbnailPath kosong bila sampul gagal diambil. Itu bukan kegagalan:
-	// berkas tanpa sampul tetap keluaran yang sah.
+	// ThumbnailPath kosong bila sampul gagal diambil atau tidak diminta. Itu
+	// bukan kegagalan: berkas tanpa sampul tetap keluaran yang sah.
 	ThumbnailPath string
+}
+
+// formatArgs memilih stream yang diunduh.
+func formatArgs(sel Selection) []string {
+	if !sel.Video {
+		return []string{
+			// Hanya trek audio yang diunduh. Tanpa ini yt-dlp mengambil
+			// stream video lengkap lalu membuangnya, sepuluh kali lipat
+			// bandwidth untuk hasil yang sama. Lihat ADR-015.
+			"-f", "bestaudio/best",
+
+			"--write-thumbnail",
+			"--convert-thumbnail", "jpg",
+		}
+	}
+
+	// Urutan kriteria: resolusi lebih dulu, supaya pilihan 720p memang
+	// menghasilkan 720p, lalu H.264 dan AAC. Keduanya codec yang dapat
+	// disalin apa adanya ke MP4 yang diputar di mana saja; sumber tanpa
+	// H.264 pada resolusi itu tetap diunduh lalu di-encode ulang oleh
+	// transcoder. Lihat planning §12.1.
+	res := "res"
+	if sel.MaxHeight > 0 {
+		// res:N berarti setinggi mungkin tetapi tidak melebihi N, atau yang
+		// terkecil bila sumber tidak punya resolusi serendah itu.
+		res = "res:" + strconv.Itoa(sel.MaxHeight)
+	}
+	return []string{
+		"-f", "bv*+ba/b",
+		"-S", res + ",vcodec:h264,acodec:aac",
+
+		// MKV menampung codec apa pun, jadi penggabungan video dan audio
+		// oleh yt-dlp tidak pernah gagal karena kombinasi codec. Wadah MP4
+		// akhirnya disusun transcoder.
+		"--merge-output-format", "mkv",
+	}
 }
 
 // downloadArgs menyusun argv unduhan.
 //
 // Flag hardening sama dengan jalur metadata: tanpa --ignore-config, berkas
 // yt-dlp.conf milik pengguna dapat menyuntikkan --exec.
-func downloadArgs(url, tempDir, ffmpegPath string) []string {
-	return []string{
+func downloadArgs(url, tempDir, ffmpegPath string, sel Selection) []string {
+	args := []string{
 		"--ignore-config",
 		"--no-exec",
 		"--no-playlist",
@@ -65,20 +116,15 @@ func downloadArgs(url, tempDir, ffmpegPath string) []string {
 		// setiap unduhan gagal. Menunjuk langsung ke FFmpeg yang sama
 		// menyamakan keduanya.
 		"--ffmpeg-location", ffmpegPath,
-
-		// Hanya trek audio yang diunduh. Tanpa ini yt-dlp mengambil stream
-		// video lengkap lalu membuangnya, sepuluh kali lipat bandwidth
-		// untuk hasil yang sama. Lihat ADR-015.
-		"-f", "bestaudio/best",
-
-		"--write-thumbnail",
-		"--convert-thumbnail", "jpg",
+	}
+	args = append(args, formatArgs(sel)...)
+	return append(args,
 		"--retries", "2",
 		"--socket-timeout", "30",
 		"-o", filepath.Join(tempDir, stem+".%(ext)s"),
 		"--", // akhiri parsing flag sebelum URL
 		url,
-	}
+	)
 }
 
 // Download menjalankan yt-dlp dan melaporkan kemajuannya.
@@ -105,11 +151,25 @@ func (d *Downloader) Download(
 
 	h, err := process.Start(runCtx, process.Spec{
 		Bin:  bin,
-		Args: downloadArgs(CanonicalURL(in.SourceKey), in.TempDir, ffmpegBin),
+		Args: downloadArgs(CanonicalURL(in.SourceKey), in.TempDir, ffmpegBin, in.Selection),
 	})
 	if err != nil {
 		return nil, domain.WrapError(domain.CodeDownloadFailed, domain.ClassTransient,
 			"jalankan yt-dlp", err)
+	}
+
+	// Unduhan video terdiri dari beberapa berkas yang dilaporkan dari dua
+	// pipa sekaligus, jadi penggabung progresnya dijaga mutex.
+	if in.Selection.Video {
+		var mu sync.Mutex
+		var parts partTracker
+		report := onProgress
+		onProgress = func(p Progress) {
+			mu.Lock()
+			p = parts.place(p)
+			mu.Unlock()
+			report(p)
+		}
 	}
 
 	// Kedua pipa wajib dikuras sampai habis: proses yang menulis ke pipa
@@ -153,9 +213,9 @@ func (d *Downloader) Download(
 
 // collectOutputs menemukan berkas hasil unduhan.
 //
-// Ekstensi audio tidak dapat ditebak lebih dulu karena bergantung pada
-// format yang dipilih yt-dlp (webm untuk Opus, m4a untuk AAC), jadi
-// direktori kerja dipindai.
+// Ekstensi tidak dapat ditebak lebih dulu karena bergantung pada format
+// yang dipilih yt-dlp (webm untuk Opus, m4a untuk AAC, mkv untuk video yang
+// digabung), jadi direktori kerja dipindai.
 func collectOutputs(tempDir string) (*DownloadResult, error) {
 	entries, err := os.ReadDir(tempDir)
 	if err != nil {
@@ -180,13 +240,18 @@ func collectOutputs(tempDir string) (*DownloadResult, error) {
 		case ".part", ".ytdl":
 			// sisa unduhan yang belum selesai, abaikan
 		default:
-			result.AudioPath = path
+			// Bagian video dan audio sebelum digabung bernama
+			// source.f137.mp4; yang dipakai hanya hasil gabungannya.
+			if strings.Contains(strings.TrimPrefix(name, stem+"."), ".") {
+				continue
+			}
+			result.MediaPath = path
 		}
 	}
 
-	if result.AudioPath == "" {
+	if result.MediaPath == "" {
 		return nil, domain.NewError(domain.CodeDownloadFailed, domain.ClassTransient,
-			fmt.Sprintf("berkas audio tidak ditemukan di %s", tempDir))
+			fmt.Sprintf("berkas media tidak ditemukan di %s", tempDir))
 	}
 	return &result, nil
 }

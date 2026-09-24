@@ -86,6 +86,38 @@ type rawMetadata struct {
 	Artists     []string `json:"artists"`
 	Album       string   `json:"album"`
 	ReleaseYear int      `json:"release_year"`
+
+	// Formats hanya dibaca untuk resolusi video tertinggi yang tersedia.
+	Formats []rawFormat `json:"formats"`
+}
+
+// rawFormat adalah subset satu entri formats keluaran yt-dlp.
+type rawFormat struct {
+	VCodec string `json:"vcodec"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+// maxVideoHeight mencari resolusi tertinggi di antara format bervideo,
+// dalam satuan label "p" YouTube.
+//
+// Labelnya adalah sisi terpendek bingkai, sama dengan cara yt-dlp
+// mengurutkan res: video vertikal 1080×1920 adalah 1080p, bukan 1920p.
+// Format tanpa video (audio saja dan storyboard) bervcodec "none" namun
+// storyboard tetap punya ukuran, jadi keduanya wajib disaring.
+func maxVideoHeight(formats []rawFormat) int {
+	highest := 0
+	for _, f := range formats {
+		if f.VCodec == "" || f.VCodec == "none" {
+			continue
+		}
+		side := f.Height
+		if f.Width > 0 && f.Width < side {
+			side = f.Width
+		}
+		highest = max(highest, side)
+	}
+	return highest
 }
 
 // Resolve mengambil metadata untuk satu source key.
@@ -154,6 +186,7 @@ func mediaFromRaw(sourceKey, url string, raw rawMetadata) *domain.MediaInfo {
 		Artist:       artist,
 		Album:        raw.Album,
 		ReleaseYear:  year,
+		VideoHeight:  maxVideoHeight(raw.Formats),
 	}
 }
 

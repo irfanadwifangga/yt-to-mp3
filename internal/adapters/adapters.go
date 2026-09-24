@@ -30,6 +30,7 @@ func (a Downloader) Download(
 		SourceKey: req.SourceKey,
 		TempDir:   req.TempDir,
 		Timeout:   req.Timeout,
+		Selection: ytdlp.Selection{Video: req.Video, MaxHeight: req.MaxHeight},
 	}, func(p ytdlp.Progress) {
 		onProgress(p.Percent())
 	})
@@ -37,7 +38,7 @@ func (a Downloader) Download(
 		return nil, err
 	}
 	return &application.DownloadOutcome{
-		AudioPath: res.AudioPath,
+		MediaPath: res.MediaPath,
 		CoverPath: res.ThumbnailPath,
 	}, nil
 }
@@ -55,7 +56,7 @@ func (a Transcoder) Transcode(
 	total := req.Media.Duration
 
 	return a.Inner.Transcode(ctx, ffmpeg.TranscodeInput{
-		AudioPath:  req.AudioPath,
+		MediaPath:  req.MediaPath,
 		CoverPath:  req.CoverPath,
 		OutputPath: req.OutputPath,
 		Preset:     req.Preset,

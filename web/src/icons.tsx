@@ -44,3 +44,22 @@ export function DownloadIcon() {
     </svg>
   );
 }
+
+export function MusicIcon() {
+  return (
+    <svg {...common}>
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </svg>
+  );
+}
+
+export function VideoIcon() {
+  return (
+    <svg {...common}>
+      <rect x="2" y="6" width="14" height="12" rx="2" />
+      <path d="m16 10 6-3v10l-6-3" />
+    </svg>
+  );
+}

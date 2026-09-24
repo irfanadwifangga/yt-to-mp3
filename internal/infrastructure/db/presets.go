@@ -23,8 +23,8 @@ func NewPresetRepository(d *DB) *PresetRepository {
 	return &PresetRepository{db: d}
 }
 
-const presetColumns = `id, label, format, codec, mode, bitrate_kbps, vbr_quality,
-	sample_rate, channels, extra_args, sort_order, deprecated`
+const presetColumns = `id, label, kind, format, codec, mode, bitrate_kbps, vbr_quality,
+	sample_rate, channels, max_height, extra_args, sort_order, deprecated`
 
 // List mengembalikan preset terurut. Preset usang disembunyikan dari UI
 // tetapi tetap dapat di-resolve lewat Get, supaya history lama tidak yatim.
@@ -74,11 +74,12 @@ func scanPreset(s scanner) (*domain.Preset, error) {
 		bitrate    sql.NullInt64
 		vbrQuality sql.NullInt64
 		sampleRate sql.NullInt64
+		maxHeight  sql.NullInt64
 		deprecated int
 	)
 
-	err := s.Scan(&p.ID, &p.Label, &p.Format, &p.Codec, &p.Mode,
-		&bitrate, &vbrQuality, &sampleRate, &p.Channels,
+	err := s.Scan(&p.ID, &p.Label, &p.Kind, &p.Format, &p.Codec, &p.Mode,
+		&bitrate, &vbrQuality, &sampleRate, &p.Channels, &maxHeight,
 		&p.ExtraArgs, &p.SortOrder, &deprecated)
 	if err != nil {
 		return nil, err
@@ -96,6 +97,11 @@ func scanPreset(s scanner) (*domain.Preset, error) {
 	if sampleRate.Valid {
 		v := int(sampleRate.Int64)
 		p.SampleRate = &v
+	}
+	// max_height NULL berarti resolusi tertinggi yang tersedia.
+	if maxHeight.Valid {
+		v := int(maxHeight.Int64)
+		p.MaxHeight = &v
 	}
 	p.Deprecated = deprecated != 0
 

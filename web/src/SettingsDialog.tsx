@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Health, type Preset, type Setting, type ToolProgress } from "./api";
 import { CloseIcon, FolderIcon } from "./icons";
 import { has, locale, setLocale, t, type Locale } from "./i18n";
-import { formatBytes, formatTime, messageFor, presetLabel } from "./messages";
+import { formatBytes, formatTime, messageFor, presetFullLabel } from "./messages";
 import { loadTheme, saveTheme, type Theme } from "./theme";
 
 export type SettingsSection =
@@ -245,7 +245,7 @@ function hintFor(key: string): string | undefined {
 function optionLabel(settingKey: string, option: string, presets: Preset[]): string {
   if (settingKey === "default_preset_id") {
     const preset = presets.find((p) => p.id === option);
-    if (preset) return presetLabel(preset);
+    if (preset) return presetFullLabel(preset);
   }
   const k = `settings.option.${settingKey}.${option}`;
   return has(k) ? t(k) : option;

@@ -34,9 +34,20 @@ export function statusLabel(status: string): string {
   return has(key) ? t(key) : status;
 }
 
-/** Label preset beserta kualitasnya, dipakai kartu utama dan setelan. */
+/**
+ * Label kualitas sebuah preset, dipakai pilihan kualitas di kartu utama.
+ * Jenisnya (audio atau video) sudah terlihat dari pilihan di sebelahnya.
+ */
 export function presetLabel(p: Preset): string {
+  if (p.kind === "video") {
+    return p.max_height ? `${p.max_height}p` : t("preset.videoBest");
+  }
   return `${p.label} — ${p.bitrate_kbps ? `${p.bitrate_kbps} kbps` : "VBR"}`;
+}
+
+/** Label preset beserta formatnya, untuk tempat yang mencampur audio dan video. */
+export function presetFullLabel(p: Preset): string {
+  return `${p.format.toUpperCase()} · ${presetLabel(p)}`;
 }
 
 export function formatDuration(ms: number): string {

@@ -87,6 +87,7 @@ func newFakeResolver() *fakeResolver {
 			DurationMS:  212000,
 			SourceCodec: "opus",
 			SampleRate:  48000,
+			VideoHeight: 1080,
 		},
 	}
 }
@@ -131,9 +132,13 @@ type fakePresets struct {
 func newFakePresets() *fakePresets {
 	rate := 48000
 	bitrate := 192
+	height := 720
 	return &fakePresets{presets: []domain.Preset{{
-		ID: "mp3_standard", Label: "Standard", Format: "mp3", Codec: "libmp3lame",
-		Mode: "cbr", BitrateKbps: &bitrate, SampleRate: &rate, Channels: 2,
+		ID: "mp3_standard", Label: "Standard", Kind: domain.KindAudio, Format: "mp3",
+		Codec: "libmp3lame", Mode: "cbr", BitrateKbps: &bitrate, SampleRate: &rate, Channels: 2,
+	}, {
+		ID: "mp4_720", Label: "720p", Kind: domain.KindVideo, Format: "mp4",
+		Codec: "aac", Mode: "cbr", BitrateKbps: &bitrate, Channels: 2, MaxHeight: &height,
 	}}}
 }
 

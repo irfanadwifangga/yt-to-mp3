@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="web/public/icon-192.png" width="96" height="96" alt="Youtube To MP3 Converter icon">
+  <img src="web/public/icon-192.png" width="96" height="96" alt="YouTube to MP3 & MP4 icon">
 </p>
 
-<h1 align="center">Youtube To MP3 Converter</h1>
+<h1 align="center">YouTube to MP3 &amp; MP4</h1>
 
 <p align="center">
-  Turn YouTube audio into tagged MP3 files, entirely on your own computer.<br>
-  Ubah audio YouTube menjadi berkas MP3 lengkap dengan tag, sepenuhnya di komputermu sendiri.
+  Turn YouTube videos into tagged MP3 audio or MP4 video, entirely on your own computer.<br>
+  Ubah video YouTube menjadi audio MP3 atau video MP4 lengkap dengan tag, sepenuhnya di komputermu sendiri.
 </p>
 
 <p align="center">
@@ -19,9 +19,10 @@
 
 ## English
 
-Youtube To MP3 Converter is a desktop app that runs locally: paste a YouTube link, check the preview, and get an MP3 with the title, artist, cover art, and (for YouTube Music tracks) album and release year already filled in. Nothing is uploaded to a cloud service, and there is no account to create.
+YouTube to MP3 & MP4 is a desktop app that runs locally: paste a YouTube link, check the preview, and get an MP3 with the title, artist, cover art, and (for YouTube Music tracks) album and release year already filled in, or an MP4 video from 360p up to the best resolution available. Nothing is uploaded to a cloud service, and there is no account to create.
 
 - **Paste and go** — analysis starts as soon as the link is complete.
+- **Audio or video** — MP3 in five quality levels, or MP4 (H.264 + AAC) that plays on any device.
 - **Clean tags** — title and artist suggestions without clutter like `(Official Video)`, editable before converting.
 - **A real queue** — live progress, cancel, automatic retries, and a history of finished files.
 - **Its own window on Windows**, with a one-click installer and no admin rights required.
@@ -31,9 +32,10 @@ Read the [full documentation](docs/README.en.md) for installation, usage, develo
 
 ## Bahasa Indonesia
 
-Youtube To MP3 Converter adalah aplikasi desktop yang berjalan lokal: tempel tautan YouTube, periksa pratinjaunya, lalu dapatkan MP3 dengan judul, artis, sampul, dan (untuk lagu YouTube Music) album serta tahun rilis yang sudah terisi. Tidak ada yang diunggah ke layanan cloud, dan tidak perlu membuat akun.
+YouTube to MP3 & MP4 adalah aplikasi desktop yang berjalan lokal: tempel tautan YouTube, periksa pratinjaunya, lalu dapatkan MP3 dengan judul, artis, sampul, dan (untuk lagu YouTube Music) album serta tahun rilis yang sudah terisi, atau video MP4 dari 360p sampai resolusi terbaik yang tersedia. Tidak ada yang diunggah ke layanan cloud, dan tidak perlu membuat akun.
 
 - **Tempel dan jalan** — analisis dimulai begitu tautannya lengkap.
+- **Audio atau video** — MP3 dalam lima tingkat kualitas, atau MP4 (H.264 + AAC) yang bisa diputar di perangkat apa pun.
 - **Tag yang rapi** — saran judul dan artis tanpa embel-embel seperti `(Official Video)`, bisa disunting sebelum konversi.
 - **Antrean sungguhan** — progress live, pembatalan, percobaan ulang otomatis, dan riwayat berkas yang selesai.
 - **Jendela sendiri di Windows**, dengan installer sekali klik tanpa hak admin.
