@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, type Health, type Preset, type Setting, type ToolProgress } from "./api";
-import { CloseIcon, FolderIcon } from "./icons";
+import {
+  api,
+  ApiError,
+  type Health,
+  type Preset,
+  type PresetKind,
+  type Setting,
+  type ToolProgress
+} from "./api";
+import { CloseIcon, FolderIcon, MusicIcon, VideoIcon } from "./icons";
 import { has, locale, setLocale, t, type Locale } from "./i18n";
-import { formatBytes, formatTime, messageFor, presetFullLabel } from "./messages";
+import { formatBytes, formatHint, formatTime, messageFor, presetFullLabel, presetLabel } from "./messages";
 import { loadTheme, saveTheme, type Theme } from "./theme";
 
 export type SettingsSection =
@@ -228,6 +236,93 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
   );
 }
 
+/* Pemilih preset bawaan ---------------------------------------------------- */
+
+const PRESET_KINDS: readonly PresetKind[] = ["audio", "video"];
+
+/** Resolusi video bawaan saat berpindah ke video, sama dengan kartu tangkap. */
+const DEFAULT_VIDEO_HEIGHT = 1080;
+
+interface PresetPickerProps {
+  id: string;
+  value: string;
+  presets: Preset[];
+  describedBy?: string;
+  onChange: (value: string) => void;
+}
+
+/**
+ * Preset bawaan dipilih bertahap seperti di kartu tangkap: jenis, format,
+ * lalu kualitas. Satu daftar berisi puluhan kombinasi format dan kualitas
+ * sulit dipindai, dan audio bercampur dengan video.
+ */
+function PresetPicker({ id, value, presets, describedBy, onChange }: PresetPickerProps) {
+  const current = presets.find((p) => p.id === value);
+  const kind: PresetKind = current?.kind ?? "audio";
+  const kinds = PRESET_KINDS.filter((k) => presets.some((p) => p.kind === k));
+  // Format mengikuti urutan preset dari server, jadi MP3 dan MP4 di depan.
+  const formats = [...new Set(presets.filter((p) => p.kind === kind).map((p) => p.format))];
+  const format = current?.format ?? formats[0] ?? "";
+  const choices = presets.filter((p) => p.kind === kind && p.format === format);
+
+  /** Preset pertama yang masuk akal untuk jenis dan format tertentu. */
+  function firstOf(k: PresetKind, f?: string): string {
+    const candidates = presets.filter((p) => p.kind === k && (!f || p.format === f));
+    const video = k === "video" ? candidates.find((p) => p.max_height === DEFAULT_VIDEO_HEIGHT) : undefined;
+    return (video ?? candidates[0])?.id ?? "";
+  }
+
+  return (
+    <div className="preset-picker">
+      <div className="preset-picker-row">
+        {kinds.length > 1 && (
+          <div className="kind-switch" role="group" aria-label={t("capture.kind")}>
+            {kinds.map((k) => (
+              <button
+                key={k}
+                type="button"
+                className="kind-option"
+                aria-pressed={kind === k}
+                onClick={() => k !== kind && onChange(firstOf(k))}>
+                {k === "video" ? <VideoIcon /> : <MusicIcon />}
+                {k === "video" ? t("capture.kindVideo") : t("capture.kindAudio")}
+              </button>
+            ))}
+          </div>
+        )}
+        <select
+          id={id}
+          className="preset-format"
+          value={format}
+          onChange={(e) => onChange(firstOf(kind, e.target.value))}
+          aria-label={t("capture.format")}
+          aria-describedby={describedBy}>
+          {formats.map((f) => (
+            <option key={f} value={f}>
+              {f.toUpperCase()}
+            </option>
+          ))}
+        </select>
+        {/* Format dengan satu pilihan, seperti WAV, tidak butuh pilihan kualitas. */}
+        {choices.length > 1 && (
+          <select
+            className="preset-quality"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            aria-label={t("capture.preset")}>
+            {choices.map((p) => (
+              <option key={p.id} value={p.id}>
+                {presetLabel(p)}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {format && <p className="hint">{formatHint(format)}</p>}
+    </div>
+  );
+}
+
 /* Field setelan -------------------------------------------------------- */
 
 function labelFor(key: string): string {
@@ -266,7 +361,12 @@ function Field({ setting, value, dirty, invalid, presets, onChange }: FieldProps
   const hintId = hint ? `${id}-hint` : undefined;
 
   let control: React.ReactNode;
-  switch (setting.kind) {
+  switch (setting.key === "default_preset_id" && presets.length > 0 ? "preset" : setting.kind) {
+    case "preset":
+      control = (
+        <PresetPicker id={id} value={value} presets={presets} describedBy={hintId} onChange={onChange} />
+      );
+      break;
     case "path":
       control = <PathControl id={id} value={value} describedBy={hintId} onChange={onChange} />;
       break;
