@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -404,5 +405,75 @@ func TestToolServiceInstallJatuhKeManifest(t *testing.T) {
 	}
 	if len(src.pinned) != 1 {
 		t.Errorf("yt-dlp tanpa dukungan pembaruan tidak memakai manifest: %v", src.pinned)
+	}
+}
+
+// blockingSource menahan pemasangan sampai dilepas, untuk menguji apakah
+// pemasangan tool berbeda benar-benar berjalan bersamaan.
+type blockingSource struct {
+	*fakeUpdateSource
+	started chan string
+	release chan struct{}
+}
+
+func (b *blockingSource) InstallLatest(_ context.Context, name string) (string, error) {
+	b.started <- name
+	<-b.release
+	return "1.0", nil
+}
+
+type syncStore struct {
+	mu    sync.Mutex
+	state application.ToolUpdateState
+}
+
+func (s *syncStore) Load() (application.ToolUpdateState, error) {
+	return application.ToolUpdateState{}, nil
+}
+func (s *syncStore) Save(st application.ToolUpdateState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state = st
+	return nil
+}
+
+// yt-dlp harus bisa dipasang selagi FFmpeg masih diunduh. Kedua versi yang
+// baru dipasang juga harus sama-sama tersimpan.
+func TestToolServiceInstallToolBerbedaBersamaan(t *testing.T) {
+	enabled := true
+	_, fake, _, _ := newToolFixture(&enabled)
+	fake.updatable = map[string]bool{"ffmpeg": true, "yt-dlp": true}
+	src := &blockingSource{fakeUpdateSource: fake, started: make(chan string, 2), release: make(chan struct{})}
+	store := &syncStore{}
+	svc := application.NewToolService(src, store, func() bool { return true }, discard())
+	ctx := context.Background()
+
+	done := make(chan error, 2)
+	go func() { done <- svc.Install(ctx, "ffmpeg") }()
+	if got := <-src.started; got != "ffmpeg" {
+		t.Fatalf("mulai = %q, mau ffmpeg", got)
+	}
+
+	go func() { done <- svc.Install(ctx, "yt-dlp") }()
+	select {
+	case got := <-src.started:
+		if got != "yt-dlp" {
+			t.Fatalf("mulai = %q, mau yt-dlp", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pemasangan yt-dlp tertahan menunggu FFmpeg selesai")
+	}
+
+	close(src.release)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatalf("Install() error = %v", err)
+		}
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.state.Latest["ffmpeg"] != "1.0" || store.state.Latest["yt-dlp"] != "1.0" {
+		t.Errorf("tersimpan = %v, mau kedua tool tercatat", store.state.Latest)
 	}
 }

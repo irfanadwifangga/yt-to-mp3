@@ -501,15 +501,20 @@ function PathControl({ id, value, describedBy, onChange }: PathProps) {
 const PROGRESS_POLL_MS = 400;
 
 function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
+  // Kunci tindakan yang sedang berjalan: nama tool, atau "check". Beberapa
+  // tool boleh dipasang bersamaan, misalnya yt-dlp selagi FFmpeg yang jauh
+  // lebih besar masih diunduh; server mengunci per tool.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState<string | undefined>();
   const [progress, setProgress] = useState<Record<string, ToolProgress>>({});
 
+  const installing = [...busy].some((k) => k !== "check");
+
   // Pemasangan berjalan di dalam satu request panjang, jadi kemajuannya
   // dibaca terpisah. Tanpa ini unduhan FFmpeg ratusan MB terlihat macet.
   useEffect(() => {
-    if (busy === null || busy === "check") return;
+    if (!installing) return;
     let alive = true;
     const timer = setInterval(() => {
       api
@@ -522,7 +527,7 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
       clearInterval(timer);
       setProgress({});
     };
-  }, [busy]);
+  }, [installing]);
 
   useEffect(() => {
     api
@@ -532,7 +537,7 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
   }, []);
 
   async function run(key: string, failure: string, fn: () => Promise<{ checked_at?: string }>) {
-    setBusy(key);
+    setBusy((prev) => new Set(prev).add(key));
     setError(null);
     try {
       const res = await fn();
@@ -541,7 +546,11 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
     } catch (err) {
       setError(messageFor(err, failure));
     } finally {
-      setBusy(null);
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
   }
 
@@ -557,7 +566,7 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
       )}
       <ul className="tools">
         {Object.entries(health.tools).map(([name, tool]) => (
-          <li key={name} aria-busy={busy === name}>
+          <li key={name} aria-busy={busy.has(name)}>
             <span className={tool.available ? (tool.update_available ? "dot warn" : "dot ok") : "dot warn"} />
             <span className="tool-name">{name}</span>
             <span className="mono tool-version">
@@ -569,11 +578,11 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
             <ToolAction
               name={name}
               tool={tool}
-              busy={busy}
+              busy={busy.has(name)}
               onInstall={() => void run(name, t("tools.installFailed"), () => api.installTool(name))}
               onUpdate={() => void run(name, t("tools.updateFailed"), () => api.updateTool(name))}
             />
-            {busy === name && progress[name] && <ToolProgressBar progress={progress[name]} />}
+            {busy.has(name) && progress[name] && <ToolProgressBar progress={progress[name]} />}
           </li>
         ))}
       </ul>
@@ -586,9 +595,9 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
         <button
           type="button"
           className="btn small"
-          disabled={busy !== null}
+          disabled={busy.has("check")}
           onClick={() => void run("check", t("tools.checkFailed"), () => api.checkToolUpdates())}>
-          {busy === "check" ? t("tools.checking") : t("tools.checkNow")}
+          {busy.has("check") ? t("tools.checking") : t("tools.checkNow")}
         </button>
       </div>
     </>
@@ -630,7 +639,8 @@ function ToolProgressBar({ progress }: { progress: ToolProgress }) {
 interface ToolActionProps {
   name: string;
   tool: Health["tools"][string];
-  busy: string | null;
+  /** Tool ini sedang dipasang atau diperbarui. */
+  busy: boolean;
   onInstall: () => void;
   onUpdate: () => void;
 }
@@ -644,8 +654,8 @@ function ToolAction({ name, tool, busy, onInstall, onUpdate }: ToolActionProps) 
 
   if (!tool.available) {
     return (
-      <button type="button" className="btn small" onClick={onInstall} disabled={busy !== null}>
-        {busy === name ? t("tools.installing") : t("tools.install")}
+      <button type="button" className="btn small" onClick={onInstall} disabled={busy}>
+        {busy ? t("tools.installing") : t("tools.install")}
       </button>
     );
   }
@@ -661,11 +671,11 @@ function ToolAction({ name, tool, busy, onInstall, onUpdate }: ToolActionProps) 
         type="button"
         className="btn small primary"
         onClick={onUpdate}
-        disabled={busy !== null}
+        disabled={busy}
         // Salinan baru dipasang di folder aplikasi dan didahulukan; salinan
         // milik package manager dibiarkan apa adanya.
         title={tool.source === "path" ? t("tools.updateManagedHint") : undefined}>
-        {busy === name ? t("tools.updating") : t("tools.update")}
+        {busy ? t("tools.updating") : t("tools.update")}
       </button>
     );
   }

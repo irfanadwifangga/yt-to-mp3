@@ -73,7 +73,16 @@ type ToolService struct {
 	mu    sync.Mutex
 	state ToolUpdateState
 
-	checkMu sync.Mutex // satu cek atau pembaruan pada satu waktu
+	checkMu sync.Mutex // satu cek pembaruan pada satu waktu
+
+	// Pemasangan dikunci per tool, bukan satu kunci untuk semuanya: yt-dlp
+	// boleh dipasang selagi unduhan FFmpeg yang jauh lebih besar berjalan,
+	// tetapi tool yang sama tidak boleh dipasang dua kali bersamaan karena
+	// keduanya menulis ke berkas yang sama.
+	installMu sync.Mutex
+	installs  map[string]*sync.Mutex
+
+	saveMu sync.Mutex // satu penulisan state pada satu waktu, lihat persist
 
 	// Diisi SetApp saat wiring; kosong berarti pembaruan aplikasi tidak
 	// pernah ditawarkan.
@@ -172,10 +181,12 @@ func (s *ToolService) Install(ctx context.Context, name string) error {
 		target = toolFFmpeg // keduanya berasal dari arsip yang sama
 	}
 
+	lock := s.installLock(target)
+	lock.Lock()
+	defer lock.Unlock()
+
 	if s.src.CanUpdate(target) {
-		s.checkMu.Lock()
 		version, err := s.src.InstallLatest(ctx, target)
-		s.checkMu.Unlock()
 		if err == nil {
 			s.recordLatest(target, version)
 			return nil
@@ -241,12 +252,9 @@ func (s *ToolService) CheckUpdates(ctx context.Context) error {
 		latest[k] = v
 	}
 	s.state = ToolUpdateState{CheckedAt: s.now().UTC(), Latest: latest}
-	state := s.state
 	s.mu.Unlock()
 
-	if err := s.store.Save(state); err != nil {
-		s.log.Warn("simpan hasil cek pembaruan gagal", "error", err)
-	}
+	s.persist()
 	s.log.Info("cek pembaruan tool", "terbaru", found)
 	return nil
 }
@@ -262,8 +270,9 @@ func (s *ToolService) Update(ctx context.Context, name string) error {
 			fmt.Sprintf("%s tidak dapat diperbarui dari aplikasi di sistem ini", name))
 	}
 
-	s.checkMu.Lock()
-	defer s.checkMu.Unlock()
+	lock := s.installLock(name)
+	lock.Lock()
+	defer lock.Unlock()
 
 	version, err := s.src.InstallLatest(ctx, name)
 	if err != nil {
@@ -271,6 +280,20 @@ func (s *ToolService) Update(ctx context.Context, name string) error {
 	}
 	s.recordLatest(name, version)
 	return nil
+}
+
+// installLock mengembalikan kunci pemasangan satu tool. ffprobe sudah
+// dipetakan ke ffmpeg oleh pemanggil, jadi keduanya berbagi kunci.
+func (s *ToolService) installLock(name string) *sync.Mutex {
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
+	if s.installs == nil {
+		s.installs = map[string]*sync.Mutex{}
+	}
+	if s.installs[name] == nil {
+		s.installs[name] = &sync.Mutex{}
+	}
+	return s.installs[name]
 }
 
 // recordLatest menyimpan versi yang baru dipasang sebagai versi terbaru,
@@ -283,11 +306,27 @@ func (s *ToolService) recordLatest(name, version string) {
 	}
 	latest[name] = version
 	s.state.Latest = latest
+	s.mu.Unlock()
+
+	s.persist()
+}
+
+// persist menulis state terkini ke penyimpanan.
+//
+// Penulisan diserialkan dan snapshot diambil di dalam kunci penulisan. Dua
+// pemasangan yang selesai hampir bersamaan masing-masing memicu penulisan;
+// tanpa ini penulisan yang tiba belakangan bisa membawa snapshot yang lebih
+// lama dan menghapus versi tool yang baru dicatat.
+func (s *ToolService) persist() {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+
+	s.mu.Lock()
 	state := s.state
 	s.mu.Unlock()
 
 	if err := s.store.Save(state); err != nil {
-		s.log.Warn("simpan hasil pembaruan gagal", "error", err)
+		s.log.Warn("simpan hasil cek pembaruan gagal", "error", err)
 	}
 }
 
