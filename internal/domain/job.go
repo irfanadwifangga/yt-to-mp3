@@ -193,21 +193,42 @@ type Event struct {
 	CreatedAt time.Time
 }
 
+// PresetKind membedakan keluaran audio saja dari keluaran video.
+type PresetKind string
+
+const (
+	KindAudio PresetKind = "audio"
+	KindVideo PresetKind = "video"
+)
+
 // Preset adalah definisi format keluaran. Tabelnya append-only karena
 // preset_id tersimpan permanen di history. Lihat ADR-028.
+//
+// Pada preset video, Codec, BitrateKbps, SampleRate, dan Channels berlaku
+// bagi trek audio saat audio sumber harus di-encode ulang; video selalu
+// H.264. Lihat planning §11.
 type Preset struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Format      string `json:"format"`
-	Codec       string `json:"codec"`
-	Mode        string `json:"mode"`
-	BitrateKbps *int   `json:"bitrate_kbps,omitempty"`
-	VBRQuality  *int   `json:"vbr_quality,omitempty"`
-	SampleRate  *int   `json:"sample_rate,omitempty"`
-	Channels    int    `json:"channels"`
-	ExtraArgs   string `json:"-"`
-	SortOrder   int    `json:"-"`
-	Deprecated  bool   `json:"deprecated"`
+	ID          string     `json:"id"`
+	Label       string     `json:"label"`
+	Kind        PresetKind `json:"kind"`
+	Format      string     `json:"format"`
+	Codec       string     `json:"codec"`
+	Mode        string     `json:"mode"`
+	BitrateKbps *int       `json:"bitrate_kbps,omitempty"`
+	VBRQuality  *int       `json:"vbr_quality,omitempty"`
+	SampleRate  *int       `json:"sample_rate,omitempty"`
+	Channels    int        `json:"channels"`
+	// MaxHeight membatasi resolusi video; nil berarti tertinggi yang
+	// tersedia. Selalu nil pada preset audio.
+	MaxHeight  *int   `json:"max_height,omitempty"`
+	ExtraArgs  string `json:"-"`
+	SortOrder  int    `json:"-"`
+	Deprecated bool   `json:"deprecated"`
+}
+
+// IsVideo melaporkan apakah preset menghasilkan berkas video.
+func (p *Preset) IsVideo() bool {
+	return p.Kind == KindVideo
 }
 
 // File adalah berkas hasil akhir sebuah job.

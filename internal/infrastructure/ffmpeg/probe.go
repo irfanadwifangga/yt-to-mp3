@@ -34,6 +34,25 @@ type ProbeResult struct {
 	HasAudio   bool
 	Codec      string
 	SampleRate int
+
+	// HasVideo hanya menghitung stream video sungguhan. Sampul yang
+	// disematkan di MP3 juga stream video, tetapi bukan video.
+	HasVideo   bool
+	VideoCodec string
+	PixFmt     string
+}
+
+// MP4ReadyVideo melaporkan apakah stream video dapat disalin apa adanya ke
+// MP4 yang diputar di mana saja: H.264 8-bit 4:2:0.
+func (r *ProbeResult) MP4ReadyVideo() bool {
+	return r.VideoCodec == "h264" && (r.PixFmt == "yuv420p" || r.PixFmt == "yuvj420p")
+}
+
+// MP4ReadyAudio melaporkan apakah stream audio dapat disalin apa adanya ke
+// MP4. Opus di dalam MP4 sah menurut spesifikasi, tetapi banyak pemutar
+// bawaan menolaknya.
+func (r *ProbeResult) MP4ReadyAudio() bool {
+	return r.Codec == "aac"
 }
 
 // probeOutput memetakan keluaran JSON ffprobe.
@@ -42,9 +61,13 @@ type probeOutput struct {
 		Duration string `json:"duration"`
 	} `json:"format"`
 	Streams []struct {
-		CodecType  string `json:"codec_type"`
-		CodecName  string `json:"codec_name"`
-		SampleRate string `json:"sample_rate"`
+		CodecType   string `json:"codec_type"`
+		CodecName   string `json:"codec_name"`
+		SampleRate  string `json:"sample_rate"`
+		PixFmt      string `json:"pix_fmt"`
+		Disposition struct {
+			AttachedPic int `json:"attached_pic"`
+		} `json:"disposition"`
 	} `json:"streams"`
 }
 
@@ -59,7 +82,8 @@ func (p *Prober) Probe(ctx context.Context, path string) (*ProbeResult, error) {
 		Bin: bin,
 		Args: []string{
 			"-v", "error",
-			"-show_entries", "format=duration:stream=codec_type,codec_name,sample_rate",
+			"-show_entries", "format=duration:stream=codec_type,codec_name,sample_rate,pix_fmt" +
+				":stream_disposition=attached_pic",
 			"-of", "json",
 			"--", path,
 		},
@@ -80,17 +104,22 @@ func (p *Prober) Probe(ctx context.Context, path string) (*ProbeResult, error) {
 			"keluaran ffprobe bukan JSON yang dikenal", err)
 	}
 
+	// Hanya stream pertama tiap jenis yang dibaca, sama dengan stream yang
+	// dipetakan transcoder lewat 0:a:0 dan 0:v:0.
 	result := &ProbeResult{Duration: parseSeconds(out.Format.Duration)}
 	for _, s := range out.Streams {
-		if s.CodecType != "audio" {
-			continue
+		switch {
+		case s.CodecType == "audio" && !result.HasAudio:
+			result.HasAudio = true
+			result.Codec = s.CodecName
+			if rate, err := strconv.Atoi(s.SampleRate); err == nil {
+				result.SampleRate = rate
+			}
+		case s.CodecType == "video" && s.Disposition.AttachedPic == 0 && !result.HasVideo:
+			result.HasVideo = true
+			result.VideoCodec = s.CodecName
+			result.PixFmt = s.PixFmt
 		}
-		result.HasAudio = true
-		result.Codec = s.CodecName
-		if rate, err := strconv.Atoi(s.SampleRate); err == nil {
-			result.SampleRate = rate
-		}
-		break
 	}
 	return result, nil
 }
@@ -112,7 +141,10 @@ func parseSeconds(s string) time.Duration {
 const DurationTolerance = 2 * time.Second
 
 // Verify memastikan berkas hasil layak dianggap sukses.
-func (p *Prober) Verify(ctx context.Context, path string, expected time.Duration) error {
+//
+// Berkas video wajib memuat stream video selain audio: MP4 yang hanya
+// berisi suara bukan hasil yang diminta pengguna.
+func (p *Prober) Verify(ctx context.Context, path string, expected time.Duration, kind domain.PresetKind) error {
 	result, err := p.Probe(ctx, path)
 	if err != nil {
 		return err
@@ -121,6 +153,10 @@ func (p *Prober) Verify(ctx context.Context, path string, expected time.Duration
 	if !result.HasAudio {
 		return domain.NewError(domain.CodeVerifyFailed, domain.ClassLocal,
 			"berkas hasil tidak memuat stream audio")
+	}
+	if kind == domain.KindVideo && !result.HasVideo {
+		return domain.NewError(domain.CodeVerifyFailed, domain.ClassLocal,
+			"berkas hasil tidak memuat stream video")
 	}
 
 	// Durasi sumber yang tidak diketahui tidak bisa dijadikan pembanding;

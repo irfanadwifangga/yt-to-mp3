@@ -2,6 +2,8 @@
 
 Dokumen perencanaan teknis untuk aplikasi desktop-local berbasis Go + embedded SPA.
 
+> **Revisi 5 (2026-09-24).** Keluaran video MP4 H.264 + AAC di samping MP3 (ADR-035): preset video 360p–1080p dan Terbaik, pemilihan stream per preset, salin stream bila sudah H.264/AAC, encode ulang bila tidak. Nama tampilan menjadi "YouTube to MP3 & MP4"; nama teknis tetap `yt-to-mp3`.
+>
 > **Revisi 4 (2026-09-12).** Sample rate output pindah dari 44.1 kHz ke 48 kHz (ADR-030), menyesuaikan sumber YouTube yang didominasi Opus.
 >
 > **Revisi 3 (2026-09-12).** Menambahkan non-goals, ADR-021..ADR-029, NFR, definisi `filename_mode`, timeout berbasis durasi, preflight disk, penolakan livestream, dan kebijakan lokalisasi error. Desain internal dipisah ke dokumen tersendiri. Revisi 2 memperbaiki tiga keputusan yang salah bentuk: persistensi event progress, pembatasan koneksi SQLite, dan timeout konstan.
@@ -24,7 +26,7 @@ Dokumen perencanaan teknis untuk aplikasi desktop-local berbasis Go + embedded S
 - In-process bounded worker pool
 - yt-dlp untuk extraction/download
 - FFmpeg untuk transcoding dan tagging
-- MP3 sebagai output utama MVP
+- MP3 sebagai output utama MVP; MP4 (H.264 + AAC) sejak revisi 5
 
 ## 3. Non-goals
 
@@ -33,7 +35,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | Bukan tujuan | Catatan |
 | --- | --- |
 | Playlist dan channel | Ditunda; menuntut relasi parent-child pada data model (ADR-017) |
-| Output video | Aplikasi ini hanya menghasilkan audio |
+| Output video selain MP4 H.264 + AAC | WebM, MKV, HEVC, dan AV1 sengaja tidak ditawarkan: tujuan keluaran video adalah berkas yang diputar di mana saja (ADR-035) |
 | Login, cookies, bypass age-gate | `AGE_RESTRICTED` berhenti sebagai error, bukan fitur tertunda |
 | Akses multi-user atau remote | Loopback-only adalah keputusan keamanan, bukan keterbatasan sementara |
 | Prioritas antrean dan penjadwalan | Antrean FIFO sederhana |
@@ -78,6 +80,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-031 | Binary FFmpeg diunduh saat runtime dari rilis berversi: GyanD (Windows) dan martin-riedl.de (Linux, macOS) | Proyek FFmpeg tidak mendistribusikan build statis resmi. Mengunduh saat runtime membuat rilis kita tidak pernah menjadi distributor FFmpeg, sehingga kewajiban LGPL/GPL tidak menempel pada artifact rilis. Keduanya dirujuk halaman unduhan ffmpeg.org. Rencana awal (BtbN dan evermeet.cx) ditinggalkan: BtbN hanya menyediakan snapshot master yang dirotasi, sehingga checksum ter-pin basi, dan evermeet.cx tidak punya build arm64 |
 | ADR-032 | Dependensi pure-Go `github.com/ulikunitz/xz` | Build FFmpeg untuk Linux hanya tersedia sebagai `.tar.xz` dan stdlib tidak punya dekoder xz. Paket ini pure Go sehingga ADR-011 tetap terjaga |
 | ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi. **Pengecualian yt-dlp:** atas permintaan eksplisit pengguna, yt-dlp boleh diperbarui ke rilis terbaru dengan checksum dari `SHA2-256SUMS` rilis yang sama (seperti `yt-dlp -U`), karena yt-dlp rusak mengikuti perubahan YouTube lebih cepat daripada siklus rilis aplikasi. Verifikasi tetap wajib; yang berubah hanya asal checksum. FFmpeg tidak mendapat pengecualian ini |
+| ADR-035 | Keluaran video selalu MP4 H.264 8-bit + AAC; yt-dlp memilih resolusi lebih dulu lalu H.264/AAC (`-S res:N,vcodec:h264,acodec:aac`) dan menggabung ke MKV; transcoder menyalin stream yang sudah H.264/AAC dan meng-encode ulang sisanya dengan libx264 `veryfast` CRF 20 | Pemutar bawaan Windows, TV, dan ponsel lama tidak memutar VP9/AV1/Opus di MP4. YouTube hanya menyajikan H.264 sampai 1080p, jadi 360p–1080p cukup disalin (cepat, tanpa kehilangan kualitas) dan hanya resolusi di atasnya yang di-encode ulang. Resolusi didahulukan atas codec supaya pilihan 720p memang menghasilkan 720p. MKV sebagai wadah gabungan tidak pernah gagal karena kombinasi codec; wadah MP4 disusun transcoder sendiri. Preset video tetap satu tabel dengan preset audio karena job, dedup, dan riwayat berporos pada `preset_id` |
 | ADR-034 | Di Windows, UI dibuka sebagai jendela aplikasi Microsoft Edge (`--app`) dengan profil khusus di direktori data | Memberi jendela sendiri tanpa tab dan address bar tanpa dependensi baru: Edge ada di setiap Windows 10/11, sedangkan Wails butuh cgo di macOS/Linux (bertentangan dengan ADR-011) dan Electron/Tauri membawa runtime puluhan MB. Profil khusus membuat proses Edge hidup selama jendela terbuka, sehingga penutupannya bisa dideteksi. Tanpa Edge, atau di macOS/Linux, UI tetap dibuka di browser default |
 
 ## 5. Struktur folder
@@ -306,6 +309,20 @@ Ringkasan; DDL lengkap, invarian, dan retensi ada di [data-model.md](data-model.
 
 Nilai V0 hanya hidup di kolom `presets.vbr_quality` dan diterjemahkan jadi `-q:a 0` saat membangun argv — tidak ditulis ulang di tempat lain.
 
+### Video (revisi 5, ADR-035)
+
+| Preset id  | Label | `max_height` | Audio bila di-encode ulang |
+| ---------- | ----- | ------------ | -------------------------- |
+| `mp4_360`  | 360p  | 360          | AAC 128 kbps stereo        |
+| `mp4_480`  | 480p  | 480          | AAC 128 kbps stereo        |
+| `mp4_720`  | 720p  | 720          | AAC 192 kbps stereo        |
+| `mp4_1080` | 1080p | 1080         | AAC 192 kbps stereo        |
+| `mp4_best` | Best  | NULL         | AAC 192 kbps stereo        |
+
+Kolom `presets.kind` (`audio`/`video`) memilih jalur pipeline, dan `max_height` membatasi resolusi dalam satuan label "p" YouTube, yaitu sisi terpendek bingkai, sehingga video vertikal 1080×1920 adalah 1080p. Pada preset video, `codec`, `bitrate_kbps`, dan `channels` hanya berlaku bagi trek audio saat audio sumber harus di-encode ulang; `sample_rate` NULL berarti ikut sumber. Video selalu H.264: tidak ada kolom codec video karena memang tidak ada pilihan.
+
+UI mengelompokkan preset menurut `kind` dalam toggle **Audio / Video**, dan menandai pilihan di atas resolusi sumber (`video_height` dari analisis). Tanpa preset video bawaan, pilihan awalnya resolusi tertinggi sampai 1080p yang tidak melebihi sumber. Memilih resolusi di atas 1080p memunculkan peringatan bahwa video akan di-encode ulang.
+
 ### Tahap lanjutan
 
 M4A/AAC 192, Opus 160, FLAC lossless, WAV PCM 16-bit.
@@ -335,6 +352,18 @@ Argumen yt-dlp dibangun sebagai argv, tidak pernah lewat shell:
 --                       # akhiri parsing flag sebelum URL
 <url>
 ```
+
+Preset video mengganti tiga baris format di atas (ADR-035):
+
+```text
+-f "bv*+ba/b"
+-S "res:<max_height>,vcodec:h264,acodec:aac"   # "res" saja untuk Terbaik
+--merge-output-format mkv
+```
+
+`res:N` berarti setinggi mungkin tetapi tidak melebihi N, atau yang terkecil bila sumber tidak punya resolusi serendah itu. Sampul tidak diunduh: video sudah menjadi pratinjaunya sendiri. Bagian video dan audio sebelum digabung (`source.f137.mp4`) diabaikan saat mencari hasil; yang dipakai hanya berkas gabungannya.
+
+Metadata juga membaca `formats` untuk resolusi video tertinggi (`media_items.video_height`, migrasi `00006`). Format bervcodec `none`, termasuk storyboard yang tetap punya ukuran, disaring.
 
 `--ffmpeg-location` wajib, karena yt-dlp mencari FFmpeg sendiri dan hasilnya bisa berbeda dari discovery aplikasi.
 
@@ -378,6 +407,22 @@ Tahun di luar 1900–2100 dibuang. Data rilis ikut disimpan di cache `media_item
 
 Cover art: thumbnail hasil `--write-thumbnail` dipotong persegi di tengah lalu diperkecil ke maksimum 800×800 sebelum disematkan. Thumbnail YouTube berbentuk 16:9 sedangkan pemutar musik menampilkan sampul persegi, dan artwork unggahan musik hampir selalu di tengah bingkai; konsekuensinya, sisi kiri-kanan thumbnail video biasa ikut terpotong. `-q:v 2` dipakai karena bitrate bawaan mjpeg membuat sampul tampak pecah. Ukuran berkas thumbnail tidak dibatasi terpisah: hasil akhirnya selalu di-encode ulang ke ≤ 800×800.
 
+Preset video memakai argv tersendiri. Sebelum konversi, `ffprobe` membaca codec sumber; stream H.264 8-bit 4:2:0 dan AAC disalin, sisanya di-encode ulang:
+
+```text
+ffmpeg -hide_banner -nostdin -y
+  -i <source.mkv>
+  -map 0:v:0 -map 0:a:0
+  -c:v copy | -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p
+  -c:a copy | -c:a aac -b:a 192k -ac 2
+  -movflags +faststart                     # video bisa diputar sebelum terbaca penuh
+  -metadata title=<title> -metadata artist=<artist> ...   # sama dengan jalur audio
+  -progress pipe:1 -nostats
+  <tmp_out>.mp4
+```
+
+Keputusan salin atau encode ulang dicatat di log (`rencana konversi video`). Sumber HDR 10-bit dari VP9 menjadi SDR 8-bit tanpa tone mapping, sehingga warnanya tampak lebih pudar; ini harga kompatibilitas yang diterima.
+
 Kegagalan pada jalur cover art **tidak pernah** menggagalkan job. Bila FFmpeg gagal dengan `TRANSCODE_FAILED` saat sampul disertakan, `Transcoder` mengulang konversi sekali tanpa sampul dan mencatat peringatan; timeout dan pembatalan tidak diulang. Test integrasi `TestIntegrasiSampulRusakTidakMenggagalkan` memakai berkas `.jpg` yang bukan gambar.
 
 ### 12.3 Model progress
@@ -389,11 +434,13 @@ Kegagalan pada jalur cover art **tidak pernah** menggagalkan job. Bila FFmpeg ga
 | converting  | 70–95%  | `out_time_ms / duration_ms`               |
 | verifying   | 95–100% | step-based                                |
 
+Unduhan video terdiri dari dua berkas, video lalu audio, yang masing-masing melaporkan 0–100%. Template progress ikut mencetak `vcodec` dan `acodec` berkas yang sedang diunduh, lalu `partTracker` menempatkan stream video pada 90% rentang unduhan dan audio pada 10% sisanya, apa pun urutannya, sehingga progres tidak pernah mundur ke nol di tengah unduhan.
+
 Bila ukuran total atau durasi tidak diketahui, `progress` dikirim `null` dan UI menampilkan indikator indeterminate. Jangan pernah mengirim `NaN` atau menahan nilai di 0.
 
 ### 12.4 Verifikasi dan commit
 
-1. `ffprobe` memastikan file ada, berukuran > 0, punya stream audio, dan durasinya dalam toleransi ±2 detik dari metadata source.
+1. `ffprobe` memastikan file ada, berukuran > 0, punya stream audio, dan durasinya dalam toleransi ±2 detik dari metadata source. Preset video juga wajib punya stream video sungguhan; sampul yang tersemat (`attached_pic`) tidak dihitung.
 2. Hitung `sha256`, simpan ke `files`.
 3. Menangkan nama final lewat reservasi `O_EXCL` (ADR-029), lalu `os.Rename` dari temp.
 
@@ -412,12 +459,16 @@ Timeout diturunkan dari durasi media, bukan konstanta (ADR-025):
 | converting  | `max(5 menit, durasi × 1)`  |
 | verifying   | 60 detik                    |
 
+Preset video memakai `max(20 menit, durasi × 10)` untuk unduhan dan `max(15 menit, durasi × 6)` untuk konversi: berkasnya belasan kali lebih besar, dan encode ulang 4K bisa lebih lambat dari waktu nyata.
+
 Preflight disk sebelum download dimulai:
 
 ```text
 estimasi = ukuran_unduhan + (durasi_detik × bitrate_preset / 8)
 butuh    = estimasi × 1.5
 ```
+
+Untuk preset video, bitrate video diperkirakan per resolusi (1 Mbps pada 360p sampai 40 Mbps pada 2160p) dan dihitung dua kali karena sumber dan hasil sama-sama memuat video. Resolusinya adalah `max_height` preset, kecuali sumber lebih rendah; tanpa keduanya dianggap 1080p.
 
 Ruang kurang berarti gagal cepat dengan `DISK_FULL`, bukan mati di 95%.
 
@@ -715,7 +766,7 @@ Teknis:
   - `CloseApplications` menutup instance yang masih berjalan sebelum berkas diganti, karena aplikasi tanpa jendela mudah terlupa masih hidup.
   - Uninstall tidak menyentuh data aplikasi maupun hasil konversi.
   - `AppId` tidak boleh diganti setelah rilis pertama.
-  - Nama tampilan "Youtube To MP3 Converter" (`version.DisplayName`, judul jendela, `ProductName`, nama shortcut) terpisah dari nama teknis `yt-to-mp3`. Nama teknis dipakai untuk folder data, exe, folder instalasi, dan `AppId`; mengubahnya membuat pengguna lama kehilangan riwayat dan tool, dan installer tidak mengenali instalasi lama. Shortcut lama bernama `yt-to-mp3` dihapus lewat `[InstallDelete]` supaya pembaruan tidak meninggalkan dua shortcut.
+  - Nama tampilan "YouTube to MP3 & MP4" (`version.DisplayName`, judul jendela, `ProductName`, nama shortcut) terpisah dari nama teknis `yt-to-mp3`. Nama teknis dipakai untuk folder data, exe, folder instalasi, dan `AppId`; mengubahnya membuat pengguna lama kehilangan riwayat dan tool, dan installer tidak mengenali instalasi lama. Shortcut lama bernama `yt-to-mp3` dan `Youtube To MP3 Converter` dihapus lewat `[InstallDelete]` supaya pembaruan tidak meninggalkan dua shortcut. Teks kotak centang di installer memperlakukan `&` sebagai penanda tombol pintas, jadi di sana nama ditulis `&&` (`DisplayNameLabel`).
   - Inno Setup tidak tersedia di mesin pengembangan, jadi skrip installer hanya tervalidasi lewat workflow Release (jalankan manual untuk snapshot).
 - **Signing**: belum ada, keputusan sadar untuk rilis awal. Di Windows, SmartScreen memperingatkan exe dan installer yang belum ditandatangani; catatan rilis memuat langkah "More info → Run anyway". macOS perlu codesign dan notarization agar Gatekeeper tidak memblokir. Menambahkan signing nanti hanya menyentuh pipeline rilis.
 - Logging `log/slog` terstruktur ke `<data_dir>/logs/app.log`, rotasi harian, retensi 7 hari.

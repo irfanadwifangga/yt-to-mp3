@@ -7,9 +7,22 @@
       "deprecated": false,
       "format": "mp3",
       "id": "mp3_standard",
+      "kind": "audio",
       "label": "Standard",
       "mode": "cbr",
       "sample_rate": 48000
+    },
+    {
+      "bitrate_kbps": 192,
+      "channels": 2,
+      "codec": "aac",
+      "deprecated": false,
+      "format": "mp4",
+      "id": "mp4_720",
+      "kind": "video",
+      "label": "720p",
+      "max_height": 720,
+      "mode": "cbr"
     }
   ]
 }

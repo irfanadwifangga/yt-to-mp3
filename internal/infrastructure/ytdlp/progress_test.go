@@ -98,7 +98,7 @@ func TestParseProgressBarisRusak(t *testing.T) {
 // tanpa --ignore-config, yt-dlp.conf milik pengguna dapat menyuntikkan
 // --exec dan menjadikan ini jalur eksekusi perintah sewenang-wenang.
 func TestDownloadArgsHardening(t *testing.T) {
-	args := downloadArgs("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "/tmp/job", "/opt/ffmpeg/ffmpeg")
+	args := downloadArgs("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "/tmp/job", "/opt/ffmpeg/ffmpeg", Selection{})
 
 	required := []string{"--ignore-config", "--no-exec", "--no-playlist", "-f", "bestaudio/best"}
 	for _, want := range required {

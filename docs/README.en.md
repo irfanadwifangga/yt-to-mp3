@@ -1,8 +1,8 @@
-# Youtube To MP3 Converter
+# YouTube to MP3 & MP4
 
 **English** · [Bahasa Indonesia](README.id.md)
 
-A local desktop app that converts YouTube audio to MP3 (technical name: `yt-to-mp3`, used for the repository, executable, and data directory): a single Go binary that runs a loopback server and serves an embedded React SPA. There is no cloud service; all work and data stay on your machine.
+A local desktop app that converts YouTube videos to MP3 audio or MP4 video (technical name: `yt-to-mp3`, used for the repository, executable, and data directory): a single Go binary that runs a loopback server and serves an embedded React SPA. There is no cloud service; all work and data stay on your machine.
 
 > **Status: core features and hardening are done.** Analysis, queue, conversion, history, settings, one-click tool installation, logging, housekeeping, and idle shutdown all work, and the measured NFR targets pass. The release pipeline is ready, but no release has been published yet and binaries are not signed. Read [Known limitations](#known-limitations) before use.
 
@@ -12,9 +12,11 @@ A local desktop app that converts YouTube audio to MP3 (technical name: `yt-to-m
 - **Live progress** per job over SSE, shown as the video cover filling with color from the bottom up. Cancelling a job stops the whole process tree, including the FFmpeg that yt-dlp runs, then cleans up temporary files.
 - **Finished list** — open the output folder in your file manager, save a copy, retry failed jobs, or remove them from the list (with or without the file). Long histories load incrementally.
 - **Auto-retry** — transient network failures are retried automatically up to 3 times with growing delays. When YouTube rate-limits requests (HTTP 429), the delay is longer and parallel jobs drop to one for a few minutes.
+- **Audio or video** — switch between **Audio (MP3)** and **Video (MP4)** before converting.
 - **Five MP3 presets**: 128, 192, 256, and 320 kbps CBR, plus VBR V0. 48 kHz stereo output with ID3v2.3 tags and an embedded square cover.
+- **MP4 in 360p, 480p, 720p, 1080p, or the best available resolution**, always H.264 video with AAC audio so the file plays on any device, including the players built into Windows, TVs, and older phones. Up to 1080p, YouTube's own H.264 stream is copied as is (fast, no quality loss). Sources without H.264 at the chosen resolution, which covers everything above 1080p, are re-encoded; that takes much longer and the app warns about it first. Quality options above the source's resolution are marked.
 - **Edit title and artist before converting**, prefilled with cleaned-up suggestions (without `(Official Video)` and the like). Both are used for tags and the file name. For videos linked to YouTube Music, suggestions come from the catalog, and album and release year tags are written as well.
-- **Duplicate conversion warning** when the same video was already converted with the same preset.
+- **Duplicate conversion warning** when the same video was already converted with the same format and quality.
 - **Settings dialog** (the **Settings** button or `Ctrl+,`), with the output folder picked through the operating system's native folder dialog.
 - **Indonesian and English UI**, with a light, dark, or system theme.
 - **Its own window on Windows** — the UI opens as a standalone Microsoft Edge app window without tabs or an address bar. Other systems use the default browser.
@@ -22,7 +24,7 @@ A local desktop app that converts YouTube audio to MP3 (technical name: `yt-to-m
 
 ## Installation
 
-**Windows:** download `yt-to-mp3_<version>_windows_amd64_setup.exe` from the Releases page and run it. No admin rights are needed. The installer creates a Start Menu shortcut, and the app can be uninstalled from **Settings → Apps**. Uninstalling keeps your history and converted MP3 files.
+**Windows:** download `yt-to-mp3_<version>_windows_amd64_setup.exe` from the Releases page and run it. No admin rights are needed. The installer creates a Start Menu shortcut, and the app can be uninstalled from **Settings → Apps**. Uninstalling keeps your history and converted files.
 
 The installer and executable are not signed yet, so SmartScreen may show "Windows protected your PC". Choose **More info**, then **Run anyway**. Compare the file with the `.sha256` on the release page if you want to be sure the download is intact.
 
@@ -36,8 +38,8 @@ The app opens in its own window. Closing the window quits the app once no conver
 | --- | --- | --- |
 | Go | 1.27+ | Building the backend |
 | Node.js | 24+ | Building the SPA; not needed at runtime |
-| yt-dlp | latest | Reading metadata and downloading audio |
-| FFmpeg and ffprobe | with `libmp3lame`; tested on 9.0.1 | Converting and verifying the output |
+| yt-dlp | latest | Reading metadata and downloading audio or video |
+| FFmpeg and ffprobe | with `libmp3lame` and `libx264`; tested on 9.0.1 | Converting and verifying the output |
 
 The first build downloads Go modules and npm packages, so it needs network access once. Every Go dependency is pure Go (no cgo), so cross-compiling needs no C toolchain.
 
@@ -163,14 +165,14 @@ For a local build with the icon and version info, run `make winres` before `go b
 
 ## Architecture overview
 
-![Architecture overview of Youtube To MP3 Converter: backend, embedded UI, local state and platform, and conversion tools](diagram-ytmp3.png)
+![Architecture overview of YouTube to MP3 & MP4: backend, embedded UI, local state and platform, and conversion tools](diagram-ytmp3.png)
 
 The diagram shows how the pieces fit together at runtime:
 
 - **Backend** — `cmd/app/main.go` assembles everything: the single instance guard, the local HTTP API with its live SSE job stream, the job scheduler, and the conversion pipeline. `internal/adapters` only bridges infrastructure types to the application ports.
 - **Embedded UI** — the React app is embedded into the binary with `go:embed` and served by the same local server. It calls the API through `api.ts` and follows job progress over SSE through `useJobStream.ts`.
-- **Local state and platform** — SQLite stores jobs, history, and settings, with its schema evolved by embedded migrations. The filesystem store writes MP3 output through atomic commits. The app window (`internal/browser`), native dialogs (`internal/dialog`), and "Show in folder" talk to the operating system.
-- **Conversion tools** — the pipeline runs yt-dlp to download audio and FFmpeg to probe and transcode, both as local subprocesses. Managed copies of both tools are installed and updated from inside the app.
+- **Local state and platform** — SQLite stores jobs, history, and settings, with its schema evolved by embedded migrations. The filesystem store writes MP3 and MP4 output through atomic commits. The app window (`internal/browser`), native dialogs (`internal/dialog`), and "Show in folder" talk to the operating system.
+- **Conversion tools** — the pipeline runs yt-dlp to download audio or video and FFmpeg to probe and transcode, both as local subprocesses. Managed copies of both tools are installed and updated from inside the app.
 
 Settings, housekeeping, idle shutdown, and update checks are left out of the diagram for readability. [architecture.md](architecture.md) (in Indonesian) covers every component.
 
@@ -252,7 +254,7 @@ A local server is not a private server: any website the user has open can send r
 - **The Windows build has no console, so logs are only available in** `logs/app.log` in the data directory. To see logs live, run from source with `go run ./cmd/app`.
 - **The Windows app window is Microsoft Edge running with a separate profile**, not a native window. If Edge is missing, the UI falls back to the default browser, and closing that tab no longer quits the app right away; idle shutdown ends it later.
 
-Deliberately unsupported: playlists, live streams, videos that require sign-in or are age-restricted, and video output. The full list is in the [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
+Deliberately unsupported: playlists, live streams, videos that require sign-in or are age-restricted, and video formats other than MP4 (H.264 + AAC). The full list is in the [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
 
 ## Documentation
 

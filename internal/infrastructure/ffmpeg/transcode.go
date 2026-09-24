@@ -20,7 +20,7 @@ type ToolProvider interface {
 	Resolve(ctx context.Context, name string) (path string, version string, err error)
 }
 
-// Transcoder mengubah audio sumber menjadi format keluaran.
+// Transcoder mengubah media sumber menjadi format keluaran.
 type Transcoder struct {
 	tools ToolProvider
 	log   *slog.Logger
@@ -33,17 +33,37 @@ func NewTranscoder(tp ToolProvider, log *slog.Logger) *Transcoder {
 
 // TranscodeInput adalah parameter satu konversi.
 type TranscodeInput struct {
-	AudioPath string
+	// MediaPath adalah berkas hasil unduhan: audio saja untuk preset audio,
+	// video beserta audionya untuk preset video.
+	MediaPath string
 
-	// CoverPath opsional. Kegagalan pada jalur sampul tidak pernah
-	// menggagalkan job; berkas tanpa sampul tetap keluaran yang sah.
+	// CoverPath opsional dan hanya dipakai preset audio. Kegagalan pada
+	// jalur sampul tidak pernah menggagalkan job; berkas tanpa sampul tetap
+	// keluaran yang sah.
 	CoverPath string
 
 	OutputPath string
 	Preset     *domain.Preset
 	Media      *domain.MediaInfo
 	Timeout    time.Duration
+
+	// CopyVideo dan CopyAudio menyalin stream apa adanya alih-alih
+	// meng-encode ulang. Hanya berlaku untuk preset video; Transcode
+	// mengisinya dari hasil probe berkas sumber.
+	CopyVideo bool
+	CopyAudio bool
 }
+
+// Parameter encode ulang video. H.264 8-bit 4:2:0 adalah satu-satunya
+// kombinasi yang pasti diputar pemutar bawaan Windows, TV, dan ponsel lama.
+// veryfast menjaga konversi 1080p tetap mendekati waktu nyata di CPU biasa;
+// CRF 20 nyaris tak terbedakan dari sumber pada kecepatan itu.
+const (
+	videoEncoder = "libx264"
+	videoPreset  = "veryfast"
+	videoCRF     = "20"
+	videoPixFmt  = "yuv420p"
+)
 
 // maxCoverSide membatasi sisi sampul supaya setiap berkas tidak membawa
 // gambar berukuran megabyte. 800 piksel masih tajam di layar ponsel.
@@ -64,11 +84,15 @@ var coverFilter = fmt.Sprintf(
 // Dipisah sebagai fungsi murni supaya semantik preset dapat diuji tanpa
 // menjalankan FFmpeg sama sekali.
 func BuildArgs(in TranscodeInput) []string {
+	if in.Preset.IsVideo() {
+		return buildVideoArgs(in)
+	}
+
 	args := []string{
 		"-hide_banner",
 		"-nostdin",
 		"-y",
-		"-i", in.AudioPath,
+		"-i", in.MediaPath,
 	}
 
 	withCover := in.CoverPath != ""
@@ -105,6 +129,56 @@ func BuildArgs(in TranscodeInput) []string {
 	// v2.3 lebih luas didukung pemutar daripada v2.4, termasuk Windows
 	// Explorer. Lihat ADR-020.
 	args = append(args, "-id3v2_version", "3")
+	args = append(args, metadataArgs(in.Media)...)
+
+	args = append(args, "-progress", "pipe:1", "-nostats")
+	args = append(args, in.OutputPath)
+	return args
+}
+
+// buildVideoArgs menyusun argv untuk keluaran MP4.
+//
+// Stream yang sudah H.264 atau AAC disalin apa adanya: lebih cepat berkali
+// lipat dan tanpa kehilangan kualitas. Sisanya, VP9 atau AV1 dari resolusi
+// yang tidak tersedia dalam H.264 dan audio Opus, di-encode ulang supaya
+// hasilnya tetap dapat diputar di mana saja.
+func buildVideoArgs(in TranscodeInput) []string {
+	args := []string{
+		"-hide_banner",
+		"-nostdin",
+		"-y",
+		"-i", in.MediaPath,
+		"-map", "0:v:0",
+		"-map", "0:a:0",
+	}
+
+	if in.CopyVideo {
+		args = append(args, "-c:v", "copy")
+	} else {
+		args = append(args,
+			"-c:v", videoEncoder,
+			"-preset", videoPreset,
+			"-crf", videoCRF,
+			"-pix_fmt", videoPixFmt,
+		)
+	}
+
+	if in.CopyAudio {
+		args = append(args, "-c:a", "copy")
+	} else {
+		args = append(args, "-c:a", in.Preset.Codec)
+		args = append(args, qualityArgs(in.Preset)...)
+		if in.Preset.SampleRate != nil {
+			args = append(args, "-ar", strconv.Itoa(*in.Preset.SampleRate))
+		}
+		if in.Preset.Channels > 0 {
+			args = append(args, "-ac", strconv.Itoa(in.Preset.Channels))
+		}
+	}
+
+	// Indeks moov dipindah ke awal berkas supaya video dapat mulai diputar
+	// sebelum seluruhnya terbaca, termasuk saat dibuka dari folder jaringan.
+	args = append(args, "-movflags", "+faststart")
 	args = append(args, metadataArgs(in.Media)...)
 
 	args = append(args, "-progress", "pipe:1", "-nostats")
@@ -174,6 +248,33 @@ func (t *Transcoder) Transcode(
 	bin, _, err := t.tools.Resolve(ctx, tools.FFmpeg)
 	if err != nil {
 		return err
+	}
+
+	if in.Preset.IsVideo() {
+		src, err := NewProber(t.tools, t.log).Probe(ctx, in.MediaPath)
+		if err != nil {
+			// Pembatalan dan ffprobe yang hilang dilaporkan apa adanya;
+			// hanya kegagalan membaca berkasnya yang menjadi kegagalan
+			// konversi, bukan kegagalan verifikasi hasil.
+			var derr *domain.Error
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if errors.As(err, &derr) && derr.Code != domain.CodeVerifyFailed {
+				return err
+			}
+			return domain.WrapError(domain.CodeTranscodeFailed, domain.ClassTransient,
+				"periksa berkas sumber", err)
+		}
+		if !src.HasVideo || !src.HasAudio {
+			return domain.NewError(domain.CodeTranscodeFailed, domain.ClassTransient,
+				"berkas sumber tidak memuat stream video dan audio")
+		}
+		in.CopyVideo = src.MP4ReadyVideo()
+		in.CopyAudio = src.MP4ReadyAudio()
+		t.log.Info("rencana konversi video",
+			"video", src.VideoCodec, "pix_fmt", src.PixFmt, "salin_video", in.CopyVideo,
+			"audio", src.Codec, "salin_audio", in.CopyAudio)
 	}
 
 	err = t.run(ctx, bin, in, onProgress)

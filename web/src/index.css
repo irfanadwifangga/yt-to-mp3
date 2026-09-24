@@ -593,6 +593,58 @@ select:focus-visible {
   flex: 0 1 17rem;
 }
 
+/* Pilihan jenis keluaran: dua tombol bersebelahan dalam satu bingkai,
+   yang aktif diisi warna sinyal. */
+.kind-switch {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+
+.kind-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: calc(2.25rem - 6px);
+  padding: 0 0.7rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.kind-option:hover {
+  color: var(--ink);
+}
+
+.kind-option[aria-pressed="true"] {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.kind-option:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.kind-format {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.preview-body > .hint.warn {
+  margin: 0.5rem 0 0;
+}
+
 /* Sampul sebagai progress ------------------------------------------------- */
 
 .cover {

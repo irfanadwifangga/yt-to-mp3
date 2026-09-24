@@ -80,7 +80,9 @@ CREATE TABLE media_items (
   track         TEXT,    -- migrasi 00005: data katalog YouTube Music,
   artist        TEXT,    -- NULL untuk unggahan biasa
   album         TEXT,
-  release_year  INTEGER
+  release_year  INTEGER,
+  video_height  INTEGER  -- migrasi 00006: resolusi video tertinggi sumber
+                         -- dalam satuan label "p"; NULL bila tidak diketahui
 );
 
 CREATE INDEX idx_media_fetched ON media_items(fetched_at);
@@ -139,6 +141,9 @@ CREATE TABLE presets (
   extra_args   TEXT NOT NULL DEFAULT '[]',
   sort_order   INTEGER NOT NULL,
   deprecated   INTEGER NOT NULL DEFAULT 0,
+  -- migrasi 00006
+  kind         TEXT NOT NULL DEFAULT 'audio' CHECK (kind IN ('audio','video')),
+  max_height   INTEGER CHECK (max_height IS NULL OR max_height > 0),
   CHECK ((mode = 'cbr' AND bitrate_kbps IS NOT NULL)
       OR (mode = 'vbr' AND vbr_quality  IS NOT NULL))
 );
@@ -157,6 +162,8 @@ Seed MVP:
 Semua seed memakai `sample_rate = 48000`, `channels = 2`.
 
 48 kHz dipilih agar cocok dengan sumber, bukan sekadar mengikuti standar CD (ADR-030). `bestaudio` YouTube hampir selalu Opus, yang secara desain hanya beroperasi di 48 kHz, sehingga 44.1 kHz akan memaksa resampling pada mayoritas unduhan. Sumber AAC 44.1 kHz yang lebih jarang akan ter-upsample, dan itu tidak merugikan.
+
+Seed video (migrasi 00006, ADR-035): `mp4_360`, `mp4_480`, `mp4_720`, `mp4_1080`, dan `mp4_best` dengan `kind = 'video'`, `format = 'mp4'`, `codec = 'aac'`, dan `max_height` sesuai labelnya (NULL untuk `mp4_best`). Pada preset video, `codec`, `bitrate_kbps` (128 untuk 360p dan 480p, 192 untuk sisanya), dan `channels` hanya berlaku bagi audio yang harus di-encode ulang; `sample_rate` NULL karena audio yang menyertai video tidak perlu di-resample. Preset audio lama mendapat `kind = 'audio'` dari nilai bawaan kolom, sehingga riwayat lama tetap merujuk preset yang sama.
 
 `preset_id` tersimpan permanen di `jobs`, sehingga nilainya adalah kontrak selamanya: tabel ini **append-only**. Preset yang tidak lagi ditawarkan ditandai `deprecated = 1` agar tetap tersembunyi di UI tanpa membuat history lama jadi yatim. Kolom `vbr_quality` adalah satu-satunya sumber kebenaran untuk V0 — jangan menuliskan angka itu lagi di tempat lain.
 
@@ -223,5 +230,6 @@ Seluruh kebijakan di atas dijalankan `application.Housekeeper`: satu putaran seb
 | 3 | `00003_jobs_retry_at.sql` | Kolom `jobs.retry_at` untuk jeda auto-retry (planning §19). Indeks `(created_at DESC, id DESC)` menggantikan `idx_jobs_created`, sehingga riwayat tanpa filter status tidak lagi mengurutkan ulang baris bertimestamp sama |
 | 4 | `00004_jobs_tags.sql` | Kolom `jobs.tag_title` dan `jobs.tag_artist` untuk suntingan tag sebelum konversi (planning §7). Disimpan per job, bukan di `media_items`, karena cache metadata dibagi semua job untuk video yang sama dan dapat diambil ulang |
 | 5 | `00005_media_release.sql` | Kolom `media_items.track`, `artist`, `album`, `release_year` dari katalog YouTube Music, dipakai untuk saran tag serta tag album dan tahun (planning §12.2). Baris cache lama tidak diisi ulang; TTL 24 jam membuatnya terisi pada analisis berikutnya |
+| 6 | `00006_video_presets.sql` | Kolom `presets.kind` dan `presets.max_height`, seed lima preset MP4, dan kolom `media_items.video_height` (planning §11, ADR-035). `TestMigrasiPresetVideoBisaDibalik` membuktikan migrasi ini bisa dibalik dan diterapkan ulang |
 
 `TestMigrateDariSkemaVersi1` membangun database lewat `goose UpTo(1)`, mengisinya dengan SQL mentah, lalu menjalankan `Migrate` penuh dan memeriksa data tetap utuh. `TestRiwayatBerfilterStatusMemakaiIndeks` memeriksa `EXPLAIN QUERY PLAN` supaya regresi indeks tertangkap walau tidak terlihat pada database kecil.
