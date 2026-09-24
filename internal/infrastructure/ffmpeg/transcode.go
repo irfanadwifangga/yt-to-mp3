@@ -48,22 +48,63 @@ type TranscodeInput struct {
 	Timeout    time.Duration
 
 	// CopyVideo dan CopyAudio menyalin stream apa adanya alih-alih
-	// meng-encode ulang. Hanya berlaku untuk preset video; Transcode
-	// mengisinya dari hasil probe berkas sumber.
+	// meng-encode ulang. Transcode mengisinya dari hasil probe berkas sumber
+	// untuk preset yang mengizinkan passthrough; lihat copyPlan.
 	CopyVideo bool
 	CopyAudio bool
 }
 
-// Parameter encode ulang video. H.264 8-bit 4:2:0 adalah satu-satunya
-// kombinasi yang pasti diputar pemutar bawaan Windows, TV, dan ponsel lama.
-// veryfast menjaga konversi 1080p tetap mendekati waktu nyata di CPU biasa;
-// CRF 20 nyaris tak terbedakan dari sumber pada kecepatan itu.
+// Parameter encode ulang H.264, untuk MP4, MOV, dan FLV. H.264 8-bit 4:2:0
+// adalah satu-satunya kombinasi yang pasti diputar pemutar bawaan Windows,
+// TV, dan ponsel lama. veryfast menjaga konversi 1080p tetap mendekati waktu
+// nyata di CPU biasa; CRF 20 nyaris tak terbedakan dari sumber pada
+// kecepatan itu.
 const (
 	videoEncoder = "libx264"
 	videoPreset  = "veryfast"
 	videoCRF     = "20"
 	videoPixFmt  = "yuv420p"
 )
+
+// videoEncodeArgs memilih encoder video untuk wadah yang sumbernya tidak
+// dapat disalin. Lihat ADR-036.
+func videoEncodeArgs(format string) []string {
+	switch format {
+	case "webm":
+		// VP9 mode realtime: encoder VP9 bawaan sangat lambat, dan WebM
+		// hanya di-encode bila YouTube tidak menyajikan VP9 pada resolusi
+		// itu, yang jarang terjadi.
+		return []string{
+			"-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8",
+			"-row-mt", "1", "-crf", "32", "-b:v", "0", "-pix_fmt", videoPixFmt,
+		}
+	case "avi":
+		// MPEG-4 Part 2 dengan FourCC XVID, yang dikenali pemutar DVD dan
+		// perangkat lama yang menjadi alasan orang masih meminta AVI.
+		return []string{"-c:v", "mpeg4", "-vtag", "xvid", "-q:v", "3", "-pix_fmt", videoPixFmt}
+	default:
+		return []string{
+			"-c:v", videoEncoder, "-preset", videoPreset, "-crf", videoCRF, "-pix_fmt", videoPixFmt,
+		}
+	}
+}
+
+// copyPlan memutuskan stream mana yang disalin apa adanya.
+//
+// Hanya preset dengan passthrough yang menyalin, dan hanya codec yang
+// memang ditampung wadahnya. H.264 selain 8-bit 4:2:0 sah di MP4 tetapi
+// ditolak banyak pemutar perangkat keras, jadi tetap di-encode ulang.
+func copyPlan(p *domain.Preset, f domain.OutputFormat, src *ProbeResult) (video, audio bool) {
+	if !p.Passthrough {
+		return false, false
+	}
+	video = src.HasVideo && domain.Copies(f.VideoCopy, src.VideoCodec)
+	if video && src.VideoCodec == "h264" && f.PreferVideo == "h264" {
+		video = src.PixFmt == "yuv420p" || src.PixFmt == "yuvj420p"
+	}
+	audio = src.HasAudio && domain.Copies(f.AudioCopy, src.Codec)
+	return video, audio
+}
 
 // maxCoverSide membatasi sisi sampul supaya setiap berkas tidak membawa
 // gambar berukuran megabyte. 800 piksel masih tajam di layar ponsel.
@@ -84,9 +125,7 @@ var coverFilter = fmt.Sprintf(
 // Dipisah sebagai fungsi murni supaya semantik preset dapat diuji tanpa
 // menjalankan FFmpeg sama sekali.
 func BuildArgs(in TranscodeInput) []string {
-	if in.Preset.IsVideo() {
-		return buildVideoArgs(in)
-	}
+	format, _ := domain.FormatOf(in.Preset.Format)
 
 	args := []string{
 		"-hide_banner",
@@ -95,24 +134,29 @@ func BuildArgs(in TranscodeInput) []string {
 		"-i", in.MediaPath,
 	}
 
-	withCover := in.CoverPath != ""
-	if withCover {
+	withCover := !in.Preset.IsVideo() && format.Cover && in.CoverPath != ""
+	switch {
+	case in.Preset.IsVideo():
+		args = append(args, "-map", "0:v:0", "-map", "0:a:0")
+	case withCover:
 		args = append(args, "-i", in.CoverPath)
 		args = append(args, "-map", "0:a:0", "-map", "1:v:0")
-	} else {
+	default:
 		args = append(args, "-map", "0:a:0")
 	}
 
-	args = append(args, "-c:a", in.Preset.Codec)
-	args = append(args, qualityArgs(in.Preset)...)
-
-	// sample_rate kosong berarti ikut sumber; hanya dipakai preset lossless
-	// yang justru kehilangan maknanya bila di-resample. Lihat ADR-030.
-	if in.Preset.SampleRate != nil {
-		args = append(args, "-ar", strconv.Itoa(*in.Preset.SampleRate))
+	if in.Preset.IsVideo() {
+		if in.CopyVideo {
+			args = append(args, "-c:v", "copy")
+		} else {
+			args = append(args, videoEncodeArgs(in.Preset.Format)...)
+		}
 	}
-	if in.Preset.Channels > 0 {
-		args = append(args, "-ac", strconv.Itoa(in.Preset.Channels))
+
+	if in.CopyAudio {
+		args = append(args, "-c:a", "copy")
+	} else {
+		args = append(args, audioEncodeArgs(in.Preset)...)
 	}
 
 	if withCover {
@@ -126,9 +170,16 @@ func BuildArgs(in TranscodeInput) []string {
 		)
 	}
 
-	// v2.3 lebih luas didukung pemutar daripada v2.4, termasuk Windows
-	// Explorer. Lihat ADR-020.
-	args = append(args, "-id3v2_version", "3")
+	if in.Preset.Format == "mp3" {
+		// v2.3 lebih luas didukung pemutar daripada v2.4, termasuk Windows
+		// Explorer. Lihat ADR-020.
+		args = append(args, "-id3v2_version", "3")
+	}
+	if format.FastStart {
+		// Indeks moov dipindah ke awal berkas supaya berkas dapat mulai
+		// diputar sebelum seluruhnya terbaca, termasuk dari folder jaringan.
+		args = append(args, "-movflags", "+faststart")
+	}
 	args = append(args, metadataArgs(in.Media)...)
 
 	args = append(args, "-progress", "pipe:1", "-nostats")
@@ -136,59 +187,37 @@ func BuildArgs(in TranscodeInput) []string {
 	return args
 }
 
-// buildVideoArgs menyusun argv untuk keluaran MP4.
-//
-// Stream yang sudah H.264 atau AAC disalin apa adanya: lebih cepat berkali
-// lipat dan tanpa kehilangan kualitas. Sisanya, VP9 atau AV1 dari resolusi
-// yang tidak tersedia dalam H.264 dan audio Opus, di-encode ulang supaya
-// hasilnya tetap dapat diputar di mana saja.
-func buildVideoArgs(in TranscodeInput) []string {
-	args := []string{
-		"-hide_banner",
-		"-nostdin",
-		"-y",
-		"-i", in.MediaPath,
-		"-map", "0:v:0",
-		"-map", "0:a:0",
+// audioEncodeArgs menyusun encoder audio dari preset.
+func audioEncodeArgs(p *domain.Preset) []string {
+	args := []string{"-c:a", p.Codec}
+	args = append(args, qualityArgs(p)...)
+
+	// Lossless dari Opus yang di-decode ke float: tanpa -sample_fmt, FLAC dan
+	// ALAC memilih 32-bit yang dua kali lebih besar tanpa informasi tambahan,
+	// karena sumbernya sendiri lossy.
+	switch p.Codec {
+	case "flac":
+		args = append(args, "-sample_fmt", "s16")
+	case "alac":
+		args = append(args, "-sample_fmt", "s16p")
 	}
 
-	if in.CopyVideo {
-		args = append(args, "-c:v", "copy")
-	} else {
-		args = append(args,
-			"-c:v", videoEncoder,
-			"-preset", videoPreset,
-			"-crf", videoCRF,
-			"-pix_fmt", videoPixFmt,
-		)
+	// sample_rate kosong berarti ikut sumber: preset lossless kehilangan
+	// maknanya bila di-resample, dan audio yang menyertai video tidak perlu.
+	// Lihat ADR-030.
+	if p.SampleRate != nil {
+		args = append(args, "-ar", strconv.Itoa(*p.SampleRate))
 	}
-
-	if in.CopyAudio {
-		args = append(args, "-c:a", "copy")
-	} else {
-		args = append(args, "-c:a", in.Preset.Codec)
-		args = append(args, qualityArgs(in.Preset)...)
-		if in.Preset.SampleRate != nil {
-			args = append(args, "-ar", strconv.Itoa(*in.Preset.SampleRate))
-		}
-		if in.Preset.Channels > 0 {
-			args = append(args, "-ac", strconv.Itoa(in.Preset.Channels))
-		}
+	if p.Channels > 0 {
+		args = append(args, "-ac", strconv.Itoa(p.Channels))
 	}
-
-	// Indeks moov dipindah ke awal berkas supaya video dapat mulai diputar
-	// sebelum seluruhnya terbaca, termasuk saat dibuka dari folder jaringan.
-	args = append(args, "-movflags", "+faststart")
-	args = append(args, metadataArgs(in.Media)...)
-
-	args = append(args, "-progress", "pipe:1", "-nostats")
-	args = append(args, in.OutputPath)
 	return args
 }
 
-// qualityArgs memilih antara bitrate tetap dan kualitas variabel.
+// qualityArgs memilih antara bitrate tetap dan kualitas variabel. Preset
+// lossless tidak punya keduanya.
 func qualityArgs(p *domain.Preset) []string {
-	if p.Mode == "vbr" && p.VBRQuality != nil {
+	if p.Mode == domain.ModeVBR && p.VBRQuality != nil {
 		return []string{"-q:a", strconv.Itoa(*p.VBRQuality)}
 	}
 	if p.BitrateKbps != nil {
@@ -250,7 +279,18 @@ func (t *Transcoder) Transcode(
 		return err
 	}
 
-	if in.Preset.IsVideo() {
+	format, ok := domain.FormatOf(in.Preset.Format)
+	if !ok {
+		return domain.NewError(domain.CodeInternal, domain.ClassPermanent,
+			fmt.Sprintf("format %s tidak dikenal", in.Preset.Format))
+	}
+	if !format.Cover {
+		in.CoverPath = ""
+	}
+
+	// Sumber hanya perlu diperiksa bila ada yang mungkin disalin, atau bila
+	// hasilnya wajib memuat video.
+	if in.Preset.IsVideo() || in.Preset.Passthrough {
 		src, err := NewProber(t.tools, t.log).Probe(ctx, in.MediaPath)
 		if err != nil {
 			// Pembatalan dan ffprobe yang hilang dilaporkan apa adanya;
@@ -266,13 +306,12 @@ func (t *Transcoder) Transcode(
 			return domain.WrapError(domain.CodeTranscodeFailed, domain.ClassTransient,
 				"periksa berkas sumber", err)
 		}
-		if !src.HasVideo || !src.HasAudio {
+		if !src.HasAudio || (in.Preset.IsVideo() && !src.HasVideo) {
 			return domain.NewError(domain.CodeTranscodeFailed, domain.ClassTransient,
-				"berkas sumber tidak memuat stream video dan audio")
+				"berkas sumber tidak memuat stream yang dibutuhkan")
 		}
-		in.CopyVideo = src.MP4ReadyVideo()
-		in.CopyAudio = src.MP4ReadyAudio()
-		t.log.Info("rencana konversi video",
+		in.CopyVideo, in.CopyAudio = copyPlan(in.Preset, format, src)
+		t.log.Info("rencana konversi", "format", in.Preset.Format,
 			"video", src.VideoCodec, "pix_fmt", src.PixFmt, "salin_video", in.CopyVideo,
 			"audio", src.Codec, "salin_audio", in.CopyAudio)
 	}

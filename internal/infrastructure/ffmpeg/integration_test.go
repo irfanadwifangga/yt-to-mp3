@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -120,6 +121,7 @@ type streamInfo struct {
 		Disposition struct {
 			AttachedPic int `json:"attached_pic"`
 		} `json:"disposition"`
+		Tags map[string]string `json:"tags"`
 	} `json:"streams"`
 	Format struct {
 		Tags map[string]string `json:"tags"`
@@ -326,7 +328,7 @@ func (e env) transcodeVideo(t *testing.T, src string) (string, string) {
 		MediaPath: src, OutputPath: out, Media: media(), Timeout: 2 * time.Minute,
 		Preset: &domain.Preset{
 			ID: "mp4_720", Kind: domain.KindVideo, Format: "mp4", Codec: "aac", Mode: "cbr",
-			BitrateKbps: intPtr(192), Channels: 2, MaxHeight: intPtr(720),
+			BitrateKbps: intPtr(192), Channels: 2, MaxHeight: intPtr(720), Passthrough: true,
 		},
 	}, func(ffmpeg.Progress) { updates++ })
 	if err != nil {
@@ -405,5 +407,158 @@ func TestIntegrasiVerifyVideoMenolakAudioSaja(t *testing.T) {
 	var derr *domain.Error
 	if !errors.As(err, &derr) || derr.Code != domain.CodeVerifyFailed {
 		t.Errorf("Verify() error = %v, mau %s", err, domain.CodeVerifyFailed)
+	}
+}
+
+// Setiap format audio menghasilkan codec yang benar, dengan sampul hanya
+// pada wadah yang mendukungnya. Sampul diperiksa di berkas hasil karena
+// kegagalan sampul diulang diam-diam tanpa sampul.
+func TestIntegrasiFormatAudio(t *testing.T) {
+	e := setup(t)
+	audio, cover := e.fixture(t)
+	opusSrc := filepath.Join(e.dir, "sumber.webm")
+	if out, err := exec.Command(e.ffmpeg, "-hide_banner", "-y", "-i", audio, "-c:a", "libopus",
+		"-b:a", "160k", opusSrc).CombinedOutput(); err != nil {
+		t.Fatalf("buat sumber opus: %v\n%s", err, out)
+	}
+
+	tests := []struct {
+		preset    domain.Preset
+		src       string
+		codec     string
+		wantCover bool
+	}{
+		{domain.Preset{ID: "m4a_192", Format: "m4a", Codec: "aac", Mode: domain.ModeCBR, BitrateKbps: intPtr(192), SampleRate: intPtr(48000), Channels: 2}, audio, "aac", true},
+		{domain.Preset{ID: "m4a_alac", Format: "m4a", Codec: "alac", Mode: domain.ModeLossless, Channels: 2}, audio, "alac", true},
+		{domain.Preset{ID: "flac", Format: "flac", Codec: "flac", Mode: domain.ModeLossless, Channels: 2}, audio, "flac", true},
+		{domain.Preset{ID: "wav_pcm16", Format: "wav", Codec: "pcm_s16le", Mode: domain.ModeLossless, Channels: 2}, audio, "pcm_s16le", false},
+		{domain.Preset{ID: "ogg_q6", Format: "ogg", Codec: "libvorbis", Mode: domain.ModeVBR, VBRQuality: intPtr(6), SampleRate: intPtr(48000), Channels: 2}, audio, "vorbis", false},
+		{domain.Preset{ID: "opus_source", Format: "opus", Codec: "libopus", Mode: domain.ModeCBR, BitrateKbps: intPtr(160), SampleRate: intPtr(48000), Channels: 2, Passthrough: true}, opusSrc, "opus", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.preset.ID, func(t *testing.T) {
+			preset := tc.preset
+			out := filepath.Join(e.dir, preset.ID+"."+preset.Format)
+			var logBuf bytes.Buffer
+			log := slog.New(slog.NewTextHandler(&logBuf, nil))
+			err := ffmpeg.NewTranscoder(e.tools, log).Transcode(context.Background(), ffmpeg.TranscodeInput{
+				MediaPath: tc.src, CoverPath: cover, OutputPath: out, Preset: &preset,
+				Media: media(), Timeout: 2 * time.Minute,
+			}, func(ffmpeg.Progress) {})
+			if err != nil {
+				t.Fatalf("Transcode() error = %v", err)
+			}
+			if strings.Contains(logBuf.String(), "diulang tanpa sampul") {
+				t.Errorf("sampul gagal disematkan dan diulang tanpa sampul: %s", logBuf.String())
+			}
+			// Opus asli harus benar-benar disalin, bukan di-encode ulang.
+			if preset.Passthrough && !strings.Contains(logBuf.String(), "salin_audio=true") {
+				t.Errorf("Opus sumber seharusnya disalin: %s", logBuf.String())
+			}
+			if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration, domain.KindAudio); err != nil {
+				t.Errorf("Verify() error = %v", err)
+			}
+
+			info := e.inspect(t, out)
+			var codec string
+			var pictures int
+			for _, s := range info.Streams {
+				if s.CodecType == "audio" {
+					codec = s.CodecName
+				}
+				if s.Disposition.AttachedPic == 1 {
+					pictures++
+				}
+			}
+			if codec != tc.codec {
+				t.Errorf("codec = %q, mau %q", codec, tc.codec)
+			}
+			if (pictures == 1) != tc.wantCover {
+				t.Errorf("sampul = %d, mau ada = %v", pictures, tc.wantCover)
+			}
+			if got := tagValue(info, "title"); got != "Nada Uji 水平線" {
+				t.Errorf("tag title = %q", got)
+			}
+		})
+	}
+}
+
+// tagValue membaca tag tanpa peduli huruf besar-kecil, dari tingkat berkas
+// lalu dari stream audio: Ogg menyimpan Vorbis comment pada stream, dan
+// kapitalisasi nama tag berbeda antarwadah.
+func tagValue(info streamInfo, key string) string {
+	sets := []map[string]string{info.Format.Tags}
+	for _, s := range info.Streams {
+		if s.CodecType == "audio" {
+			sets = append(sets, s.Tags)
+		}
+	}
+	for _, tags := range sets {
+		for k, v := range tags {
+			if strings.EqualFold(k, key) {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// Setiap format video menghasilkan wadah dan codec yang dijanjikannya.
+// Sumber MPEG-4 Part 2 + FLAC sengaja tidak cocok dengan wadah mana pun
+// kecuali MKV dan AVI, sehingga jalur encode ulang tiap format ikut teruji.
+func TestIntegrasiFormatVideo(t *testing.T) {
+	e := setup(t)
+	src := e.videoFixture(t, "mpeg4-flac", "-c:v", "mpeg4", "-c:a", "flac")
+	vp9 := e.videoFixture(t, "vp9-opus", "-c:v", "libvpx-vp9", "-deadline", "realtime",
+		"-cpu-used", "8", "-c:a", "libopus")
+
+	tests := []struct {
+		name, src, format, codec string
+		wantVideo, wantAudio     string
+		copyVideo                bool
+	}{
+		{"mov", src, "mov", "aac", "h264", "aac", false},
+		{"flv", src, "flv", "aac", "h264", "aac", false},
+		{"webm encode", src, "webm", "libopus", "vp9", "opus", false},
+		{"webm salin", vp9, "webm", "libopus", "vp9", "opus", true},
+		{"mkv salin", src, "mkv", "libopus", "mpeg4", "flac", true},
+		{"avi", src, "avi", "libmp3lame", "mpeg4", "mp3", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := filepath.Join(e.dir, strings.ReplaceAll(tc.name, " ", "-")+"."+tc.format)
+			var logBuf bytes.Buffer
+			log := slog.New(slog.NewTextHandler(&logBuf, nil))
+			err := ffmpeg.NewTranscoder(e.tools, log).Transcode(context.Background(), ffmpeg.TranscodeInput{
+				MediaPath: tc.src, OutputPath: out, Media: media(), Timeout: 2 * time.Minute,
+				Preset: &domain.Preset{
+					ID: tc.format + "_720", Kind: domain.KindVideo, Format: tc.format, Codec: tc.codec,
+					Mode: domain.ModeCBR, BitrateKbps: intPtr(160), Channels: 2, MaxHeight: intPtr(720),
+					Passthrough: true,
+				},
+			}, func(ffmpeg.Progress) {})
+			if err != nil {
+				t.Fatalf("Transcode() error = %v", err)
+			}
+			if err := ffmpeg.NewProber(e.tools, e.log).Verify(context.Background(), out, fixtureDuration, domain.KindVideo); err != nil {
+				t.Errorf("Verify() error = %v", err)
+			}
+			if want := fmt.Sprintf("salin_video=%v", tc.copyVideo); !strings.Contains(logBuf.String(), want) {
+				t.Errorf("rencana tidak memuat %s: %s", want, logBuf.String())
+			}
+
+			var gotVideo, gotAudio string
+			for _, s := range e.inspect(t, out).Streams {
+				switch s.CodecType {
+				case "video":
+					gotVideo = s.CodecName
+				case "audio":
+					gotAudio = s.CodecName
+				}
+			}
+			if gotVideo != tc.wantVideo || gotAudio != tc.wantAudio {
+				t.Errorf("stream = %s + %s, mau %s + %s", gotVideo, gotAudio, tc.wantVideo, tc.wantAudio)
+			}
+		})
 	}
 }

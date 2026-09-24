@@ -4,12 +4,14 @@
     "ffmpeg": {
       "available": false,
       "name": "ffmpeg",
+      "updatable": false,
       "update_available": false,
       "version": ""
     },
     "ffprobe": {
       "available": false,
       "name": "ffprobe",
+      "updatable": false,
       "update_available": false,
       "version": ""
     },
@@ -19,6 +21,7 @@
       "name": "yt-dlp",
       "pinned_version": "2026.08.19",
       "source": "managed",
+      "updatable": true,
       "update_available": true,
       "version": "2026.08.19"
     }

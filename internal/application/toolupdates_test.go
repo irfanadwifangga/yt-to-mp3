@@ -41,6 +41,9 @@ type fakeUpdateSource struct {
 	latestErr error
 	checks    int
 	installed string
+	// updatable adalah tool yang dapat diperbarui satu klik di platform
+	// palsu ini.
+	updatable map[string]bool
 }
 
 func (f *fakeUpdateSource) StatusAll(context.Context) map[string]application.ToolStatus {
@@ -61,9 +64,11 @@ func (f *fakeUpdateSource) LatestVersion(_ context.Context, name string) (string
 	return f.latest[name], nil
 }
 
-func (f *fakeUpdateSource) InstallLatestYTDLP(context.Context) (string, error) {
-	f.installed = f.latest["yt-dlp"]
-	f.statuses["yt-dlp"] = application.ToolStatus{Name: "yt-dlp", Available: true, Version: f.installed}
+func (f *fakeUpdateSource) CanUpdate(name string) bool { return f.updatable[name] }
+
+func (f *fakeUpdateSource) InstallLatest(_ context.Context, name string) (string, error) {
+	f.installed = f.latest[name]
+	f.statuses[name] = application.ToolStatus{Name: name, Available: true, Version: f.installed}
 	return f.installed, nil
 }
 
@@ -86,7 +91,8 @@ func newToolFixture(enabled *bool) (*application.ToolService, *fakeUpdateSource,
 			"ffmpeg":  {Name: "ffmpeg", Available: true, Version: "9.0.1-essentials_build-www.gyan.dev"},
 			"ffprobe": {Name: "ffprobe", Available: true, Version: "9.0.1-essentials_build-www.gyan.dev"},
 		},
-		latest: map[string]string{"yt-dlp": "2026.09.01", "ffmpeg": "9.0.1"},
+		latest:    map[string]string{"yt-dlp": "2026.09.01", "ffmpeg": "9.0.1"},
+		updatable: map[string]bool{"yt-dlp": true},
 	}
 	store := &memUpdateStore{}
 	now := time.Date(2026, 9, 13, 10, 0, 0, 0, time.UTC)
@@ -169,13 +175,19 @@ func TestToolServiceCekGagalTidakMenimpaHasilLama(t *testing.T) {
 	}
 }
 
-func TestToolServiceUpdateHanyaYTDLP(t *testing.T) {
+// Hanya tool yang dinyatakan dapat diperbarui oleh sumbernya yang boleh
+// dipasang ke rilis terbaru; di luar Windows, FFmpeg mengikuti manifest.
+func TestToolServiceUpdateMengikutiCanUpdate(t *testing.T) {
 	enabled := true
 	svc, src, _, _ := newToolFixture(&enabled)
 	ctx := context.Background()
 
 	if err := svc.Update(ctx, "ffmpeg"); err == nil {
-		t.Error("ffmpeg seharusnya tidak bisa diperbarui dari aplikasi")
+		t.Error("ffmpeg seharusnya tidak bisa diperbarui di platform ini")
+	}
+	if st := svc.StatusAll(ctx); !st["yt-dlp"].Updatable || st["ffmpeg"].Updatable {
+		t.Errorf("updatable yt-dlp=%v ffmpeg=%v, mau true dan false",
+			st["yt-dlp"].Updatable, st["ffmpeg"].Updatable)
 	}
 
 	if err := svc.CheckUpdates(ctx); err != nil {
@@ -189,6 +201,34 @@ func TestToolServiceUpdateHanyaYTDLP(t *testing.T) {
 	}
 	if svc.StatusAll(ctx)["yt-dlp"].UpdateAvailable {
 		t.Error("pembaruan masih ditandai setelah dipasang")
+	}
+}
+
+// Di Windows FFmpeg dapat diperbarui satu klik, dan ffprobe ikut versinya
+// tanpa tombol sendiri.
+func TestToolServiceUpdateFFmpeg(t *testing.T) {
+	enabled := true
+	svc, src, _, _ := newToolFixture(&enabled)
+	src.updatable["ffmpeg"] = true
+	src.latest["ffmpeg"] = "9.0.2"
+	ctx := context.Background()
+
+	if err := svc.CheckUpdates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := svc.StatusAll(ctx)
+	if !st["ffmpeg"].Updatable || !st["ffmpeg"].UpdateAvailable || st["ffprobe"].Updatable {
+		t.Errorf("sebelum update: ffmpeg=%+v ffprobe=%+v", st["ffmpeg"], st["ffprobe"])
+	}
+
+	if err := svc.Update(ctx, "ffmpeg"); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if src.installed != "9.0.2" {
+		t.Errorf("terpasang = %q, mau 9.0.2", src.installed)
+	}
+	if svc.StatusAll(ctx)["ffmpeg"].UpdateAvailable {
+		t.Error("pembaruan FFmpeg masih ditandai setelah dipasang")
 	}
 }
 

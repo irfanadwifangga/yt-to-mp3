@@ -30,7 +30,13 @@ func (a Downloader) Download(
 		SourceKey: req.SourceKey,
 		TempDir:   req.TempDir,
 		Timeout:   req.Timeout,
-		Selection: ytdlp.Selection{Video: req.Video, MaxHeight: req.MaxHeight},
+		Selection: ytdlp.Selection{
+			Video:       req.Video,
+			MaxHeight:   req.MaxHeight,
+			PreferVideo: req.PreferVideo,
+			PreferAudio: req.PreferAudio,
+			Thumbnail:   req.Thumbnail,
+		},
 	}, func(p ytdlp.Progress) {
 		onProgress(p.Percent())
 	})

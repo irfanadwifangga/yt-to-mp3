@@ -24,7 +24,7 @@ func NewPresetRepository(d *DB) *PresetRepository {
 }
 
 const presetColumns = `id, label, kind, format, codec, mode, bitrate_kbps, vbr_quality,
-	sample_rate, channels, max_height, extra_args, sort_order, deprecated`
+	sample_rate, channels, max_height, passthrough, extra_args, sort_order, deprecated`
 
 // List mengembalikan preset terurut. Preset usang disembunyikan dari UI
 // tetapi tetap dapat di-resolve lewat Get, supaya history lama tidak yatim.
@@ -70,16 +70,17 @@ func (r *PresetRepository) Get(ctx context.Context, id string) (*domain.Preset, 
 
 func scanPreset(s scanner) (*domain.Preset, error) {
 	var (
-		p          domain.Preset
-		bitrate    sql.NullInt64
-		vbrQuality sql.NullInt64
-		sampleRate sql.NullInt64
-		maxHeight  sql.NullInt64
-		deprecated int
+		p           domain.Preset
+		bitrate     sql.NullInt64
+		vbrQuality  sql.NullInt64
+		sampleRate  sql.NullInt64
+		maxHeight   sql.NullInt64
+		passthrough int
+		deprecated  int
 	)
 
 	err := s.Scan(&p.ID, &p.Label, &p.Kind, &p.Format, &p.Codec, &p.Mode,
-		&bitrate, &vbrQuality, &sampleRate, &p.Channels, &maxHeight,
+		&bitrate, &vbrQuality, &sampleRate, &p.Channels, &maxHeight, &passthrough,
 		&p.ExtraArgs, &p.SortOrder, &deprecated)
 	if err != nil {
 		return nil, err
@@ -103,6 +104,7 @@ func scanPreset(s scanner) (*domain.Preset, error) {
 		v := int(maxHeight.Int64)
 		p.MaxHeight = &v
 	}
+	p.Passthrough = passthrough != 0
 	p.Deprecated = deprecated != 0
 
 	return &p, nil

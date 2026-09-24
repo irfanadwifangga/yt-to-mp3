@@ -22,7 +22,7 @@
 YouTube to MP3 & MP4 is a desktop app that runs locally: paste a YouTube link, check the preview, and get an MP3 with the title, artist, cover art, and (for YouTube Music tracks) album and release year already filled in, or an MP4 video from 360p up to the best resolution available. Nothing is uploaded to a cloud service, and there is no account to create.
 
 - **Paste and go** — analysis starts as soon as the link is complete.
-- **Audio or video** — MP3 in five quality levels, or MP4 (H.264 + AAC) that plays on any device.
+- **Audio or video, in many formats** — MP3, M4A, Opus, OGG, FLAC, or WAV; MP4, MKV, MOV, WebM, AVI, or FLV.
 - **Clean tags** — title and artist suggestions without clutter like `(Official Video)`, editable before converting.
 - **A real queue** — live progress, cancel, automatic retries, and a history of finished files.
 - **Its own window on Windows**, with a one-click installer and no admin rights required.
@@ -35,7 +35,7 @@ Read the [full documentation](docs/README.en.md) for installation, usage, develo
 YouTube to MP3 & MP4 adalah aplikasi desktop yang berjalan lokal: tempel tautan YouTube, periksa pratinjaunya, lalu dapatkan MP3 dengan judul, artis, sampul, dan (untuk lagu YouTube Music) album serta tahun rilis yang sudah terisi, atau video MP4 dari 360p sampai resolusi terbaik yang tersedia. Tidak ada yang diunggah ke layanan cloud, dan tidak perlu membuat akun.
 
 - **Tempel dan jalan** — analisis dimulai begitu tautannya lengkap.
-- **Audio atau video** — MP3 dalam lima tingkat kualitas, atau MP4 (H.264 + AAC) yang bisa diputar di perangkat apa pun.
+- **Audio atau video, dalam banyak format** — MP3, M4A, Opus, OGG, FLAC, atau WAV; MP4, MKV, MOV, WebM, AVI, atau FLV.
 - **Tag yang rapi** — saran judul dan artis tanpa embel-embel seperti `(Official Video)`, bisa disunting sebelum konversi.
 - **Antrean sungguhan** — progress live, pembatalan, percobaan ulang otomatis, dan riwayat berkas yang selesai.
 - **Jendela sendiri di Windows**, dengan installer sekali klik tanpa hak admin.

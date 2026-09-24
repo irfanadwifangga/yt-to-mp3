@@ -59,6 +59,10 @@ const diskSafetyFactor = 1.5
 // disajikan YouTube.
 const assumedSourceKbps = 160
 
+// losslessKbps adalah bitrate PCM 16-bit 48 kHz stereo, batas atas ukuran
+// FLAC, ALAC, dan WAV dari sumber YouTube.
+const losslessKbps = 1536
+
 // assumedVideoHeight dipakai perkiraan disk untuk preset video tanpa batas
 // resolusi pada sumber yang resolusinya belum diketahui.
 const assumedVideoHeight = 1080
@@ -73,6 +77,14 @@ type DownloadRequest struct {
 	// resolusinya; nol berarti tertinggi yang tersedia.
 	Video     bool
 	MaxHeight int
+
+	// PreferVideo dan PreferAudio adalah codec yang didahulukan supaya
+	// hasilnya cukup disalin ke wadah tujuan; kosong berarti terbaik.
+	PreferVideo string
+	PreferAudio string
+
+	// Thumbnail meminta sampul, hanya untuk wadah audio yang mendukungnya.
+	Thumbnail bool
 }
 
 // DownloadOutcome menunjuk berkas hasil unduhan.
@@ -219,6 +231,11 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 		return domain.NewError(domain.CodeInternal, domain.ClassPermanent,
 			fmt.Sprintf("preset %s tidak dapat dibaca", job.PresetID))
 	}
+	format, ok := domain.FormatOf(preset.Format)
+	if !ok {
+		return domain.NewError(domain.CodeInternal, domain.ClassPermanent,
+			fmt.Sprintf("format %s tidak dikenal", preset.Format))
+	}
 
 	media, err := p.resolveMedia(ctx, job)
 	if err != nil {
@@ -248,10 +265,13 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 		return err
 	}
 	req := DownloadRequest{
-		SourceKey: job.SourceKey,
-		TempDir:   tempDir,
-		Timeout:   limits.download,
-		Video:     preset.IsVideo(),
+		SourceKey:   job.SourceKey,
+		TempDir:     tempDir,
+		Timeout:     limits.download,
+		Video:       preset.IsVideo(),
+		PreferVideo: format.PreferVideo,
+		PreferAudio: format.PreferAudio,
+		Thumbnail:   !preset.IsVideo() && format.Cover,
 	}
 	if preset.MaxHeight != nil {
 		req.MaxHeight = *preset.MaxHeight
@@ -338,7 +358,7 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	}
 	file := &domain.File{
 		ID: fileID, JobID: job.ID, Path: finalPath, Filename: finalName,
-		MIME: mimeFor(preset.Format), SizeBytes: size, SHA256: sum,
+		MIME: format.MIME, SizeBytes: size, SHA256: sum,
 	}
 
 	if err := p.closer.Complete(ctx, job.ID, domain.StatusVerifying, file,
@@ -397,6 +417,9 @@ func (p *Pipeline) preflightDisk(out OutputTarget, media *domain.MediaInfo, pres
 	kbps := assumedSourceKbps
 	if preset.BitrateKbps != nil {
 		kbps += *preset.BitrateKbps
+	}
+	if preset.Mode == domain.ModeLossless {
+		kbps += losslessKbps
 	}
 	if preset.IsVideo() {
 		// Sumber dan hasil sama-sama memuat video pada resolusi yang sama,
@@ -535,24 +558,4 @@ func newFileID() (string, error) {
 		return "", fmt.Errorf("buat id berkas: %w", err)
 	}
 	return "file_" + hex.EncodeToString(buf), nil
-}
-
-// mimeFor memetakan format preset ke tipe MIME.
-func mimeFor(format string) string {
-	switch format {
-	case "mp3":
-		return "audio/mpeg"
-	case "m4a":
-		return "audio/mp4"
-	case "opus":
-		return "audio/opus"
-	case "flac":
-		return "audio/flac"
-	case "wav":
-		return "audio/wav"
-	case "mp4":
-		return "video/mp4"
-	default:
-		return "application/octet-stream"
-	}
 }

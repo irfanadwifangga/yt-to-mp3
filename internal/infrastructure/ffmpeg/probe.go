@@ -42,19 +42,6 @@ type ProbeResult struct {
 	PixFmt     string
 }
 
-// MP4ReadyVideo melaporkan apakah stream video dapat disalin apa adanya ke
-// MP4 yang diputar di mana saja: H.264 8-bit 4:2:0.
-func (r *ProbeResult) MP4ReadyVideo() bool {
-	return r.VideoCodec == "h264" && (r.PixFmt == "yuv420p" || r.PixFmt == "yuvj420p")
-}
-
-// MP4ReadyAudio melaporkan apakah stream audio dapat disalin apa adanya ke
-// MP4. Opus di dalam MP4 sah menurut spesifikasi, tetapi banyak pemutar
-// bawaan menolaknya.
-func (r *ProbeResult) MP4ReadyAudio() bool {
-	return r.Codec == "aac"
-}
-
 // probeOutput memetakan keluaran JSON ffprobe.
 type probeOutput struct {
 	Format struct {

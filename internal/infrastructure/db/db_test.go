@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/db"
 )
 
@@ -117,14 +119,14 @@ func TestSeedPreset(t *testing.T) {
 	if err := d.Read().QueryRow(`SELECT count(*) FROM presets`).Scan(&count); err != nil {
 		t.Fatalf("hitung preset: %v", err)
 	}
-	if count != 10 {
-		t.Errorf("jumlah preset = %d, mau 10", count)
+	if count != 42 {
+		t.Errorf("jumlah preset = %d, mau 42", count)
 	}
 
 	// 48 kHz adalah keputusan sadar yang menyesuaikan sumber Opus (ADR-030);
 	// kalau seed-nya bergeser diam-diam, seluruh output ikut berubah.
 	rows, err := d.Read().Query(
-		`SELECT id, sample_rate FROM presets WHERE kind = 'audio' ORDER BY sort_order`)
+		`SELECT id, sample_rate FROM presets WHERE format = 'mp3' ORDER BY sort_order`)
 	if err != nil {
 		t.Fatalf("query preset: %v", err)
 	}
@@ -154,19 +156,19 @@ func TestSeedPreset(t *testing.T) {
 	}
 }
 
-// Preset video menghasilkan MP4 dengan batas resolusi yang menaik, dan
-// Terbaik tanpa batas. Audionya AAC mengikuti sample rate sumber.
+// Setiap format video menawarkan lima kualitas yang sama dengan batas
+// resolusi menaik dan Terbaik tanpa batas; semuanya boleh menyalin stream
+// sumber dan audionya mengikuti sample rate sumber.
 func TestSeedPresetVideo(t *testing.T) {
 	d := migrated(t)
-	presets := db.NewPresetRepository(d)
-
-	list, err := presets.List(context.Background(), false)
+	list, err := db.NewPresetRepository(d).List(context.Background(), false)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 
-	want := map[string]int{"mp4_360": 360, "mp4_480": 480, "mp4_720": 720, "mp4_1080": 1080, "mp4_best": 0}
-	var order []string
+	heights := []int{360, 480, 720, 1080, 0}
+	byFormat := map[string][]domain.Preset{}
+	var formats []string
 	for _, p := range list {
 		if !p.IsVideo() {
 			if p.MaxHeight != nil {
@@ -174,20 +176,79 @@ func TestSeedPresetVideo(t *testing.T) {
 			}
 			continue
 		}
-		order = append(order, p.ID)
-		if p.Format != "mp4" || p.Codec != "aac" || p.SampleRate != nil {
-			t.Errorf("preset %s = %s/%s/%v, mau mp4/aac/ikut sumber", p.ID, p.Format, p.Codec, p.SampleRate)
+		if len(byFormat[p.Format]) == 0 {
+			formats = append(formats, p.Format)
 		}
-		got := 0
-		if p.MaxHeight != nil {
-			got = *p.MaxHeight
+		byFormat[p.Format] = append(byFormat[p.Format], p)
+	}
+	if strings.Join(formats, ",") != "mp4,mkv,mov,webm,avi,flv" {
+		t.Errorf("urutan format video = %v", formats)
+	}
+
+	for format, ps := range byFormat {
+		if _, ok := domain.FormatOf(format); !ok {
+			t.Errorf("format %s tidak punya profil di domain", format)
 		}
-		if got != want[p.ID] {
-			t.Errorf("preset %s: max_height = %d, mau %d", p.ID, got, want[p.ID])
+		if len(ps) != len(heights) {
+			t.Errorf("%s: %d preset, mau %d", format, len(ps), len(heights))
+			continue
+		}
+		for i, p := range ps {
+			got := 0
+			if p.MaxHeight != nil {
+				got = *p.MaxHeight
+			}
+			if got != heights[i] || !p.Passthrough || p.SampleRate != nil {
+				t.Errorf("preset %s: max_height=%d passthrough=%v sample_rate=%v", p.ID, got, p.Passthrough, p.SampleRate)
+			}
+			wantID := fmt.Sprintf("%s_%d", format, got)
+			if got == 0 {
+				wantID = format + "_best"
+			}
+			if p.ID != wantID {
+				t.Errorf("id %s, mau %s", p.ID, wantID)
+			}
 		}
 	}
-	if strings.Join(order, ",") != "mp4_360,mp4_480,mp4_720,mp4_1080,mp4_best" {
-		t.Errorf("urutan preset video = %v", order)
+}
+
+// Preset audio baru: lossless tanpa bitrate dan mengikuti sample rate
+// sumber, dan hanya Opus asli yang menyalin stream sumber.
+func TestSeedPresetAudio(t *testing.T) {
+	d := migrated(t)
+	repo := db.NewPresetRepository(d)
+	ctx := context.Background()
+
+	for _, id := range []string{"flac", "wav_pcm16", "m4a_alac"} {
+		p, err := repo.Get(ctx, id)
+		if err != nil {
+			t.Fatalf("Get(%s) error = %v", id, err)
+		}
+		if p.Mode != domain.ModeLossless || p.BitrateKbps != nil || p.VBRQuality != nil || p.SampleRate != nil {
+			t.Errorf("preset %s = %+v, mau lossless tanpa bitrate dan ikut sumber", id, p)
+		}
+	}
+
+	list, err := repo.List(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range list {
+		if p.IsVideo() {
+			continue
+		}
+		if _, ok := domain.FormatOf(p.Format); !ok {
+			t.Errorf("format %s tidak punya profil di domain", p.Format)
+		}
+		if p.Passthrough != (p.ID == "opus_source") {
+			t.Errorf("preset %s: passthrough = %v", p.ID, p.Passthrough)
+		}
+	}
+
+	// CHECK baru tetap menolak preset lossy tanpa bitrate.
+	if _, err := d.Write().ExecContext(ctx, `INSERT INTO presets
+		(id, label, format, codec, mode, channels, sort_order) VALUES ('x', 'x', 'mp3', 'libmp3lame', 'cbr', 2, 999)`); err == nil {
+		t.Error("preset cbr tanpa bitrate seharusnya ditolak")
 	}
 }
 

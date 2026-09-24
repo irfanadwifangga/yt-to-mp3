@@ -12,7 +12,7 @@ const testURL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 // Preset audio tidak boleh ikut mengunduh stream video (ADR-015), dan
 // sampulnya tetap diambil untuk disematkan ke MP3.
 func TestDownloadArgsAudio(t *testing.T) {
-	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{})
+	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{Thumbnail: true})
 
 	if v := argAfter(args, "-f"); v != "bestaudio/best" {
 		t.Errorf("-f = %q, mau bestaudio/best", v)
@@ -29,7 +29,9 @@ func TestDownloadArgsAudio(t *testing.T) {
 // sumbernya hanya punya H.264 pada resolusi lebih rendah. H.264 dan AAC
 // diutamakan supaya hasilnya cukup disalin ke MP4.
 func TestDownloadArgsVideo(t *testing.T) {
-	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{Video: true, MaxHeight: 720})
+	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{
+		Video: true, MaxHeight: 720, PreferVideo: "h264", PreferAudio: "aac",
+	})
 
 	if v := argAfter(args, "-f"); v != "bv*+ba/b" {
 		t.Errorf("-f = %q, mau bv*+ba/b", v)
@@ -56,10 +58,31 @@ func TestDownloadArgsVideo(t *testing.T) {
 }
 
 func TestDownloadArgsVideoTerbaik(t *testing.T) {
-	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{Video: true})
+	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{
+		Video: true, PreferVideo: "h264", PreferAudio: "aac",
+	})
 
 	if v := argAfter(args, "-S"); v != "res,vcodec:h264,acodec:aac" {
 		t.Errorf("-S = %q, mau tanpa batas resolusi", v)
+	}
+}
+
+// MKV menyimpan sumber apa adanya, jadi hanya resolusi yang diminta dan
+// codec terbaik dibiarkan dipilih yt-dlp.
+func TestDownloadArgsVideoTanpaPreferensiCodec(t *testing.T) {
+	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{Video: true, MaxHeight: 1080})
+
+	if v := argAfter(args, "-S"); v != "res:1080" {
+		t.Errorf("-S = %q, mau res:1080 saja", v)
+	}
+}
+
+// Wadah audio tanpa dukungan sampul tidak perlu mengunduh thumbnail.
+func TestDownloadArgsAudioTanpaSampul(t *testing.T) {
+	args := downloadArgs(testURL, "/tmp/job", "/opt/ffmpeg", Selection{})
+
+	if contains(args, "--write-thumbnail") {
+		t.Errorf("thumbnail diunduh padahal tidak diminta: %v", args)
 	}
 }
 

@@ -10,6 +10,7 @@
       "kind": "audio",
       "label": "Standard",
       "mode": "cbr",
+      "passthrough": false,
       "sample_rate": 48000
     },
     {
@@ -22,7 +23,8 @@
       "kind": "video",
       "label": "720p",
       "max_height": 720,
-      "mode": "cbr"
+      "mode": "cbr",
+      "passthrough": true
     }
   ]
 }

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -51,7 +52,10 @@ type ToolUpdateSource interface {
 	StatusAll(ctx context.Context) map[string]ToolStatus
 	Install(ctx context.Context, name string) error
 	LatestVersion(ctx context.Context, name string) (string, error)
-	InstallLatestYTDLP(ctx context.Context) (string, error)
+	// CanUpdate dan InstallLatest mengatur pembaruan satu klik ke rilis
+	// terbaru, di luar manifest ter-pin (ADR-033).
+	CanUpdate(name string) bool
+	InstallLatest(ctx context.Context, name string) (string, error)
 	Progress() map[string]ToolProgress
 }
 
@@ -135,6 +139,7 @@ func (s *ToolService) StatusAll(ctx context.Context) map[string]ToolStatus {
 		}
 		st.Latest = latest[key]
 		st.UpdateAvailable = st.Available && IsNewerVersion(st.Version, st.Latest)
+		st.Updatable = s.src.CanUpdate(name)
 		statuses[name] = st
 	}
 	return statuses
@@ -207,21 +212,21 @@ func (s *ToolService) CheckUpdates(ctx context.Context) error {
 	return nil
 }
 
-// Update memperbarui tool atas permintaan pengguna.
+// Update memperbarui tool ke rilis terbarunya atas permintaan pengguna.
 //
-// Hanya yt-dlp yang dapat diperbarui dari aplikasi. FFmpeg tetap mengikuti
-// manifest yang di-pin di rilis aplikasi (ADR-033), karena kerusakannya
-// tidak mengikuti perubahan di sisi YouTube.
+// yt-dlp dapat diperbarui di semua platform, FFmpeg hanya di Windows; di
+// tempat lain FFmpeg mengikuti manifest yang di-pin di rilis aplikasi
+// (ADR-033). Tool sumber yang menentukan lewat CanUpdate.
 func (s *ToolService) Update(ctx context.Context, name string) error {
-	if name != toolYTDLP {
+	if !s.src.CanUpdate(name) {
 		return domain.NewError(domain.CodeInternal, domain.ClassLocal,
-			"hanya yt-dlp yang dapat diperbarui dari aplikasi")
+			fmt.Sprintf("%s tidak dapat diperbarui dari aplikasi di sistem ini", name))
 	}
 
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
 
-	version, err := s.src.InstallLatestYTDLP(ctx)
+	version, err := s.src.InstallLatest(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -231,7 +236,7 @@ func (s *ToolService) Update(ctx context.Context, name string) error {
 	for k, v := range s.state.Latest {
 		latest[k] = v
 	}
-	latest[toolYTDLP] = version
+	latest[name] = version
 	s.state.Latest = latest
 	state := s.state
 	s.mu.Unlock()

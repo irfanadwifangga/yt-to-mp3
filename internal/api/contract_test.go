@@ -141,7 +141,8 @@ func TestKontrakAPI(t *testing.T) {
 	seedContractJobs(t, h)
 	h.tools.status["yt-dlp"] = application.ToolStatus{
 		Name: "yt-dlp", Available: true, Version: "2026.08.19", Source: "managed",
-		Pinned: "2026.08.19", Latest: "2026.09.01", UpdateAvailable: true, Path: "C:/tidak/boleh/bocor.exe",
+		Pinned: "2026.08.19", Latest: "2026.09.01", UpdateAvailable: true, Updatable: true,
+		Path: "C:/tidak/boleh/bocor.exe",
 	}
 
 	cases := []struct {

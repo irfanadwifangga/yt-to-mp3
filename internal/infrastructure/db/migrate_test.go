@@ -100,8 +100,8 @@ func TestMigrateDariSkemaVersi1(t *testing.T) {
 	}
 }
 
-// Migrasi 00006 bisa dibalik tanpa menyisakan preset video maupun kolom
-// barunya, lalu diterapkan lagi dengan hasil yang sama.
+// Migrasi 00006 dan 00007 bisa dibalik tanpa menyisakan preset baru maupun
+// kolomnya, lalu diterapkan lagi dengan hasil yang sama.
 func TestMigrasiPresetVideoBisaDibalik(t *testing.T) {
 	ctx := context.Background()
 	d := openTemp(t)
@@ -128,15 +128,69 @@ func TestMigrasiPresetVideoBisaDibalik(t *testing.T) {
 		t.Error("kolom kind masih ada setelah Down")
 	}
 
-	if _, err := provider.Up(ctx); err != nil {
-		t.Fatalf("Up() ulang error = %v", err)
+	if _, err := provider.UpTo(ctx, 6); err != nil {
+		t.Fatalf("UpTo(6) ulang error = %v", err)
 	}
 	if err := d.Read().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM presets WHERE kind = 'video'`).Scan(&count); err != nil {
 		t.Fatalf("hitung preset video: %v", err)
 	}
 	if count != 5 {
-		t.Errorf("preset video setelah Up ulang = %d, mau 5", count)
+		t.Errorf("preset video pada versi 6 = %d, mau 5", count)
+	}
+
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("Up() ulang error = %v", err)
+	}
+	if err := d.Read().QueryRowContext(ctx, `SELECT COUNT(*) FROM presets`).Scan(&count); err != nil {
+		t.Fatalf("hitung preset: %v", err)
+	}
+	if count != 42 {
+		t.Errorf("preset setelah Up ulang = %d, mau 42", count)
+	}
+}
+
+// Membangun ulang tabel presets tidak boleh memutus riwayat: job lama tetap
+// merujuk presetnya, dan foreign key kembali ditegakkan sesudahnya.
+func TestMigrasiFormatMenjagaRiwayat(t *testing.T) {
+	ctx := context.Background()
+	d := openTemp(t)
+
+	provider, err := goose.NewProvider(goose.DialectSQLite3, d.Write(), migrations.FS)
+	if err != nil {
+		t.Fatalf("NewProvider() error = %v", err)
+	}
+	if _, err := provider.UpTo(ctx, 6); err != nil {
+		t.Fatalf("UpTo(6) error = %v", err)
+	}
+	if _, err := d.Write().ExecContext(ctx, `INSERT INTO jobs
+		(id, source_url, source_key, title, status, preset_id, created_at)
+		VALUES ('job_video', 'https://www.youtube.com/watch?v=aaaaaaaaaaa', 'youtube:aaaaaaaaaaa',
+		        'Video lama', 'completed', 'mp4_720', '2026-09-20T10:00:00Z')`); err != nil {
+		t.Fatalf("isi job: %v", err)
+	}
+
+	if err := d.Migrate(ctx, "0.0.0-test"); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	job, err := db.NewJobRepository(d).Get(ctx, "job_video")
+	if err != nil {
+		t.Fatalf("job lama hilang: %v", err)
+	}
+	preset, err := db.NewPresetRepository(d).Get(ctx, job.PresetID)
+	if err != nil || !preset.IsVideo() || !preset.Passthrough {
+		t.Errorf("preset job lama = %+v, %v; mau video dengan passthrough", preset, err)
+	}
+
+	var fk int
+	if err := d.Write().QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fk); err != nil || fk != 1 {
+		t.Errorf("foreign_keys = %d, %v; mau 1 setelah migrasi", fk, err)
+	}
+	if _, err := d.Write().ExecContext(ctx, `INSERT INTO jobs
+		(id, source_url, source_key, status, preset_id, created_at)
+		VALUES ('job_yatim', 'x', 'youtube:bbbbbbbbbbb', 'queued', 'tidak_ada', '2026-09-20T10:00:00Z')`); err == nil {
+		t.Error("job dengan preset yang tidak ada seharusnya ditolak foreign key")
 	}
 }
 

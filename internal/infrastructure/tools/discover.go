@@ -67,6 +67,10 @@ type Manager struct {
 	githubAPI      string
 	githubDownload string
 
+	// platformOverride mengganti platform yang dilaporkan; hanya test yang
+	// mengisinya, untuk menguji jalur Windows di mesin lain.
+	platformOverride string
+
 	mu    sync.RWMutex
 	cache map[string]cacheEntry
 	now   func() time.Time // dapat diganti test

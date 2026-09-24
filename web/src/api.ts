@@ -39,6 +39,8 @@ export interface ToolStatus {
   /** Versi rilis terbaru dari cek pembaruan terakhir. */
   latest_version?: string;
   update_available: boolean;
+  /** Dapat diperbarui ke rilis terbaru dengan satu klik dari aplikasi. */
+  updatable: boolean;
 }
 
 export interface Health {
@@ -255,6 +257,8 @@ export interface Preset {
   /** Batas resolusi video dalam satuan label "p"; kosong berarti tertinggi
    *  yang tersedia. Hanya ada pada preset video. */
   max_height?: number;
+  /** Stream sumber disalin apa adanya bila codecnya sudah sesuai format. */
+  passthrough: boolean;
 }
 
 /** Sama dengan domain.MaxTagRunes di backend. */

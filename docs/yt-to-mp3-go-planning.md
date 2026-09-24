@@ -2,7 +2,9 @@
 
 Dokumen perencanaan teknis untuk aplikasi desktop-local berbasis Go + embedded SPA.
 
-> **Revisi 5 (2026-09-24).** Keluaran video MP4 H.264 + AAC di samping MP3 (ADR-035): preset video 360p–1080p dan Terbaik, pemilihan stream per preset, salin stream bila sudah H.264/AAC, encode ulang bila tidak. Nama tampilan menjadi "YouTube to MP3 & MP4"; nama teknis tetap `yt-to-mp3`.
+> **Revisi 6 (2026-09-24).** Format tambahan (ADR-036): M4A (AAC, ALAC), Opus asli, Ogg Vorbis, FLAC, dan WAV untuk audio; MKV, MOV, WebM, AVI, dan FLV untuk video. Tabel `presets` dibangun ulang (migrasi `00007`) dengan mode `lossless` dan kolom `passthrough`. Pengetahuan per wadah dipusatkan di `domain.OutputFormat`.
+>
+> **Revisi 5 (2026-09-24).** Keluaran video MP4 H.264 + AAC di samping MP3 (ADR-035): preset video 360p–1080p dan Terbaik, pemilihan stream per preset, salin stream bila sudah H.264/AAC, encode ulang bila tidak. Nama tampilan menjadi "YouTube to MP3 & MP4"; nama teknis tetap `yt-to-mp3`. FFmpeg dapat diperbarui satu klik di Windows (pengecualian ADR-033).
 >
 > **Revisi 4 (2026-09-12).** Sample rate output pindah dari 44.1 kHz ke 48 kHz (ADR-030), menyesuaikan sumber YouTube yang didominasi Opus.
 >
@@ -35,7 +37,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | Bukan tujuan | Catatan |
 | --- | --- |
 | Playlist dan channel | Ditunda; menuntut relasi parent-child pada data model (ADR-017) |
-| Output video selain MP4 H.264 + AAC | WebM, MKV, HEVC, dan AV1 sengaja tidak ditawarkan: tujuan keluaran video adalah berkas yang diputar di mana saja (ADR-035) |
+| Pilihan codec dan parameter encoder bebas | Setiap format punya satu codec tujuan yang tetap (ADR-036); pengguna memilih wadah dan kualitas, bukan codec |
 | Login, cookies, bypass age-gate | `AGE_RESTRICTED` berhenti sebagai error, bukan fitur tertunda |
 | Akses multi-user atau remote | Loopback-only adalah keputusan keamanan, bukan keterbatasan sementara |
 | Prioritas antrean dan penjadwalan | Antrean FIFO sederhana |
@@ -79,8 +81,9 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-030 | Sample rate output 48 kHz, bukan 44.1 kHz | Sumber YouTube didominasi Opus yang secara desain selalu 48 kHz; 44.1 memaksa resampling pada jalur paling umum. MPEG-1 Layer III mendukung 48 kHz secara native, jadi tidak ada kompromi kompatibilitas |
 | ADR-031 | Binary FFmpeg diunduh saat runtime dari rilis berversi: GyanD (Windows) dan martin-riedl.de (Linux, macOS) | Proyek FFmpeg tidak mendistribusikan build statis resmi. Mengunduh saat runtime membuat rilis kita tidak pernah menjadi distributor FFmpeg, sehingga kewajiban LGPL/GPL tidak menempel pada artifact rilis. Keduanya dirujuk halaman unduhan ffmpeg.org. Rencana awal (BtbN dan evermeet.cx) ditinggalkan: BtbN hanya menyediakan snapshot master yang dirotasi, sehingga checksum ter-pin basi, dan evermeet.cx tidak punya build arm64 |
 | ADR-032 | Dependensi pure-Go `github.com/ulikunitz/xz` | Build FFmpeg untuk Linux hanya tersedia sebagai `.tar.xz` dan stdlib tidak punya dekoder xz. Paket ini pure Go sehingga ADR-011 tetap terjaga |
-| ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi. **Pengecualian yt-dlp:** atas permintaan eksplisit pengguna, yt-dlp boleh diperbarui ke rilis terbaru dengan checksum dari `SHA2-256SUMS` rilis yang sama (seperti `yt-dlp -U`), karena yt-dlp rusak mengikuti perubahan YouTube lebih cepat daripada siklus rilis aplikasi. Verifikasi tetap wajib; yang berubah hanya asal checksum. FFmpeg tidak mendapat pengecualian ini |
+| ADR-033 | Manifest tool bersifat fail-closed | Checksum kosong menolak instalasi. Lebih baik fitur tidak jalan daripada menjalankan binary pihak ketiga tanpa verifikasi. **Pengecualian yt-dlp:** atas permintaan eksplisit pengguna, yt-dlp boleh diperbarui ke rilis terbaru dengan checksum dari `SHA2-256SUMS` rilis yang sama (seperti `yt-dlp -U`), karena yt-dlp rusak mengikuti perubahan YouTube lebih cepat daripada siklus rilis aplikasi. Verifikasi tetap wajib; yang berubah hanya asal checksum. **Pengecualian FFmpeg di Windows (revisi 5):** atas permintaan pengguna, build essentials GyanD terbaru boleh dipasang dengan checksum dari digest SHA-256 aset rilis GitHub; aset tanpa digest ditolak. Linux dan macOS tetap mengikuti manifest |
 | ADR-035 | Keluaran video selalu MP4 H.264 8-bit + AAC; yt-dlp memilih resolusi lebih dulu lalu H.264/AAC (`-S res:N,vcodec:h264,acodec:aac`) dan menggabung ke MKV; transcoder menyalin stream yang sudah H.264/AAC dan meng-encode ulang sisanya dengan libx264 `veryfast` CRF 20 | Pemutar bawaan Windows, TV, dan ponsel lama tidak memutar VP9/AV1/Opus di MP4. YouTube hanya menyajikan H.264 sampai 1080p, jadi 360p–1080p cukup disalin (cepat, tanpa kehilangan kualitas) dan hanya resolusi di atasnya yang di-encode ulang. Resolusi didahulukan atas codec supaya pilihan 720p memang menghasilkan 720p. MKV sebagai wadah gabungan tidak pernah gagal karena kombinasi codec; wadah MP4 disusun transcoder sendiri. Preset video tetap satu tabel dengan preset audio karena job, dedup, dan riwayat berporos pada `preset_id` |
+| ADR-036 | Satu tabel profil wadah (`domain.OutputFormat`) menentukan codec yang boleh disalin, codec yang didahulukan yt-dlp, MIME, sampul, dan faststart; preset hanya memilih wadah dan kualitas. Video: MKV menyalin apa pun, WebM menyalin VP9/VP8/AV1 + Opus/Vorbis dan meng-encode ke VP9 realtime, MOV/FLV mengikuti MP4, AVI selalu MPEG-4 Part 2 (Xvid) + MP3. Audio: hanya Opus asli yang menyalin sumber; M4A, Vorbis, FLAC, ALAC, dan WAV selalu di-encode | Setiap wadah punya satu alasan keberadaan yang jelas: kompatibilitas (MP4, MOV, FLV), kualitas asli tanpa encode ulang (MKV, Opus), web (WebM), pemutar lama (AVI), lossless atau editing (FLAC, ALAC, WAV). Menyatukan pengetahuannya di satu tabel mencegah pemilihan stream yt-dlp dan keputusan salin FFmpeg saling menyimpang. Opus disalin karena YouTube sendiri menyajikan Opus: meng-encode-nya ulang hanya menurunkan kualitas |
 | ADR-034 | Di Windows, UI dibuka sebagai jendela aplikasi Microsoft Edge (`--app`) dengan profil khusus di direktori data | Memberi jendela sendiri tanpa tab dan address bar tanpa dependensi baru: Edge ada di setiap Windows 10/11, sedangkan Wails butuh cgo di macOS/Linux (bertentangan dengan ADR-011) dan Electron/Tauri membawa runtime puluhan MB. Profil khusus membuat proses Edge hidup selama jendela terbuka, sehingga penutupannya bisa dideteksi. Tanpa Edge, atau di macOS/Linux, UI tetap dibuka di browser default |
 
 ## 5. Struktur folder
@@ -322,6 +325,25 @@ Nilai V0 hanya hidup di kolom `presets.vbr_quality` dan diterjemahkan jadi `-q:a
 Kolom `presets.kind` (`audio`/`video`) memilih jalur pipeline, dan `max_height` membatasi resolusi dalam satuan label "p" YouTube, yaitu sisi terpendek bingkai, sehingga video vertikal 1080×1920 adalah 1080p. Pada preset video, `codec`, `bitrate_kbps`, dan `channels` hanya berlaku bagi trek audio saat audio sumber harus di-encode ulang; `sample_rate` NULL berarti ikut sumber. Video selalu H.264: tidak ada kolom codec video karena memang tidak ada pilihan.
 
 UI mengelompokkan preset menurut `kind` dalam toggle **Audio / Video**, dan menandai pilihan di atas resolusi sumber (`video_height` dari analisis). Tanpa preset video bawaan, pilihan awalnya resolusi tertinggi sampai 1080p yang tidak melebihi sumber. Memilih resolusi di atas 1080p memunculkan peringatan bahwa video akan di-encode ulang.
+
+### Format tambahan (revisi 6, ADR-036)
+
+| Format | Preset | Isi | Salin sumber | Sampul |
+| --- | --- | --- | --- | --- |
+| M4A | `m4a_192`, `m4a_256`, `m4a_alac` | AAC 192/256 kbps 48 kHz, atau ALAC 16-bit | tidak | ya |
+| Opus | `opus_source` | Opus dalam Ogg | ya, bila sumber Opus; selain itu libopus 160 kbps | tidak |
+| OGG | `ogg_q6` | Vorbis `-q:a 6` (~192 kbps) | tidak | tidak |
+| FLAC | `flac` | FLAC 16-bit, ikut sample rate sumber | tidak | ya |
+| WAV | `wav_pcm16` | PCM 16-bit, ikut sample rate sumber | tidak | tidak |
+| MKV | `mkv_*` | video dan audio sumber apa adanya | selalu | — |
+| MOV | `mov_*` | H.264 + AAC, seperti MP4 | H.264 8-bit dan AAC | — |
+| WebM | `webm_*` | VP9 + Opus | VP9/VP8/AV1 dan Opus/Vorbis; selain itu VP9 realtime CRF 32 | — |
+| AVI | `avi_*` | MPEG-4 Part 2 (FourCC XVID) `-q:v 3` + MP3 | tidak pernah terjadi pada sumber YouTube | — |
+| FLV | `flv_*` | H.264 + AAC | H.264 8-bit dan AAC | — |
+
+Setiap format video punya lima kualitas yang sama dengan MP4 (360p–1080p dan Terbaik). Preset lossless memakai `mode = 'lossless'` tanpa bitrate maupun kualitas VBR, dan `-sample_fmt s16`/`s16p` supaya FLAC dan ALAC tidak memilih 32-bit untuk sumber yang lossy. `-id3v2_version 3` hanya untuk MP3 dan `-movflags +faststart` hanya untuk keluarga MP4 (MP4, MOV, M4A). Sampul hanya diunduh bila wadahnya mendukung sampul.
+
+UI menampilkan pilihan **Format** di antara toggle jenis dan pilihan kualitas, menyembunyikan pilihan kualitas bila format hanya punya satu preset, dan menampilkan satu kalimat penjelasan per format. Berganti format video mempertahankan resolusi yang dipilih. Peringatan encode ulang di atas 1080p hanya muncul untuk wadah H.264 (MP4, MOV, FLV).
 
 ### Tahap lanjutan
 
@@ -580,8 +602,11 @@ Aturan lain:
 - Pengecekan update mingguan, opsional (`tool_update_check`), dan tidak pernah memasang tanpa persetujuan user.
   - `application.ToolService` menanyakan tag rilis terbaru yt-dlp dan GyanD ke API GitHub saat startup bila sudah jatuh tempo, lalu memeriksa jatuh tempo setiap 6 jam. Hasil disimpan di `<data_dir>/tool-updates.json`; offline tidak memajukan waktu cek maupun menghapus hasil lama.
   - Versi dibandingkan per bagian angka. Versi yang tidak bisa diurai, seperti snapshot `N-…`, tidak pernah ditandai tertinggal.
-  - `POST /api/tools/check` menjalankan cek sekarang. `POST /api/tools/update` hanya menerima `yt-dlp` (pengecualian ADR-033): tag divalidasi dengan pola tanggal sebelum menyusun URL, checksum diambil dari `SHA2-256SUMS` rilis tersebut, lalu unduhan diverifikasi dan dipasang lewat jalur yang sama dengan instalasi manifest.
-  - UI menandai tool yang tertinggal. yt-dlp mendapat tombol **Perbarui**; FFmpeg hanya diberi petunjuk (rilis aplikasi untuk tool terkelola, package manager untuk tool dari `PATH`).
+  - `POST /api/tools/check` menjalankan cek sekarang. `POST /api/tools/update` menerima `yt-dlp` dan `ffmpeg` (pengecualian ADR-033); apakah platform ini mengizinkannya diputuskan `Manager.CanUpdate` dan dilaporkan lewat field `updatable` pada status tool.
+    - **yt-dlp**, semua platform: tag divalidasi dengan pola tanggal sebelum menyusun URL, checksum diambil dari `SHA2-256SUMS` rilis tersebut.
+    - **FFmpeg, hanya Windows** (revisi 5): tag divalidasi, lalu `GET /repos/GyanD/codexffmpeg/releases/tags/<tag>` memberi digest SHA-256 yang dihitung GitHub untuk `ffmpeg-<tag>-essentials_build.zip`, sumber yang sama dengan `scripts/toolmanifest`. Aset tanpa digest ditolak alih-alih di-hash sendiri. ffprobe ikut arsip yang sama dan tidak punya tombol sendiri. Linux dan macOS tidak ikut karena martin-riedl.de hanya punya halaman HTML sebagai daftar rilis.
+    - Keduanya lalu diverifikasi dan dipasang lewat jalur yang sama dengan instalasi manifest, ke direktori tool terkelola. Discovery mendahulukan direktori itu, jadi FFmpeg dari package manager di `PATH` tidak disentuh, hanya tidak dipakai lagi.
+  - UI menandai tool yang tertinggal. Tool dengan `updatable` mendapat tombol **Perbarui**; sisanya hanya diberi petunjuk (rilis aplikasi untuk tool terkelola, package manager untuk tool dari `PATH`).
   - Cek yang sama menanyakan rilis terbaru aplikasi dari `version.Repo`.
     - Tag harus berbentuk `vX.Y.Z` dan disimpan tanpa awalan `v` di bawah kunci `yt-to-mp3`.
     - `GET /api/health` menyertakan `app_update` (`current`, `latest`, `update_available`, `release_url`). UI menampilkan chip "Versi X tersedia" di topbar dan baris versi terbaru di **Setelan → Tentang**, keduanya menaut ke halaman rilis.
