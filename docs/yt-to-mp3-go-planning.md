@@ -595,6 +595,11 @@ FFmpeg tidak punya distribusi binary statis resmi, jadi kedua sumber FFmpeg di a
 3. Ekstrak (`.zip` lewat stdlib, `.tar.xz` lewat ADR-032), ambil hanya berkas executable yang dibutuhkan.
 4. Pasang ke `<data_dir>/tools/` lewat rename atomik.
 
+**Install memakai rilis terbaru bila tool dapat diperbarui dari aplikasi** (yt-dlp di semua platform, FFmpeg di Windows). Jalurnya sama dengan tombol perbarui (`ToolService.Install` → `InstallLatest`), termasuk verifikasi checksum dari `SHA2-256SUMS` atau digest aset GitHub. Versi yang terpasang langsung dicatat sebagai versi terbaru.
+- **Alasannya:** manifest hanya maju mengikuti rilis aplikasi. Ditemukan saat uji coba pengguna setelah rilis 0.2.1: pengguna baru memasang FFmpeg 9.0.1 dari manifest, lalu langsung ditawari pembaruan ke 9.0.2.
+- **Bila rilis terbaru gagal dipasang** (offline, batas API GitHub, checksum tidak tersedia), versi manifest yang dipasang, jadi pemasangan tidak pernah lebih rapuh daripada sebelumnya.
+- **Di platform lain**, misalnya FFmpeg macOS/Linux, Install tetap memakai manifest. Karena itu pin manifest sebaiknya dinaikkan (`make update-tools`) sebelum setiap rilis aplikasi.
+
 `POST /api/tools/install` dan `POST /api/tools/update` berjalan sinkron dan bisa memakan waktu beberapa menit (arsip FFmpeg Windows sekitar 106 MB). Selama request itu tertahan, `GET /api/tools` menyertakan `progress` per nama tool: `phase` (`downloading` atau `extracting`), `step`/`steps` untuk build yang terdiri dari beberapa arsip, serta `done_bytes` dan `total_bytes` (0 bila server tidak mengirim `Content-Length`). Nilainya selalu objek dan entrinya dihapus begitu instalasi selesai atau gagal. Panel **Setelan → Tool** mem-polling-nya setiap 400 ms selama tombol pasang atau perbarui sedang berjalan, lalu menampilkan bar kemajuan, atau bar indeterminate saat ukurannya tidak diketahui dan saat mengekstrak. Polling dipilih ketimbang SSE karena hanya aktif selama satu tindakan pengguna dan tidak butuh jalur event baru.
 
 Aturan lain:

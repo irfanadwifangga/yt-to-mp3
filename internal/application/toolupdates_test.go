@@ -44,6 +44,10 @@ type fakeUpdateSource struct {
 	// updatable adalah tool yang dapat diperbarui satu klik di platform
 	// palsu ini.
 	updatable map[string]bool
+	// latestInstallErr membuat pemasangan rilis terbaru gagal.
+	latestInstallErr error
+	// pinned mencatat tool yang dipasang dari manifest ter-pin.
+	pinned []string
 }
 
 func (f *fakeUpdateSource) StatusAll(context.Context) map[string]application.ToolStatus {
@@ -54,7 +58,10 @@ func (f *fakeUpdateSource) StatusAll(context.Context) map[string]application.Too
 	return out
 }
 
-func (f *fakeUpdateSource) Install(context.Context, string) error { return nil }
+func (f *fakeUpdateSource) Install(_ context.Context, name string) error {
+	f.pinned = append(f.pinned, name)
+	return nil
+}
 
 func (f *fakeUpdateSource) LatestVersion(_ context.Context, name string) (string, error) {
 	f.checks++
@@ -67,6 +74,9 @@ func (f *fakeUpdateSource) LatestVersion(_ context.Context, name string) (string
 func (f *fakeUpdateSource) CanUpdate(name string) bool { return f.updatable[name] }
 
 func (f *fakeUpdateSource) InstallLatest(_ context.Context, name string) (string, error) {
+	if f.latestInstallErr != nil {
+		return "", f.latestInstallErr
+	}
 	f.installed = f.latest[name]
 	f.statuses[name] = application.ToolStatus{Name: name, Available: true, Version: f.installed}
 	return f.installed, nil
@@ -342,5 +352,57 @@ func TestToolServiceHasilCekLebihLamaDariVersiTerpasang(t *testing.T) {
 	}
 	if got := svc.AppUpdate().Latest; got != "0.1.1" {
 		t.Errorf("build -dev: latest = %q, mau 0.1.1 apa adanya", got)
+	}
+}
+
+// Pengguna baru tidak boleh langsung disuruh memperbarui tool yang baru saja
+// dipasang: di platform yang mendukung pembaruan dari aplikasi, Install
+// memasang rilis terbaru, bukan versi manifest yang tertinggal.
+func TestToolServiceInstallMemasangRilisTerbaru(t *testing.T) {
+	enabled := true
+	svc, src, _, _ := newToolFixture(&enabled)
+	src.updatable = map[string]bool{"ffmpeg": true, "yt-dlp": true}
+	src.latest["ffmpeg"] = "9.0.2"
+	src.statuses["ffmpeg"] = application.ToolStatus{Name: "ffmpeg"}
+	ctx := context.Background()
+
+	// Hasil cek lama sudah tahu 9.0.2 terbit.
+	if err := svc.CheckUpdates(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// ffprobe ikut arsip FFmpeg, jadi memasangnya berarti memasang FFmpeg.
+	if err := svc.Install(ctx, "ffprobe"); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if src.installed != "9.0.2" || len(src.pinned) != 0 {
+		t.Errorf("terpasang = %q, manifest dipakai %v; mau rilis terbaru 9.0.2", src.installed, src.pinned)
+	}
+	if st := svc.StatusAll(ctx)["ffmpeg"]; st.UpdateAvailable {
+		t.Errorf("ffmpeg = %+v, langsung ditandai perlu diperbarui setelah dipasang", st)
+	}
+}
+
+// Rilis terbaru yang gagal dipasang, misalnya offline, jatuh ke manifest.
+func TestToolServiceInstallJatuhKeManifest(t *testing.T) {
+	enabled := true
+	svc, src, _, _ := newToolFixture(&enabled)
+	src.updatable = map[string]bool{"ffmpeg": true}
+	src.latestInstallErr = errors.New("offline")
+
+	if err := svc.Install(context.Background(), "ffmpeg"); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if len(src.pinned) != 1 || src.pinned[0] != "ffmpeg" {
+		t.Errorf("manifest dipakai %v, mau [ffmpeg]", src.pinned)
+	}
+
+	// Platform tanpa pembaruan dari aplikasi tetap memakai manifest.
+	src.pinned = nil
+	if err := svc.Install(context.Background(), "yt-dlp"); err != nil {
+		t.Fatal(err)
+	}
+	if len(src.pinned) != 1 {
+		t.Errorf("yt-dlp tanpa dukungan pembaruan tidak memakai manifest: %v", src.pinned)
 	}
 }

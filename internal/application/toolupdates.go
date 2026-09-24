@@ -158,7 +158,34 @@ func (s *ToolService) StatusAll(ctx context.Context) map[string]ToolStatus {
 }
 
 // Install memasang tool dari manifest ter-pin.
+//
+// Bila tool dapat diperbarui dari aplikasi di platform ini, rilis terbaru
+// yang dipasang, dengan verifikasi checksum yang sama dengan tombol
+// perbarui. Memasang versi manifest di sana membuat pengguna baru langsung
+// disuruh memperbarui tool yang baru saja dipasang, karena manifest hanya
+// maju mengikuti rilis aplikasi. Bila rilis terbaru gagal dipasang, misalnya
+// offline atau batas API GitHub, versi manifest yang dipakai, sehingga
+// pemasangan tidak pernah lebih rapuh daripada sebelumnya.
 func (s *ToolService) Install(ctx context.Context, name string) error {
+	target := name
+	if target == toolFFprobe {
+		target = toolFFmpeg // keduanya berasal dari arsip yang sama
+	}
+
+	if s.src.CanUpdate(target) {
+		s.checkMu.Lock()
+		version, err := s.src.InstallLatest(ctx, target)
+		s.checkMu.Unlock()
+		if err == nil {
+			s.recordLatest(target, version)
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err
+		}
+		s.log.Warn("pasang rilis terbaru gagal, memakai versi manifest",
+			"tool", target, "error", err)
+	}
 	return s.src.Install(ctx, name)
 }
 
@@ -242,7 +269,13 @@ func (s *ToolService) Update(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	s.recordLatest(name, version)
+	return nil
+}
 
+// recordLatest menyimpan versi yang baru dipasang sebagai versi terbaru,
+// supaya tool itu tidak langsung ditandai tertinggal oleh hasil cek lama.
+func (s *ToolService) recordLatest(name, version string) {
 	s.mu.Lock()
 	latest := map[string]string{}
 	for k, v := range s.state.Latest {
@@ -256,7 +289,6 @@ func (s *ToolService) Update(ctx context.Context, name string) error {
 	if err := s.store.Save(state); err != nil {
 		s.log.Warn("simpan hasil pembaruan gagal", "error", err)
 	}
-	return nil
 }
 
 // Run memeriksa jatuh tempo cek secara berkala sampai ctx selesai.
