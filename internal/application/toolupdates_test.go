@@ -305,3 +305,42 @@ func TestToolServiceCekSegeraBilaVersiAplikasiBelumDiketahui(t *testing.T) {
 		t.Error("jatuh tempo walau cek pembaruan dimatikan")
 	}
 }
+
+// Hasil cek yang tersimpan sebelum pengguna memasang versi lebih baru tidak
+// boleh membuat "versi terbaru" tampil lebih rendah daripada versi terpasang,
+// dan harus memicu cek ulang tanpa menunggu seminggu.
+func TestToolServiceHasilCekLebihLamaDariVersiTerpasang(t *testing.T) {
+	const releases = "https://github.com/irfanadwifangga/yt-to-mp3/releases/latest"
+	enabled := true
+	svc, src, _, _ := newToolFixture(&enabled)
+	src.latest[application.AppUpdateKey] = "0.1.1"
+	ctx := context.Background()
+
+	// Cek terakhir terjadi saat 0.1.1 masih yang terbaru.
+	svc.SetApp("0.1.1", releases)
+	if err := svc.CheckUpdates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if svc.Due() {
+		t.Fatal("jatuh tempo tepat setelah cek dengan versi yang sama")
+	}
+
+	// Pengguna memasang 0.2.0; berkas hasil cek masih memuat 0.1.1.
+	svc.SetApp("0.2.0", releases)
+	u := svc.AppUpdate()
+	if u.Latest != "0.2.0" || u.UpdateAvailable {
+		t.Errorf("sebelum cek ulang = %+v, mau latest 0.2.0 tanpa pembaruan", u)
+	}
+	if !svc.Due() {
+		t.Error("tidak jatuh tempo walau hasil cek lebih lama dari versi terpasang")
+	}
+
+	// Build dari source tidak memicu cek ulang maupun mengubah tampilan.
+	svc.SetApp("0.3.0-dev", releases)
+	if svc.Due() {
+		t.Error("build -dev memicu cek ulang")
+	}
+	if got := svc.AppUpdate().Latest; got != "0.1.1" {
+		t.Errorf("build -dev: latest = %q, mau 0.1.1 apa adanya", got)
+	}
+}

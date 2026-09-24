@@ -98,15 +98,27 @@ func (s *ToolService) AppUpdate() AppUpdate {
 	latest := s.state.Latest[AppUpdateKey]
 	s.mu.Unlock()
 
-	// Build dari source ("-dev") dan snapshot CI ("-snapshot") bukan untuk
-	// pengguna akhir; menawari mereka rilis resmi hanya mengganggu.
-	release := s.appVersion != "" && !strings.Contains(s.appVersion, "-")
+	release := isReleaseVersion(s.appVersion)
+	// Versi yang sedang berjalan pasti sudah terbit. Hasil cek yang lebih
+	// lama, tersimpan sebelum pengguna memasang versi ini, basi: tanpa ini
+	// "versi terbaru" tampil lebih rendah daripada versi terpasang sampai cek
+	// berikutnya berhasil. Due memicu cek ulang untuk kasus yang sama.
+	if release && IsNewerVersion(latest, s.appVersion) {
+		latest = s.appVersion
+	}
 	return AppUpdate{
 		Current:         s.appVersion,
 		Latest:          latest,
 		UpdateAvailable: release && IsNewerVersion(s.appVersion, latest),
 		ReleaseURL:      s.releaseURL,
 	}
+}
+
+// isReleaseVersion melaporkan apakah versi berasal dari rilis resmi. Build
+// dari source ("-dev") dan snapshot CI ("-snapshot") bukan untuk pengguna
+// akhir; menawari mereka rilis resmi hanya mengganggu.
+func isReleaseVersion(v string) bool {
+	return v != "" && !strings.Contains(v, "-")
 }
 
 // NewToolService membuat layanan tool. enabled dibaca ulang setiap jatuh
@@ -275,7 +287,14 @@ func (s *ToolService) Due() bool {
 	// terisi seminggu setelah pengguna memasang versi baru. Bila cek versi
 	// aplikasi terus gagal, misalnya offline, cek diulang tiap tick
 	// (6 jam), masih jauh di bawah batas API GitHub.
-	if s.appVersion != "" && s.state.Latest[AppUpdateKey] == "" {
+	stored := s.state.Latest[AppUpdateKey]
+	if s.appVersion != "" && stored == "" {
+		return true
+	}
+	// Pengguna baru memasang versi yang lebih baru daripada hasil cek
+	// tersimpan, jadi hasil itu pasti basi. Ditemukan setelah rilis 0.2.0:
+	// "versi terbaru" tertulis 0.1.1 sampai cek mingguan berikutnya.
+	if isReleaseVersion(s.appVersion) && IsNewerVersion(stored, s.appVersion) {
 		return true
 	}
 	return s.now().Sub(s.state.CheckedAt) >= ToolUpdateInterval

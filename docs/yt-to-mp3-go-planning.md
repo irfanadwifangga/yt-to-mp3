@@ -614,6 +614,7 @@ Aturan lain:
     - `release_url` dibentuk dari konstanta, bukan dari jawaban API.
     - Versi berakhiran `-dev` atau `-snapshot` tidak pernah ditawari pembaruan.
     - Hasil cek yang belum memuat versi aplikasi selalu dianggap jatuh tempo, meski belum seminggu. Kasus ini ditemukan pada rilis 0.1.0: berkas `tool-updates.json` dari versi sebelumnya membuat "Latest version" tertulis "Not known yet" sampai cek mingguan berikutnya. Bila cek versi aplikasi terus gagal, cek diulang tiap tick 6 jam. **Setelan → About** juga menyediakan tombol cek sekarang selama versi terbaru belum diketahui.
+    - Hasil cek yang versinya lebih rendah daripada versi aplikasi yang berjalan juga dianggap jatuh tempo, karena pasti tersimpan sebelum pengguna memasang versi ini. Selama cek ulang belum berhasil, `app_update.latest` dilaporkan sama dengan versi yang berjalan, bukan versi lama. Kasus ini ditemukan setelah rilis 0.2.0: "Latest version" tertulis 0.1.1. Kedua aturan hanya berlaku untuk versi rilis; build `-dev` dan `-snapshot` tidak memicu cek ulang.
     - **Selama repositori private, API GitHub menjawab 404 tanpa autentikasi**, sehingga cek pembaruan aplikasi tidak menghasilkan apa pun sampai rilis diterbitkan di repositori publik. Cek tool tetap berjalan karena kegagalan sebagian tidak menggagalkan cek.
 - `GET /api/health` menampilkan versi aktual hasil `yt-dlp --version` / `ffmpeg -version` agar bug report dapat dikaitkan ke versi tool.
 - Tool dari `PATH` dipakai apa adanya tanpa verifikasi checksum: itu milik sistem pengguna, bukan sesuatu yang kita pasang.
