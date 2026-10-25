@@ -62,6 +62,41 @@ func main() {
 	preview := flag.String("preview", "", "PNG pratinjau di latar terang dan gelap (opsional)")
 	flag.Parse()
 
+	srcIconsDir := "packaging/icons"
+	if fi, err := os.Stat(filepath.Join(srcIconsDir, "icon.ico")); err == nil && !fi.IsDir() {
+		icoData, err := os.ReadFile(filepath.Join(srcIconsDir, "icon.ico"))
+		if err != nil {
+			fail("baca master ico", err)
+		}
+		write(*out, icoData)
+		_ = os.WriteFile(filepath.Join(filepath.Dir(*out), "icon.ico"), icoData, 0o644)
+
+		if *pngDir != "" {
+			entries, err := os.ReadDir(srcIconsDir)
+			if err == nil {
+				for _, e := range entries {
+					if !e.IsDir() && strings.HasPrefix(e.Name(), "icon-") && strings.HasSuffix(e.Name(), ".png") {
+						b, err := os.ReadFile(filepath.Join(srcIconsDir, e.Name()))
+						if err == nil {
+							write(filepath.Join(*pngDir, e.Name()), b)
+						}
+					}
+				}
+			}
+			_ = os.WriteFile(filepath.Join(*pngDir, "favicon.ico"), icoData, 0o644)
+		}
+		if *svgOut != "" {
+			svgData, err := os.ReadFile(filepath.Join(srcIconsDir, "icon.svg"))
+			if err == nil {
+				write(*svgOut, svgData)
+				if *pngDir != "" {
+					_ = os.WriteFile(filepath.Join(*pngDir, "icon.svg"), svgData, 0o644)
+				}
+			}
+		}
+		return
+	}
+
 	data, err := buildICO(sizes)
 	if err != nil {
 		fail("susun ikon", err)

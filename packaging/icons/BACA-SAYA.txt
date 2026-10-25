@@ -1,0 +1,10 @@
+Ikon YouTube to MP3 & MP4
+
+icon.svg                 sumber vektor (edit di Figma / Inkscape)
+icon.ico                 Windows (16, 24, 32, 48, 64, 128, 256 px) -> packaging/windows/
+icon-192.png             web/public/icon-192.png (menggantikan ikon lama)
+icon-512.png             PWA / favicon besar
+icon-512-maskable.png    PWA maskable (tanpa sudut membulat, simbol sudah diberi ruang aman)
+icon-1024-fullbleed.png  macOS / iOS / Android (OS yang menerapkan sudut sendiri)
+icon-180.png             apple-touch-icon
+icon-16/32/48/64/128/256 ukuran lain
