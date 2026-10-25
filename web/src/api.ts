@@ -151,7 +151,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url }),
     }),
+  logs: (lines = 300) => request<LogsPayload>(`/logs?lines=${lines}`),
+  revealLogs: () => request<void>("/logs/reveal", { method: "POST" }),
 };
+
+export interface LogsPayload {
+  lines: string[];
+  path: string;
+}
 
 export interface Metadata {
   source_key: string;

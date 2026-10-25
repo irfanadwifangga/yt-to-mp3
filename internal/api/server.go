@@ -169,6 +169,8 @@ func New(opts Options) *Server {
 	protected.HandleFunc("GET /settings", s.handleGetSettings)
 	protected.HandleFunc("PUT /settings", s.handleUpdateSettings)
 	protected.HandleFunc("POST /dialogs/folder", s.handlePickFolder)
+	protected.HandleFunc("GET /logs", s.handleGetLogs)
+	protected.HandleFunc("POST /logs/reveal", s.handleRevealLogs)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /api/ping", s.handlePing)

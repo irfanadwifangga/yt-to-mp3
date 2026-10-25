@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, updateYtdlpAndRetry, type Health, type Job, type Preset } from "./api";
 import { Capture } from "./Capture";
-import { GearIcon } from "./icons";
+import { GearIcon, TerminalIcon } from "./icons";
 import { t } from "./i18n";
 import { ActiveList, FinishedList } from "./Jobs";
 import { mergeJobs, newlyFinished, pendingIds } from "./jobList";
@@ -259,6 +259,14 @@ export function App() {
           )}
           <button
             type="button"
+            className="btn ghost"
+            onClick={() => setSettingsSection("logs")}
+            title={t("app.logsHint")}>
+            <TerminalIcon />
+            {t("app.logs")}
+          </button>
+          <button
+            type="button"
             className="btn"
             onClick={() => setSettingsSection("storage")}
             aria-keyshortcuts="Control+Comma">
@@ -319,6 +327,10 @@ export function App() {
           </code>
           <button type="button" className="link" onClick={() => setSettingsSection("storage")}>
             {t("app.change")}
+          </button>
+          <span style={{ color: "var(--line)" }}>·</span>
+          <button type="button" className="link" onClick={() => setSettingsSection("logs")}>
+            {t("app.logs")}
           </button>
           <span className="statusbar-queue mono">
             {t("app.queueSummary", {

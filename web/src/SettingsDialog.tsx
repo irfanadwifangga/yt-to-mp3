@@ -19,6 +19,7 @@ export type SettingsSection =
   | "queue"
   | "tools"
   | "display"
+  | "logs"
   | "advanced"
   | "about";
 
@@ -33,6 +34,7 @@ const GROUPS: { id: SettingsSection; keys: string[] }[] = [
   { id: "queue", keys: ["max_concurrent_jobs", "max_queue_depth"] },
   { id: "tools", keys: ["tool_update_check"] },
   { id: "display", keys: [] },
+  { id: "logs", keys: [] },
   { id: "advanced", keys: ["idle_shutdown_minutes", "log_level"] },
   { id: "about", keys: [] },
 ];
@@ -202,7 +204,16 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
 
               {g.id === "tools" && <ToolsPanel health={health} onChanged={onChanged} />}
               {g.id === "display" && <DisplayPanel />}
+              {g.id === "logs" && <LogsPanel />}
               {g.id === "about" && <AboutPanel health={health} onChanged={onChanged} />}
+              {g.id === "advanced" && (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <button type="button" className="btn small" onClick={() => scrollToGroup("logs")}>
+                    <FolderIcon />
+                    {t("settings.viewLogs")}
+                  </button>
+                </div>
+              )}
             </section>
           ))}
         </div>
@@ -787,5 +798,209 @@ function AboutPanel({ health, onChanged }: { health: Health | null; onChanged: (
       <dt>{t("settings.about.commit")}</dt>
       <dd className="mono">{health.commit}</dd>
     </dl>
+  );
+}
+
+function LogsPanel() {
+  const [lines, setLines] = useState<string[]>([]);
+  const [logPath, setLogPath] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filterLevel, setFilterLevel] = useState<string>("ALL");
+  const [search, setSearch] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  const [userScrolled, setUserScrolled] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
+
+  async function fetchLogs(silent = false) {
+    if (!silent) setLoading(true);
+    try {
+      const res = await api.logs(500);
+      setLines(res.lines);
+      setLogPath(res.path);
+      setError(null);
+    } catch (err) {
+      if (!silent) setError(messageFor(err, t("logs.loadFailed")));
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void fetchLogs();
+  }, []);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const timer = setInterval(() => {
+      void fetchLogs(true);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [autoRefresh]);
+
+  useEffect(() => {
+    if (!userScrolled && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: "instant" });
+    }
+  }, [lines, userScrolled]);
+
+  const filtered = lines.filter((line) => {
+    if (filterLevel !== "ALL") {
+      const target = `level=${filterLevel}`;
+      if (!line.toUpperCase().includes(target)) return false;
+    }
+    if (search.trim()) {
+      if (!line.toLowerCase().includes(search.toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  async function handleCopy() {
+    const text = filtered.join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Abaikan bila clipboard ditolak
+    }
+  }
+
+  async function handleReveal() {
+    setRevealing(true);
+    try {
+      await api.revealLogs();
+    } catch (err) {
+      setError(messageFor(err, t("logs.revealFailed")));
+    } finally {
+      setRevealing(false);
+    }
+  }
+
+  return (
+    <div className="logs-panel">
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="logs-toolbar">
+        <div className="logs-filters">
+          <select
+            value={filterLevel}
+            onChange={(e) => setFilterLevel(e.target.value)}
+            aria-label={t("logs.filterAll")}
+          >
+            <option value="ALL">{t("logs.filterAll")}</option>
+            <option value="INFO">INFO</option>
+            <option value="WARN">WARN</option>
+            <option value="ERROR">ERROR</option>
+            <option value="DEBUG">DEBUG</option>
+          </select>
+
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("logs.searchPlaceholder")}
+            className="logs-search-input"
+          />
+        </div>
+
+        <div className="logs-actions">
+          <label className="logs-auto-refresh">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+            />
+            <span>{t("logs.autoRefresh")}</span>
+          </label>
+
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => void fetchLogs()}
+            disabled={loading}
+          >
+            {t("logs.refresh")}
+          </button>
+
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => void handleCopy()}
+            disabled={filtered.length === 0}
+          >
+            {copied ? t("logs.copied") : t("logs.copy")}
+          </button>
+
+          <button
+            type="button"
+            className="btn small"
+            onClick={() => void handleReveal()}
+            disabled={revealing}
+            title={logPath}
+          >
+            <FolderIcon />
+            {t("logs.openFile")}
+          </button>
+        </div>
+      </div>
+
+      <div
+        className="logs-console"
+        ref={consoleRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+          setUserScrolled(!isNearBottom);
+        }}
+      >
+        {lines.length === 0 ? (
+          <p className="logs-empty">{t("logs.empty")}</p>
+        ) : filtered.length === 0 ? (
+          <p className="logs-empty">{t("logs.noMatch")}</p>
+        ) : (
+          filtered.map((line, idx) => {
+            const isError = line.includes("level=ERROR") || line.includes("level=error");
+            const isWarn = line.includes("level=WARN") || line.includes("level=warn");
+            const isInfo = line.includes("level=INFO") || line.includes("level=info");
+            const isDebug = line.includes("level=DEBUG") || line.includes("level=debug");
+            const levelClass = isError
+              ? "log-error"
+              : isWarn
+              ? "log-warn"
+              : isInfo
+              ? "log-info"
+              : isDebug
+              ? "log-debug"
+              : "";
+            return (
+              <div key={idx} className={`logs-line ${levelClass}`}>
+                <span className="logs-line-num">{idx + 1}</span>
+                <span className="logs-line-text">{line}</span>
+              </div>
+            );
+          })
+        )}
+        <div ref={logEndRef} />
+      </div>
+
+      <div className="logs-foot">
+        <span className="hint">
+          {t("logs.summary", { count: filtered.length, total: lines.length })}
+        </span>
+        {logPath && (
+          <code className="logs-path" title={logPath}>
+            {logPath}
+          </code>
+        )}
+      </div>
+    </div>
   );
 }
