@@ -12,7 +12,8 @@
 <p align="center">
   <a href="https://github.com/irfanadwifangga/yt-to-mp3/releases/latest">Download</a> ·
   <a href="docs/README.en.md">Documentation (English)</a> ·
-  <a href="docs/README.id.md">Dokumentasi (Bahasa Indonesia)</a>
+  <a href="docs/README.id.md">Dokumentasi (Bahasa Indonesia)</a> ·
+  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a>
 </p>
 
 ---
@@ -37,13 +38,15 @@ YouTube to MP3 & MP4 adalah aplikasi desktop yang berjalan lokal: tempel tautan 
 - **Tempel dan jalan** — analisis dimulai begitu tautannya lengkap.
 - **Audio atau video, dalam banyak format** — MP3, M4A, Opus, OGG, FLAC, atau WAV; MP4, MKV, MOV, WebM, AVI, atau FLV.
 - **Tag yang rapi** — saran judul dan artis tanpa embel-embel seperti `(Official Video)`, bisa disunting sebelum konversi.
-- **Antrean sungguhan** — progress live, pembatalan, percobaan ulang otomatis, dan riwayat berkas yang selesai.
-- **Jendela sendiri di Windows**, dengan installer sekali klik tanpa hak admin.
-- **Tool diurus aplikasi** — yt-dlp dan FFmpeg dipasang dan diverifikasi dari dalam aplikasi.
+- **Antrean konversi** — progres langsung, pembatalan, percobaan ulang otomatis, dan riwayat berkas yang selesai.
+- **Jendela sendiri di Windows**, dengan pemasang sekali klik tanpa hak admin.
+- **Perkakas dikelola aplikasi** — yt-dlp dan FFmpeg dipasang dan diverifikasi dari dalam aplikasi.
 
 Baca [dokumentasi lengkap](docs/README.id.md) untuk instalasi, cara pakai, pengembangan, dan arsitektur.
 
 ---
+
+Semua peserta wajib mengikuti [Kode Etik Komunitas](CODE_OF_CONDUCT.md). / All participants must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Downloading YouTube content generally violates YouTube's Terms of Service, and copyright stays with the owners of the material. This project is a local, personal tool. / Mengunduh konten YouTube umumnya melanggar Terms of Service YouTube, dan hak cipta tetap milik pemilik materi. Proyek ini adalah alat lokal untuk pemakaian pribadi.
 
