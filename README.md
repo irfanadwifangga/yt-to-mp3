@@ -13,7 +13,8 @@
   <a href="https://github.com/irfanadwifangga/yt-to-mp3/releases/latest">Download</a> ·
   <a href="docs/README.en.md">Documentation (English)</a> ·
   <a href="docs/README.id.md">Dokumentasi (Bahasa Indonesia)</a> ·
-  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a>
+  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 ---
