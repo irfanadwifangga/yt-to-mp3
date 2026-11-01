@@ -31,6 +31,10 @@ type JobListQuery struct {
 	SourceKey string // kosong berarti seluruh sumber
 	Limit     int
 	Cursor    string
+	Query     string
+	Kind      domain.PresetKind
+	Page      int
+	PageSize  int
 }
 
 // JobRepository adalah port penyimpanan job.
@@ -156,8 +160,10 @@ type CreateRequest struct {
 	FilenameMode domain.FilenameMode
 
 	// Title dan Artist opsional; kosong berarti memakai metadata sumber.
-	Title  string
-	Artist string
+	Title       string
+	Artist      string
+	TrimStartMS *int64
+	TrimEndMS   *int64
 }
 
 // CreateResult memuat job baru.
@@ -176,6 +182,20 @@ func (s *JobService) Create(ctx context.Context, req CreateRequest) (*CreateResu
 		return nil, derr
 	}
 
+	if req.TrimStartMS != nil || req.TrimEndMS != nil {
+		info, ok, cacheErr := s.cache.Get(ctx, sourceKey)
+		if cacheErr != nil || !ok {
+			var err error
+			info, err = s.resolver.Resolve(ctx, sourceKey)
+			if err != nil {
+				return nil, err
+			}
+			_ = s.cache.Upsert(ctx, info, "")
+		}
+		if err := domain.ValidateTrim(req.TrimStartMS, req.TrimEndMS, info.DurationMS); err != nil {
+			return nil, err
+		}
+	}
 	settings := s.live()
 
 	presetID := req.PresetID
@@ -236,6 +256,8 @@ func (s *JobService) Create(ctx context.Context, req CreateRequest) (*CreateResu
 		FilenameMode: mode,
 		TagTitle:     tagTitle,
 		TagArtist:    tagArtist,
+		TrimStartMS:  req.TrimStartMS,
+		TrimEndMS:    req.TrimEndMS,
 		CreatedAt:    time.Now().UTC(),
 	}
 
@@ -286,11 +308,13 @@ const previousConversionLimit = 20
 // PreviousConversion adalah konversi selesai sebelumnya untuk video yang
 // sama, dengan berkas yang masih ada di disk.
 type PreviousConversion struct {
-	JobID      string     `json:"job_id"`
-	PresetID   string     `json:"preset_id"`
-	FileID     string     `json:"file_id"`
-	FileName   string     `json:"file_name"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	TrimStartMS *int64     `json:"trim_start_ms,omitempty"`
+	TrimEndMS   *int64     `json:"trim_end_ms,omitempty"`
+	JobID       string     `json:"job_id"`
+	PresetID    string     `json:"preset_id"`
+	FileID      string     `json:"file_id"`
+	FileName    string     `json:"file_name"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
 // PreviousConversions mengembalikan konversi selesai untuk sebuah sumber,
@@ -328,7 +352,7 @@ func (s *JobService) PreviousConversions(ctx context.Context, sourceKey string) 
 		}
 		out = append(out, PreviousConversion{
 			JobID: j.ID, PresetID: j.PresetID, FileID: ref.ID, FileName: ref.Filename,
-			FinishedAt: j.FinishedAt,
+			FinishedAt: j.FinishedAt, TrimStartMS: j.TrimStartMS, TrimEndMS: j.TrimEndMS,
 		})
 	}
 	return out, nil
@@ -419,6 +443,8 @@ func (s *JobService) Retry(ctx context.Context, id string) (*domain.Job, error) 
 		FilenameMode: job.FilenameMode,
 		TagTitle:     job.TagTitle,
 		TagArtist:    job.TagArtist,
+		TrimStartMS:  job.TrimStartMS,
+		TrimEndMS:    job.TrimEndMS,
 		// Retry manual adalah keputusan pengguna, jadi job baru mendapat
 		// jatah auto-retry penuh alih-alih mewarisi jatah yang sudah habis.
 		AttemptCount: 0,
@@ -488,8 +514,9 @@ func ParseEventPayload(payload string) StreamEvent {
 // FileRef adalah rujukan berkas hasil yang aman dikirim ke klien: id untuk
 // aksi dan nama untuk ditampilkan, tanpa path filesystem.
 type FileRef struct {
-	ID       string
-	Filename string
+	SizeBytes int64
+	ID        string
+	Filename  string
 }
 
 // FileStore membaca berkas hasil.

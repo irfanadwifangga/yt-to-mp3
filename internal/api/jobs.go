@@ -20,17 +20,21 @@ const heartbeatInterval = 15 * time.Second
 //
 // Tidak ada path filesystem di sini; berkas hanya diakses lewat id.
 type jobView struct {
-	ID           string           `json:"id"`
-	SourceURL    string           `json:"source_url"`
-	SourceKey    string           `json:"source_key"`
-	Title        string           `json:"title"`
-	Status       domain.JobStatus `json:"status"`
-	PresetID     string           `json:"preset_id"`
-	FilenameMode string           `json:"filename_mode"`
-	Progress     *float64         `json:"progress"`
-	Phase        string           `json:"phase,omitempty"`
-	AttemptCount int              `json:"attempt_count"`
-	ErrorCode    domain.ErrorCode `json:"error_code,omitempty"`
+	TrimStartMS   *int64           `json:"trim_start_ms,omitempty"`
+	TrimEndMS     *int64           `json:"trim_end_ms,omitempty"`
+	DurationMS    int64            `json:"duration_ms,omitempty"`
+	FileSizeBytes int64            `json:"file_size_bytes,omitempty"`
+	ID            string           `json:"id"`
+	SourceURL     string           `json:"source_url"`
+	SourceKey     string           `json:"source_key"`
+	Title         string           `json:"title"`
+	Status        domain.JobStatus `json:"status"`
+	PresetID      string           `json:"preset_id"`
+	FilenameMode  string           `json:"filename_mode"`
+	Progress      *float64         `json:"progress"`
+	Phase         string           `json:"phase,omitempty"`
+	AttemptCount  int              `json:"attempt_count"`
+	ErrorCode     domain.ErrorCode `json:"error_code,omitempty"`
 
 	// RetryAt terisi selama job menunggu jeda auto-retry.
 	RetryAt *time.Time `json:"retry_at,omitempty"`
@@ -47,7 +51,11 @@ type jobView struct {
 }
 
 func toJobView(j *domain.Job) jobView {
-	return jobView{
+	duration := j.DurationMS
+	if j.TrimEndMS != nil && j.TrimStartMS != nil {
+		duration = *j.TrimEndMS - *j.TrimStartMS
+	}
+	return jobView{TrimStartMS: j.TrimStartMS, TrimEndMS: j.TrimEndMS, DurationMS: duration,
 		ID:           j.ID,
 		SourceURL:    j.SourceURL,
 		SourceKey:    j.SourceKey,
@@ -72,8 +80,10 @@ type createJobRequest struct {
 	FilenameMode string `json:"filename_mode"`
 
 	// Title dan Artist opsional: suntingan pengguna untuk tag dan nama berkas.
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
+	Title       string `json:"title"`
+	Artist      string `json:"artist"`
+	TrimStartMS *int64 `json:"trim_start_ms"`
+	TrimEndMS   *int64 `json:"trim_end_ms"`
 }
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +107,8 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		FilenameMode: domain.FilenameMode(req.FilenameMode),
 		Title:        req.Title,
 		Artist:       req.Artist,
+		TrimStartMS:  req.TrimStartMS,
+		TrimEndMS:    req.TrimEndMS,
 	})
 	if err != nil {
 		s.writeDomainError(w, err)
@@ -106,6 +118,9 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 }
 
 type listJobsResponse struct {
+	Total      *int      `json:"total,omitempty"`
+	Page       int       `json:"page,omitempty"`
+	PageSize   int       `json:"page_size,omitempty"`
 	Jobs       []jobView `json:"jobs"`
 	NextCursor string    `json:"next_cursor,omitempty"`
 }
@@ -137,7 +152,40 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobs, next, err := s.jobs.List(r.Context(), q)
+	var jobs []*domain.Job
+	var next string
+	var err error
+	var total *int
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		q.Page, err = strconv.Atoi(raw)
+		q.PageSize = 10
+		if size := r.URL.Query().Get("page_size"); size != "" {
+			n, parseErr := strconv.Atoi(size)
+			if parseErr != nil {
+				err = parseErr
+			}
+			q.PageSize = n
+		}
+		q.Query = r.URL.Query().Get("q")
+		q.Kind = domain.PresetKind(r.URL.Query().Get("kind"))
+		if err != nil || q.Page < 1 || q.PageSize < 1 || q.PageSize > 100 || q.Cursor != "" || len(q.Query) > 800 || (q.Kind != "" && q.Kind != domain.KindAudio && q.Kind != domain.KindVideo) {
+			writeError(w, http.StatusBadRequest, CodeBadRequest, "Parameter halaman tidak valid.")
+			return
+		}
+		var page *application.JobPage
+		page, err = s.jobs.ListPage(r.Context(), q)
+		if err == nil {
+			jobs = page.Jobs
+			total = &page.Total
+			q.Page = page.Page
+		}
+	} else {
+		if r.URL.Query().Get("q") != "" || r.URL.Query().Get("kind") != "" || r.URL.Query().Get("page_size") != "" {
+			writeError(w, http.StatusBadRequest, CodeBadRequest, "Pencarian memerlukan parameter page.")
+			return
+		}
+		jobs, next, err = s.jobs.List(r.Context(), q)
+	}
 	if err != nil {
 		s.writeDomainError(w, err)
 		return
@@ -160,9 +208,10 @@ func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
 		v := toJobView(j)
 		v.FileID = refs[j.ID].ID
 		v.FileName = refs[j.ID].Filename
+		v.FileSizeBytes = refs[j.ID].SizeBytes
 		views = append(views, v)
 	}
-	writeJSON(w, http.StatusOK, listJobsResponse{Jobs: views, NextCursor: next})
+	writeJSON(w, http.StatusOK, listJobsResponse{Jobs: views, NextCursor: next, Total: total, Page: q.Page, PageSize: q.PageSize})
 }
 
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +225,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	if refs, err := s.files.RefsByJobs(r.Context(), []string{job.ID}); err == nil {
 		view.FileID = refs[job.ID].ID
 		view.FileName = refs[job.ID].Filename
+		view.FileSizeBytes = refs[job.ID].SizeBytes
 	}
 	writeJSON(w, http.StatusOK, view)
 }

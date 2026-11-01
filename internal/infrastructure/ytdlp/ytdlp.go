@@ -93,9 +93,13 @@ type rawMetadata struct {
 
 // rawFormat adalah subset satu entri formats keluaran yt-dlp.
 type rawFormat struct {
-	VCodec string `json:"vcodec"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
+	ACodec     string  `json:"acodec"`
+	TBR        float64 `json:"tbr"`
+	FileSize   int64   `json:"filesize"`
+	ApproxSize int64   `json:"filesize_approx"`
+	VCodec     string  `json:"vcodec"`
+	Width      int     `json:"width"`
+	Height     int     `json:"height"`
 }
 
 // maxVideoHeight mencari resolusi tertinggi di antara format bervideo,
@@ -173,20 +177,21 @@ func mediaFromRaw(sourceKey, url string, raw rawMetadata) *domain.MediaInfo {
 	}
 
 	return &domain.MediaInfo{
-		SourceKey:    sourceKey,
-		SourceURL:    url,
-		Title:        raw.Title,
-		Uploader:     firstNonEmpty(raw.Uploader, raw.Channel),
-		Duration:     durationOf(raw.Duration),
-		DurationMS:   int64(durationOf(raw.Duration) / time.Millisecond),
-		ThumbnailURL: raw.Thumbnail,
-		SourceCodec:  raw.ACodec,
-		SampleRate:   raw.ASR,
-		Track:        raw.Track,
-		Artist:       artist,
-		Album:        raw.Album,
-		ReleaseYear:  year,
-		VideoHeight:  maxVideoHeight(raw.Formats),
+		SourceFormats: sourceFormats(raw.Formats),
+		SourceKey:     sourceKey,
+		SourceURL:     url,
+		Title:         raw.Title,
+		Uploader:      firstNonEmpty(raw.Uploader, raw.Channel),
+		Duration:      durationOf(raw.Duration),
+		DurationMS:    int64(durationOf(raw.Duration) / time.Millisecond),
+		ThumbnailURL:  raw.Thumbnail,
+		SourceCodec:   raw.ACodec,
+		SampleRate:    raw.ASR,
+		Track:         raw.Track,
+		Artist:        artist,
+		Album:         raw.Album,
+		ReleaseYear:   year,
+		VideoHeight:   maxVideoHeight(raw.Formats),
 	}
 }
 
@@ -214,4 +219,23 @@ func (r *Resolver) Version(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("resolve yt-dlp: %w", err)
 	}
 	return version, nil
+}
+
+func sourceFormats(formats []rawFormat) []domain.SourceFormat {
+	out := []domain.SourceFormat{}
+	for _, f := range formats {
+		if (f.VCodec == "" || f.VCodec == "none") && (f.ACodec == "" || f.ACodec == "none") {
+			continue
+		}
+		size := f.FileSize
+		if size <= 0 {
+			size = f.ApproxSize
+		}
+		height := f.Height
+		if f.Width > 0 && f.Width < height {
+			height = f.Width
+		}
+		out = append(out, domain.SourceFormat{Height: height, VideoCodec: f.VCodec, AudioCodec: f.ACodec, BitrateKbps: f.TBR, SizeBytes: size})
+	}
+	return out
 }

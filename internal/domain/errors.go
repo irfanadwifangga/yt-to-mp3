@@ -10,6 +10,7 @@ import "fmt"
 type ErrorCode string
 
 const (
+	CodeInvalidTrim       ErrorCode = "INVALID_TRIM"
 	CodeInvalidURL        ErrorCode = "INVALID_URL"
 	CodeInvalidSetting    ErrorCode = "INVALID_SETTING"
 	CodeUnsupportedURL    ErrorCode = "UNSUPPORTED_URL"

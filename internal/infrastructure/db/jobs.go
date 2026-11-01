@@ -32,7 +32,8 @@ const jobColumns = `id, source_url, source_key, COALESCE(title, ''), status, pre
 	filename_mode, progress, COALESCE(phase, ''), attempt_count,
 	COALESCE(error_code, ''), COALESCE(error_message, ''),
 	created_at, started_at, finished_at, retry_at,
-	COALESCE(tag_title, ''), COALESCE(tag_artist, '')`
+	COALESCE(tag_title, ''), COALESCE(tag_artist, ''), trim_start_ms, trim_end_ms,
+ COALESCE((SELECT duration_ms FROM media_items WHERE media_items.source_key = jobs.source_key), 0)`
 
 // isUniqueViolation melaporkan apakah error berasal dari pelanggaran unik.
 //
@@ -69,11 +70,11 @@ func (r *JobRepository) Create(ctx context.Context, j *domain.Job) error {
 	_, err := r.db.Write().ExecContext(ctx, `
 		INSERT INTO jobs (id, source_url, source_key, title, status, preset_id,
 		                  filename_mode, progress, phase, attempt_count, created_at,
-		                  tag_title, tag_artist)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		                  tag_title, tag_artist, trim_start_ms, trim_end_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID, j.SourceURL, j.SourceKey, nullString(j.Title), string(j.Status), j.PresetID,
 		string(j.FilenameMode), j.Progress, nullString(j.Phase), j.AttemptCount,
-		formatTime(j.CreatedAt), nullString(j.TagTitle), nullString(j.TagArtist))
+		formatTime(j.CreatedAt), nullString(j.TagTitle), nullString(j.TagArtist), j.TrimStartMS, j.TrimEndMS)
 
 	if isUniqueViolation(err) {
 		// Ditegakkan index unik parsial, bukan pengecekan di kode, sehingga
@@ -537,7 +538,7 @@ func scanJob(s scanner) (*domain.Job, error) {
 
 	err := s.Scan(&j.ID, &j.SourceURL, &j.SourceKey, &j.Title, &status, &j.PresetID,
 		&mode, &progress, &j.Phase, &j.AttemptCount, &errorCode, &j.ErrorMessage,
-		&createdAt, &startedAt, &finishedAt, &retryAt, &j.TagTitle, &j.TagArtist)
+		&createdAt, &startedAt, &finishedAt, &retryAt, &j.TagTitle, &j.TagArtist, &j.TrimStartMS, &j.TrimEndMS, &j.DurationMS)
 	if err != nil {
 		return nil, err
 	}

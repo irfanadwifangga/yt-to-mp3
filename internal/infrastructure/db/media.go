@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -29,12 +30,16 @@ func NewMediaRepository(d *DB) *MediaRepository {
 
 // Upsert menyimpan atau memperbarui metadata beserta waktu pengambilannya.
 func (r *MediaRepository) Upsert(ctx context.Context, info *domain.MediaInfo, rawJSON string) error {
-	_, err := r.db.Write().ExecContext(ctx, `
+	formats, err := json.Marshal(info.SourceFormats)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Write().ExecContext(ctx, `
 		INSERT INTO media_items
 			(source_key, title, uploader, duration_ms, thumbnail_url,
 			 source_codec, sample_rate, is_live, raw_json, fetched_at,
-			 track, artist, album, release_year, video_height)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 track, artist, album, release_year, video_height, source_formats)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(source_key) DO UPDATE SET
 			title         = excluded.title,
 			uploader      = excluded.uploader,
@@ -49,13 +54,13 @@ func (r *MediaRepository) Upsert(ctx context.Context, info *domain.MediaInfo, ra
 			artist        = excluded.artist,
 			album         = excluded.album,
 			release_year  = excluded.release_year,
-			video_height  = excluded.video_height`,
+			video_height  = excluded.video_height, source_formats = excluded.source_formats`,
 		info.SourceKey, info.Title, nullString(info.Uploader), info.DurationMS,
 		nullString(info.ThumbnailURL), nullString(info.SourceCodec),
 		nullInt(info.SampleRate), boolToInt(info.IsLive), nullString(rawJSON),
 		formatTime(r.now()),
 		nullString(info.Track), nullString(info.Artist), nullString(info.Album),
-		nullInt(info.ReleaseYear), nullInt(info.VideoHeight))
+		nullInt(info.ReleaseYear), nullInt(info.VideoHeight), string(formats))
 	if err != nil {
 		return fmt.Errorf("simpan metadata: %w", err)
 	}
@@ -82,16 +87,17 @@ func (r *MediaRepository) Get(ctx context.Context, sourceKey string) (*domain.Me
 		album      sql.NullString
 		year       sql.NullInt64
 		height     sql.NullInt64
+		formats    string
 	)
 
 	err := r.db.Read().QueryRowContext(ctx, `
 		SELECT source_key, title, uploader, duration_ms, thumbnail_url,
 		       source_codec, sample_rate, is_live, fetched_at,
-		       track, artist, album, release_year, video_height
+		       track, artist, album, release_year, video_height, source_formats
 		FROM media_items WHERE source_key = ?`, sourceKey).
 		Scan(&info.SourceKey, &info.Title, &uploader, &durationMS, &thumbnail,
 			&codec, &sampleRate, &isLive, &fetchedAt,
-			&track, &artist, &album, &year, &height)
+			&track, &artist, &album, &year, &height, &formats)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
@@ -108,6 +114,9 @@ func (r *MediaRepository) Get(ctx context.Context, sourceKey string) (*domain.Me
 		return nil, false, nil
 	}
 
+	if err := json.Unmarshal([]byte(formats), &info.SourceFormats); err != nil {
+		return nil, false, err
+	}
 	info.Uploader = uploader.String
 	info.DurationMS = durationMS.Int64
 	info.Duration = time.Duration(durationMS.Int64) * time.Millisecond

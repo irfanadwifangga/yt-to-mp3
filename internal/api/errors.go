@@ -22,6 +22,7 @@ const (
 // statusByCode memetakan kode domain ke status HTTP. Kode yang tidak
 // terdaftar jatuh ke 500, yang merupakan default paling aman.
 var statusByCode = map[domain.ErrorCode]int{
+	domain.CodeInvalidTrim:       http.StatusBadRequest,
 	domain.CodeInvalidURL:        http.StatusBadRequest,
 	domain.CodeInvalidSetting:    http.StatusBadRequest,
 	domain.CodeUnsupportedURL:    http.StatusBadRequest,

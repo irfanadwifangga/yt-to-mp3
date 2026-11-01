@@ -119,8 +119,11 @@ type Job struct {
 	// TagTitle dan TagArtist adalah suntingan pengguna sebelum konversi.
 	// Kosong berarti memakai metadata sumber. Keduanya ikut menentukan tag
 	// ID3 dan nama berkas, lihat MediaWithTags.
-	TagTitle  string
-	TagArtist string
+	TagTitle    string
+	TagArtist   string
+	TrimStartMS *int64
+	TrimEndMS   *int64
+	DurationMS  int64
 
 	// Progress bernilai nil ketika indeterminate, yaitu ukuran total atau
 	// durasi belum diketahui. Itu nilai yang sah, bukan data hilang.

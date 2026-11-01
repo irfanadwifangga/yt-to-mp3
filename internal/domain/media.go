@@ -4,17 +4,26 @@ import "time"
 
 // MediaInfo adalah metadata sumber yang sudah dinormalkan dari keluaran
 // yt-dlp. Field yang tidak diketahui dibiarkan kosong, bukan diisi sentinel.
+type SourceFormat struct {
+	Height      int     `json:"height"`
+	VideoCodec  string  `json:"video_codec"`
+	AudioCodec  string  `json:"audio_codec"`
+	BitrateKbps float64 `json:"bitrate_kbps"`
+	SizeBytes   int64   `json:"size_bytes"`
+}
+
 type MediaInfo struct {
-	SourceKey    string        `json:"source_key"`
-	SourceURL    string        `json:"source_url"`
-	Title        string        `json:"title"`
-	Uploader     string        `json:"uploader"`
-	Duration     time.Duration `json:"-"`
-	DurationMS   int64         `json:"duration_ms"`
-	ThumbnailURL string        `json:"thumbnail_url"`
-	SourceCodec  string        `json:"source_codec"`
-	SampleRate   int           `json:"sample_rate"`
-	IsLive       bool          `json:"is_live"`
+	SourceFormats []SourceFormat `json:"source_formats,omitempty"`
+	SourceKey     string         `json:"source_key"`
+	SourceURL     string         `json:"source_url"`
+	Title         string         `json:"title"`
+	Uploader      string         `json:"uploader"`
+	Duration      time.Duration  `json:"-"`
+	DurationMS    int64          `json:"duration_ms"`
+	ThumbnailURL  string         `json:"thumbnail_url"`
+	SourceCodec   string         `json:"source_codec"`
+	SampleRate    int            `json:"sample_rate"`
+	IsLive        bool           `json:"is_live"`
 
 	// VideoHeight adalah resolusi video tertinggi yang ditawarkan sumber,
 	// nol bila tidak diketahui. UI memakainya untuk menandai pilihan

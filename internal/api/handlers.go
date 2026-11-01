@@ -150,14 +150,15 @@ type metadataRequest struct {
 }
 
 type metadataResponse struct {
-	SourceKey    string `json:"source_key"`
-	SourceURL    string `json:"source_url"`
-	Title        string `json:"title"`
-	Uploader     string `json:"uploader"`
-	DurationMS   int64  `json:"duration_ms"`
-	ThumbnailURL string `json:"thumbnail_url"`
-	SourceCodec  string `json:"source_codec"`
-	SampleRate   int    `json:"sample_rate"`
+	SourceFormats []domain.SourceFormat `json:"source_formats,omitempty"`
+	SourceKey     string                `json:"source_key"`
+	SourceURL     string                `json:"source_url"`
+	Title         string                `json:"title"`
+	Uploader      string                `json:"uploader"`
+	DurationMS    int64                 `json:"duration_ms"`
+	ThumbnailURL  string                `json:"thumbnail_url"`
+	SourceCodec   string                `json:"source_codec"`
+	SampleRate    int                   `json:"sample_rate"`
 
 	// VideoHeight adalah resolusi video tertinggi sumber dalam satuan label
 	// "p", nol bila tidak diketahui. UI menandai pilihan kualitas video yang
@@ -201,6 +202,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	suggestedTitle, suggestedArtist := domain.SuggestTagsFor(info)
 
 	writeJSON(w, http.StatusOK, metadataResponse{
+		SourceFormats:       info.SourceFormats,
 		SourceKey:           info.SourceKey,
 		SourceURL:           info.SourceURL,
 		Title:               info.Title,

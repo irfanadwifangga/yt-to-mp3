@@ -101,12 +101,14 @@ type Downloader interface {
 
 // TranscodeRequest adalah permintaan konversi.
 type TranscodeRequest struct {
-	MediaPath  string
-	CoverPath  string
-	OutputPath string
-	Preset     *domain.Preset
-	Media      *domain.MediaInfo
-	Timeout    time.Duration
+	TrimStartMS *int64
+	TrimEndMS   *int64
+	MediaPath   string
+	CoverPath   string
+	OutputPath  string
+	Preset      *domain.Preset
+	Media       *domain.MediaInfo
+	Timeout     time.Duration
 }
 
 // Transcoder mengubah media sumber menjadi format keluaran.
@@ -244,6 +246,9 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 	// Suntingan pengguna berlaku untuk tag dan nama berkas sekaligus;
 	// cache tetap menyimpan metadata asli.
 	media = job.MediaWithTags(media)
+	if err := domain.ValidateTrim(job.TrimStartMS, job.TrimEndMS, media.DurationMS); err != nil {
+		return err
+	}
 
 	// Job yang diantrekan tanpa analisis lebih dulu belum punya judul, dan
 	// tanpa ini riwayatnya selamanya menampilkan source key.
@@ -302,7 +307,13 @@ func (p *Pipeline) Run(ctx context.Context, job *domain.Job) error {
 		}
 	}()
 
-	err = p.transcoder.Transcode(ctx, TranscodeRequest{
+	if job.TrimEndMS != nil {
+		output := *media
+		output.DurationMS = *job.TrimEndMS - *job.TrimStartMS
+		output.Duration = time.Duration(output.DurationMS) * time.Millisecond
+		media = &output
+	}
+	err = p.transcoder.Transcode(ctx, TranscodeRequest{TrimStartMS: job.TrimStartMS, TrimEndMS: job.TrimEndMS,
 		MediaPath:  downloaded.MediaPath,
 		CoverPath:  downloaded.CoverPath,
 		OutputPath: outTmp,

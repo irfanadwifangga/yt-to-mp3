@@ -61,7 +61,7 @@ func (a Transcoder) Transcode(
 	// indikator indeterminate.
 	total := req.Media.Duration
 
-	return a.Inner.Transcode(ctx, ffmpeg.TranscodeInput{
+	return a.Inner.Transcode(ctx, ffmpeg.TranscodeInput{TrimStartMS: req.TrimStartMS, TrimEndMS: req.TrimEndMS,
 		MediaPath:  req.MediaPath,
 		CoverPath:  req.CoverPath,
 		OutputPath: req.OutputPath,

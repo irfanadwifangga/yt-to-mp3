@@ -33,6 +33,8 @@ func NewTranscoder(tp ToolProvider, log *slog.Logger) *Transcoder {
 
 // TranscodeInput adalah parameter satu konversi.
 type TranscodeInput struct {
+	TrimStartMS *int64
+	TrimEndMS   *int64
 	// MediaPath adalah berkas hasil unduhan: audio saja untuk preset audio,
 	// video beserta audionya untuk preset video.
 	MediaPath string
@@ -125,6 +127,17 @@ var coverFilter = fmt.Sprintf(
 // Dipisah sebagai fungsi murni supaya semantik preset dapat diuji tanpa
 // menjalankan FFmpeg sama sekali.
 func BuildArgs(in TranscodeInput) []string {
+	if in.TrimStartMS != nil && in.TrimEndMS != nil {
+		preset := *in.Preset
+		if preset.Format == "opus" {
+			preset.Codec = "libopus"
+		}
+		if preset.Format == "mkv" {
+			preset.Codec = "aac"
+		}
+		in.Preset = &preset
+		in.CopyVideo, in.CopyAudio = false, false
+	}
 	format, _ := domain.FormatOf(in.Preset.Format)
 
 	args := []string{
@@ -145,6 +158,9 @@ func BuildArgs(in TranscodeInput) []string {
 		args = append(args, "-map", "0:a:0")
 	}
 
+	if in.TrimStartMS != nil && in.TrimEndMS != nil {
+		args = append(args, "-ss", strconv.FormatFloat(float64(*in.TrimStartMS)/1000, 'f', 3, 64), "-t", strconv.FormatFloat(float64(*in.TrimEndMS-*in.TrimStartMS)/1000, 'f', 3, 64))
+	}
 	if in.Preset.IsVideo() {
 		if in.CopyVideo {
 			args = append(args, "-c:v", "copy")

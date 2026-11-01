@@ -148,7 +148,7 @@ func (r *FileRepository) RefsByJobs(ctx context.Context, jobIDs []string) (map[s
 	}
 
 	rows, err := r.db.Read().QueryContext(ctx,
-		`SELECT job_id, id, filename FROM files WHERE missing = 0 AND job_id IN (`+placeholders+`)`, args...)
+		`SELECT job_id, id, filename, size_bytes FROM files WHERE missing = 0 AND job_id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query id berkas: %w", err)
 	}
@@ -157,7 +157,7 @@ func (r *FileRepository) RefsByJobs(ctx context.Context, jobIDs []string) (map[s
 	for rows.Next() {
 		var jobID string
 		var ref application.FileRef
-		if err := rows.Scan(&jobID, &ref.ID, &ref.Filename); err != nil {
+		if err := rows.Scan(&jobID, &ref.ID, &ref.Filename, &ref.SizeBytes); err != nil {
 			return nil, fmt.Errorf("scan berkas: %w", err)
 		}
 		out[jobID] = ref
