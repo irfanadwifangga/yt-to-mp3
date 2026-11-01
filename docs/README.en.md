@@ -39,7 +39,7 @@ A local desktop app that converts YouTube videos to MP3 audio or MP4 video (tech
 
 ## Installation
 
-**Windows:** download `yt-to-mp3_<version>_windows_amd64_setup.exe` from the Releases page and run it. No admin rights are needed. The installer creates a Start Menu shortcut, and the app can be uninstalled from **Settings → Apps**. Uninstalling keeps your history and converted files.
+**Windows:** download `yt-to-mp3_<version>_windows_amd64_setup.exe` from the [official website](https://yt-to-mp3.irvan.dev) or the Releases page and run it. No admin rights are needed. The installer creates a Start Menu shortcut, and the app can be uninstalled from **Settings → Apps**. Uninstalling keeps your history and converted files.
 
 The installer and executable are not signed yet, so SmartScreen may show "Windows protected your PC". Choose **More info**, then **Run anyway**. Compare the file with the `.sha256` on the release page if you want to be sure the download is intact.
 

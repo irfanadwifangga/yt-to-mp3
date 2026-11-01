@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://yt-to-mp3.irvan.dev">Website</a> ·
   <a href="#download--unduh">Download</a> ·
   <a href="docs/README.en.md">Documentation (English)</a> ·
   <a href="docs/README.id.md">Dokumentasi (Bahasa Indonesia)</a> ·
@@ -58,7 +59,7 @@ Baca [dokumentasi lengkap](docs/README.id.md) untuk instalasi, cara pakai, penge
 
 ## Download / Unduh
 
-Get the latest version from the [Releases page](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest). / Ambil versi terbaru dari [halaman Releases](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest).
+Get the latest version from the [official website](https://yt-to-mp3.irvan.dev) or the [Releases page](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest). / Ambil versi terbaru dari [situs resmi](https://yt-to-mp3.irvan.dev) atau [halaman Releases](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest).
 
 | Platform | File | Notes / Catatan |
 | --- | --- | --- |

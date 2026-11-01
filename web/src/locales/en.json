@@ -221,6 +221,7 @@
   "settings.theme.light": "Light",
   "settings.theme.dark": "Dark",
   "settings.about.version": "Version",
+  "settings.about.website": "Website",
   "app.updateAvailable": "Version {version} available",
   "settings.about.latest": "Latest version",
   "settings.about.download": "Download {version}",

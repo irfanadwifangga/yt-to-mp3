@@ -221,6 +221,7 @@
   "settings.theme.light": "Terang",
   "settings.theme.dark": "Gelap",
   "settings.about.version": "Versi",
+  "settings.about.website": "Situs Web",
   "app.updateAvailable": "Versi {version} tersedia",
   "settings.about.latest": "Versi terbaru",
   "settings.about.download": "Unduh {version}",
