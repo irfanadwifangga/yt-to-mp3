@@ -811,8 +811,8 @@ function AboutPanel({ health, onChanged }: { health: Health | null; onChanged: (
       <dd className="mono">{health.version}</dd>
       <dt>{t("settings.about.website")}</dt>
       <dd>
-        <a href="https://yt-to-mp3.vercel.app" target="_blank" rel="noopener noreferrer">
-          yt-to-mp3.vercel.app
+        <a href="https://yt-to-mp3-app.vercel.app" target="_blank" rel="noopener noreferrer">
+          yt-to-mp3-app.vercel.app
         </a>
       </dd>
       <dt>{t("settings.about.latest")}</dt>
