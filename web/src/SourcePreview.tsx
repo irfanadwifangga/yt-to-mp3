@@ -3,6 +3,7 @@ import type { Metadata } from "./api";
 import { t } from "./i18n";
 import { PlayIcon } from "./icons";
 import { formatDuration } from "./messages";
+import { LocalPreview } from "./LocalPreview";
 
 interface Player {
   mute(): void;
@@ -70,6 +71,7 @@ export function SourcePreview({
   trimEnabled?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const [local, setLocal] = useState(false);
   const player = useRef<Player | null>(null);
   const range = useRef({ startMS, endMS });
   range.current = { startMS, endMS };
@@ -103,7 +105,7 @@ export function SourcePreview({
   }, [startMS, trimEnabled, ready]);
   const videoID = /^youtube:([\w-]{11})$/.exec(media.source_key)?.[1];
   useEffect(() => {
-    if (!playing || !videoID || !host.current) return;
+    if (local || failed || !playing || !videoID || !host.current) return;
     let disposed = false;
     const readyTimeout = setTimeout(() => {
       if (!disposed) setFailure({ reason: "timeout" });
@@ -177,7 +179,7 @@ export function SourcePreview({
       player.current = null;
       container.replaceChildren();
     };
-  }, [playing, videoID, media.title, attempt]);
+  }, [playing, videoID, media.title, attempt, local, failed]);
   const failureKey =
     failure?.reason === "timeout"
       ? "preview.timeout"
@@ -194,6 +196,16 @@ export function SourcePreview({
                 : failure?.code === 5
                   ? "preview.playback"
                   : "preview.failed";
+  if (local)
+    return (
+      <LocalPreview
+        media={media}
+        startMS={startMS}
+        endMS={endMS}
+        trimEnabled={trimEnabled}
+        onBack={() => setLocal(false)}
+      />
+    );
   return (
     <div className={`source-preview ${frameReady ? "is-ready" : ""}`}>
       <div className="source-player">
@@ -226,6 +238,11 @@ export function SourcePreview({
         <p className="hint warn" role="status">
           {t(failureKey)}{" "}
           {failure?.code !== undefined && <span className="mono">(YouTube {failure.code}) </span>}
+          {![2, 100].includes(failure?.code ?? 0) && (
+            <button className="btn small" type="button" onClick={() => setLocal(true)}>
+              {t("preview.localPrepare")}
+            </button>
+          )}
           {![2, 100, 101, 150].includes(failure?.code ?? 0) && (
             <button
               className="btn small"

@@ -10,6 +10,9 @@ import "fmt"
 type ErrorCode string
 
 const (
+	CodePreviewBusy          ErrorCode = "PREVIEW_BUSY"
+	CodePreviewTooLarge      ErrorCode = "PREVIEW_TOO_LARGE"
+	CodePreviewNotFound      ErrorCode = "PREVIEW_NOT_FOUND"
 	CodeInvalidTrim          ErrorCode = "INVALID_TRIM"
 	CodePlaylistSeedRequired ErrorCode = "PLAYLIST_SEED_REQUIRED"
 	CodePlaylistUnavailable  ErrorCode = "PLAYLIST_UNAVAILABLE"

@@ -20,6 +20,7 @@ import (
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/application"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/config"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/preview"
 )
 
 // Options adalah dependensi yang disuntikkan ke Server.
@@ -35,6 +36,7 @@ type Options struct {
 	Tools     application.ToolManager
 	Metadata  *application.MetadataService
 	Playlists PlaylistResolver
+	Previews  *preview.Manager
 	Presets   application.PresetLister
 	Jobs      *application.JobService
 	Canceller JobCanceller
@@ -74,6 +76,7 @@ type Server struct {
 	tools     application.ToolManager
 	metadata  *application.MetadataService
 	playlists PlaylistResolver
+	previews  *preview.Manager
 	presets   application.PresetLister
 	jobs      *application.JobService
 	canceller JobCanceller
@@ -116,6 +119,7 @@ func New(opts Options) *Server {
 		tools:      opts.Tools,
 		metadata:   opts.Metadata,
 		playlists:  opts.Playlists,
+		previews:   opts.Previews,
 		presets:    opts.Presets,
 		jobs:       opts.Jobs,
 		canceller:  opts.Canceller,
@@ -160,6 +164,10 @@ func New(opts Options) *Server {
 	protected.HandleFunc("POST /tools/update", s.handleToolUpdate)
 	protected.HandleFunc("POST /metadata", s.handleMetadata)
 	protected.HandleFunc("POST /playlists", s.handlePlaylist)
+	protected.HandleFunc("POST /previews", s.handleCreatePreview)
+	protected.HandleFunc("GET /previews/{id}", s.handleGetPreview)
+	protected.HandleFunc("DELETE /previews/{id}", s.handleDeletePreview)
+	protected.HandleFunc("GET /previews/{id}/media", s.handlePreviewMedia)
 	protected.HandleFunc("GET /presets", s.handlePresets)
 	protected.HandleFunc("POST /jobs", s.handleCreateJob)
 	protected.HandleFunc("GET /jobs", s.handleListJobs)

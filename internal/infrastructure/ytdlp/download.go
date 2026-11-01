@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/irfanadwifangga/yt-to-mp3/internal/domain"
@@ -32,6 +33,7 @@ func NewDownloader(tp ToolProvider, log *slog.Logger) *Downloader {
 
 // DownloadInput adalah parameter satu unduhan.
 type DownloadInput struct {
+	MaxBytes  int64
 	SourceKey string
 	TempDir   string
 	Timeout   time.Duration
@@ -166,9 +168,13 @@ func (d *Downloader) Download(
 		defer cancel()
 	}
 
+	args := downloadArgs(CanonicalURL(in.SourceKey), in.TempDir, ffmpegBin, in.Selection)
+	if in.MaxBytes > 0 {
+		args = append([]string{"--max-filesize", strconv.FormatInt(in.MaxBytes, 10), "--no-cache-dir"}, args...)
+	}
 	h, err := process.Start(runCtx, process.Spec{
 		Bin:  bin,
-		Args: downloadArgs(CanonicalURL(in.SourceKey), in.TempDir, ffmpegBin, in.Selection),
+		Args: args,
 	})
 	if err != nil {
 		return nil, domain.WrapError(domain.CodeDownloadFailed, domain.ClassTransient,
@@ -193,17 +199,24 @@ func (d *Downloader) Download(
 	// penuh akan menggantung selamanya.
 	var wg sync.WaitGroup
 	var stderrBuf strings.Builder
+	var exceedsLimit atomic.Bool
 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		_ = ParseProgress(h.Stdout, onProgress, func(line string) {
+			if in.MaxBytes > 0 && strings.Contains(line, "max-filesize") {
+				exceedsLimit.Store(true)
+			}
 			d.log.Debug("yt-dlp", "line", line)
 		})
 	}()
 	go func() {
 		defer wg.Done()
 		_ = ParseProgress(h.Stderr, onProgress, func(line string) {
+			if in.MaxBytes > 0 && strings.Contains(line, "max-filesize") {
+				exceedsLimit.Store(true)
+			}
 			if stderrBuf.Len() < 64<<10 {
 				stderrBuf.WriteString(line)
 				stderrBuf.WriteString("\n")
@@ -213,6 +226,9 @@ func (d *Downloader) Download(
 
 	wg.Wait()
 	waitErr := h.Wait()
+	if exceedsLimit.Load() {
+		return nil, domain.NewError(domain.CodePreviewTooLarge, domain.ClassLocal, "sumber preview melewati batas unduhan")
+	}
 
 	if h.ExitCode() != 0 || waitErr != nil {
 		if runCtx.Err() != nil && ctx.Err() == nil {

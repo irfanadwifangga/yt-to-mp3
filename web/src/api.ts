@@ -191,6 +191,30 @@ export const api = {
     }),
   playlist: (url: string, signal?: AbortSignal) =>
     request<Playlist>("/playlists", { method: "POST", body: JSON.stringify({ url }), signal }),
+  createPreview: (url: string, signal?: AbortSignal) =>
+    request<LocalPreviewStatus>("/previews", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+      signal,
+    }),
+  previewStatus: (id: string, signal?: AbortSignal) =>
+    request<LocalPreviewStatus>(`/previews/${id}`, { signal }),
+  deletePreview: (id: string) =>
+    request<void>(`/previews/${id}`, { method: "DELETE", keepalive: true }),
+  previewMedia: async (id: string, signal?: AbortSignal) => {
+    const response = await fetch(`/api/previews/${id}/media`, {
+      headers: sessionToken ? { "X-Session-Token": sessionToken } : {},
+      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(30_000)]),
+    });
+    if (!response.ok)
+      throw new ApiError(
+        response.status === 404 ? "PREVIEW_NOT_FOUND" : "INTERNAL",
+        response.status,
+      );
+    const data = await response.blob();
+    if (data.size > 80 * 1024 * 1024) throw new ApiError("PREVIEW_TOO_LARGE", 413);
+    return data;
+  },
   logs: (lines = 300, signal?: AbortSignal) =>
     request<LogsPayload>(`/logs?lines=${lines}`, { signal }),
   revealLogs: () => request<void>("/logs/reveal", { method: "POST" }),
@@ -206,6 +230,13 @@ export interface PlaylistEntry {
   title: string;
   duration_ms: number;
   unavailable: boolean;
+}
+export interface LocalPreviewStatus {
+  id: string;
+  state: "preparing" | "ready" | "failed";
+  phase: string;
+  percent?: number;
+  error_code?: string;
 }
 export interface Playlist {
   title: string;

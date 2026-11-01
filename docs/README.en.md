@@ -8,6 +8,8 @@ A local desktop app that converts YouTube videos to MP3 audio or MP4 video (tech
 
 ## Features
 
+- **Optional local preview** — when YouTube rejects embedding, **Prepare local preview** downloads a temporary source and prepares a 360p H.264/AAC copy for a local player. Preparation shows progress and can be cancelled. Playback follows the trim range. Limits are 80 MiB per preview, one preparation at a time, two cached previews, and a five-minute timeout. Files are removed when switching sources, shutting down, or after 15 minutes of inactivity. Conversion quality follows your chosen preset. This fallback requires yt-dlp, FFmpeg, and ffprobe; source access failures are still reported.
+
 - **YouTube Mix/Radio** — `watch?v=…&list=RD…` links retain their seed video when resolving the Mix. Copy the full URL of the playing video; a Mix without an identifiable seed shows specific guidance. Mix contents can change between visits. Preview embedding remains subject to the owner's permission.
 
 - **YouTube playlists** — paste a playlist URL to select all or some videos, then choose Audio/Video, format, and quality. For a video link containing a playlist parameter, press **Open playlist**. Each video becomes a separate task without trimming; active duplicates are skipped and adding stops when the queue is full. The list is limited to the first 500 entries, with a notice when truncated. Recognized private, deleted, or live entries cannot be selected; other availability checks happen when downloading. **Stop adding** waits for the current request and keeps tasks already queued.

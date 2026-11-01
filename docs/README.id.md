@@ -8,6 +8,8 @@ Konverter video YouTube menjadi audio MP3 atau video MP4 berbentuk aplikasi desk
 
 ## Fitur
 
+- **Preview lokal opsional** — saat player YouTube menolak embed, tombol **Siapkan preview lokal** mengunduh salinan sementara dan menyiapkan H.264/AAC 360p untuk player lokal. Progres ditampilkan dan penyiapan bisa dibatalkan. Player mengikuti rentang trim. Batasnya 80 MiB per berkas preview, satu proses penyiapan, dua preview tersimpan, dan timeout lima menit. Cache dibersihkan saat sumber diganti, saat aplikasi berhenti, atau setelah 15 menit tidak dipakai. Kualitas hasil konversi mengikuti preset pilihanmu. Fallback ini membutuhkan yt-dlp, FFmpeg, dan ffprobe; kegagalan akses sumber tetap dilaporkan.
+
 - **Mix/Radio YouTube** — tautan `watch?v=…&list=RD…` mempertahankan video asal saat membaca daftar Mix. Salin URL lengkap dari video yang sedang diputar; Mix tanpa video asal yang dapat dikenali menampilkan petunjuk khusus. Daftar Mix dapat berubah ketika dibuka kembali. Pembatasan embed pada preview tetap mengikuti izin pemilik video.
 
 - **Playlist YouTube** — tempel URL playlist untuk memilih semua atau sebagian video, lalu tentukan Audio/Video, format, dan kualitas. Untuk tautan video dengan parameter playlist, tekan **Buka playlist**. Setiap video ditambahkan sebagai tugas terpisah tanpa trim; duplikat aktif dilewati dan penambahan berhenti jika antrean penuh. Daftar dibatasi 500 entri pertama, dengan pemberitahuan jika dipotong. Video privat, dihapus, atau siaran langsung yang dikenali tidak dapat dipilih; ketersediaan lainnya diperiksa saat pengunduhan. Tombol **Hentikan penambahan** berhenti setelah permintaan yang sedang berjalan selesai dan mempertahankan tugas yang sudah masuk.

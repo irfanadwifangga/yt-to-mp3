@@ -33,6 +33,7 @@ import (
 	"github.com/irfanadwifangga/yt-to-mp3/internal/infrastructure/ytdlp"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/instance"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/logging"
+	"github.com/irfanadwifangga/yt-to-mp3/internal/preview"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/version"
 	"github.com/irfanadwifangga/yt-to-mp3/internal/worker"
 	"github.com/irfanadwifangga/yt-to-mp3/web"
@@ -168,6 +169,11 @@ func run() error {
 	presets := db.NewPresetRepository(database)
 	mediaCache := db.NewMediaRepository(database)
 	resolver := ytdlp.NewResolver(toolManager, log)
+	previewCache, err := preview.New(ctx, filepath.Join(cfg.Paths.DataDir, "preview-cache"), ytdlp.PreviewBuilder{Tools: toolManager, Log: log})
+	if err != nil {
+		return fmt.Errorf("siapkan preview lokal: %w", err)
+	}
+	defer previewCache.Close()
 
 	// Setelan dimuat sebelum komponen yang membacanya disusun. Sebelumnya
 	// store, scheduler, dan logger dibentuk dari config.json lebih dulu,
@@ -262,6 +268,7 @@ func run() error {
 		Presets:   presets,
 		Metadata:  application.NewMetadataService(resolver, mediaCache, log),
 		Playlists: resolver,
+		Previews:  previewCache,
 		Jobs:      jobService,
 		Canceller: scheduler,
 		Hub:       hub,
