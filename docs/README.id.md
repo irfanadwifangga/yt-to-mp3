@@ -4,7 +4,7 @@
 
 Konverter video YouTube menjadi audio MP3 atau video MP4 berbentuk aplikasi desktop lokal (nama teknis: `yt-to-mp3`, dipakai untuk repositori, exe, dan direktori data): satu berkas program Go yang menjalankan server di loopback dan menyajikan SPA React yang tersemat di dalamnya. Tidak ada layanan komputasi awan; semua pemrosesan dan data tetap di komputermu.
 
-> **Status: fungsi inti dan penguatan keamanan selesai.** Analisis, antrean, konversi, riwayat, setelan, pemasangan perkakas sekali klik, pencatatan log, perawatan data, dan penghentian otomatis saat tidak aktif sudah berjalan, dan target NFR terukur lolos. Versi terbaru adalah [v0.3.0](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest), dan berkas program belum ditandatangani. Baca [Keterbatasan yang diketahui](#keterbatasan-yang-diketahui) sebelum memakai.
+> **Status: fungsi inti dan penguatan keamanan selesai.** Analisis, antrean, konversi, riwayat, setelan, pemasangan perkakas sekali klik, pencatatan log, perawatan data, dan penghentian otomatis saat tidak aktif sudah berjalan, dan target NFR terukur lolos. Versi terbaru selalu ada di halaman [Releases](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest), dan berkas program belum ditandatangani. Baca [Keterbatasan yang diketahui](#keterbatasan-yang-diketahui) sebelum memakai.
 
 ## Fitur
 
@@ -268,7 +268,7 @@ Server lokal bukan berarti server privat: situs web mana pun yang sedang dibuka 
 - **Aplikasi hanya memberi tahu bila ada versi baru**, tidak memperbarui dirinya sendiri; unduh installer baru dari halaman rilis. Cek ini membaca rilis GitHub `irfanadwifangga/yt-to-mp3`.
 - **Jendela aplikasi di Windows adalah Microsoft Edge dengan profil terpisah**, bukan jendela bawaan sistem. Bila Edge tidak ada, antarmuka beralih ke peramban bawaan, dan menutup tab itu tidak langsung menghentikan aplikasi; penghentian otomatis saat tidak aktif yang mengakhirinya kemudian.
 
-Sengaja tidak didukung: playlist, siaran langsung, video yang memerlukan akun masuk atau dibatasi usia, dan pilihan codec atau parameter encoder bebas (setiap format punya satu codec tujuan yang tetap). Daftar lengkapnya di [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
+Sengaja tidak didukung: siaran langsung, video yang memerlukan akun masuk atau dibatasi usia, dan pilihan codec atau parameter encoder bebas (setiap format punya satu codec tujuan yang tetap). Daftar lengkapnya di [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
 
 ## Dokumentasi
 

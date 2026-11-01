@@ -4,7 +4,7 @@
 
 A local desktop app that converts YouTube videos to MP3 audio or MP4 video (technical name: `yt-to-mp3`, used for the repository, executable, and data directory): a single Go binary that runs a loopback server and serves an embedded React SPA. There is no cloud service; all work and data stay on your machine.
 
-> **Status: core features and hardening are done.** Analysis, queue, conversion, history, settings, one-click tool installation, logging, housekeeping, and idle shutdown all work, and the measured NFR targets pass. The latest version is [v0.3.0](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest), and binaries are not signed. Read [Known limitations](#known-limitations) before use.
+> **Status: core features and hardening are done.** Analysis, queue, conversion, history, settings, one-click tool installation, logging, housekeeping, and idle shutdown all work, and the measured NFR targets pass. The latest version is always on the [Releases](https://github.com/irfanadwifangga/yt-to-mp3/releases/latest) page, and binaries are not signed. Read [Known limitations](#known-limitations) before use.
 
 ## Features
 
@@ -268,7 +268,7 @@ A local server is not a private server: any website the user has open can send r
 - **The app only tells you when a new version is available**; it does not update itself, so download the new installer from the Releases page. The check reads GitHub releases of `irfanadwifangga/yt-to-mp3`.
 - **The Windows app window is Microsoft Edge running with a separate profile**, not a native window. If Edge is missing, the UI falls back to the default browser, and closing that tab no longer quits the app right away; idle shutdown ends it later.
 
-Deliberately unsupported: playlists, live streams, videos that require sign-in or are age-restricted, and free choice of codecs or encoder parameters (each format has one fixed target codec). The full list is in the [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
+Deliberately unsupported: live streams, videos that require sign-in or are age-restricted, and free choice of codecs or encoder parameters (each format has one fixed target codec). The full list is in the [non-goals](yt-to-mp3-go-planning.md#3-non-goals).
 
 ## Documentation
 
