@@ -1,4 +1,11 @@
 {
+  "preview.timeout": "The player took too long to respond. Check your connection and retry.",
+  "preview.loadFailed": "The YouTube player could not load. Check your connection or content blocker.",
+  "preview.embedDenied": "The owner does not allow playback in other apps. Manual trimming is still available.",
+  "preview.notFound": "YouTube cannot play this video; it may be private or deleted.",
+  "preview.identity": "YouTube rejected the app identification. Retry or open the source on YouTube.",
+  "preview.invalid": "YouTube rejected the preview video parameters.",
+  "preview.playback": "The YouTube player could not play this video. Retry or open the source.",
   "trim.selection": "Selected range",
   "trim.from": "Start",
   "trim.to": "End",

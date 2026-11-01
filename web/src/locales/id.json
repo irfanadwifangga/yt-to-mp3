@@ -1,4 +1,11 @@
 {
+  "preview.timeout": "Player terlalu lama merespons. Periksa koneksi dan coba lagi.",
+  "preview.loadFailed": "Player YouTube gagal dimuat. Periksa koneksi atau pemblokir konten.",
+  "preview.embedDenied": "Pemilik video tidak mengizinkan preview di aplikasi lain. Trim manual tetap tersedia.",
+  "preview.notFound": "YouTube tidak dapat memutar video ini; video mungkin privat atau telah dihapus.",
+  "preview.identity": "YouTube menolak identitas aplikasi. Coba lagi atau buka sumber di YouTube.",
+  "preview.invalid": "YouTube menolak parameter video untuk preview.",
+  "preview.playback": "Player YouTube gagal memutar video ini. Coba lagi atau buka sumbernya.",
   "trim.selection": "Rentang terpilih",
   "trim.from": "Mulai",
   "trim.to": "Selesai",

@@ -17,7 +17,12 @@ interface PlayerAPI {
   Player: new (
     element: HTMLElement,
     options: {
-      events: { onReady(): void; onError(): void; onStateChange(event: { data: number }): void };
+      events: {
+        onReady(): void;
+        onError(event?: { data?: number }): void;
+        onStateChange(event: { data: number }): void;
+        onAutoplayBlocked?(): void;
+      };
     },
   ) => Player;
 }
@@ -69,7 +74,12 @@ export function SourcePreview({
   const range = useRef({ startMS, endMS });
   range.current = { startMS, endMS };
   const [playing, setPlaying] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<{
+    code?: number;
+    reason: "player" | "load" | "timeout";
+  } | null>(null);
+  const failed = failure !== null;
+  const [attempt, setAttempt] = useState(0);
   const [ready, setReady] = useState(false);
   const [frameReady, setFrameReady] = useState(false);
   const preparingFrame = useRef(false);
@@ -96,7 +106,7 @@ export function SourcePreview({
     if (!playing || !videoID || !host.current) return;
     let disposed = false;
     const readyTimeout = setTimeout(() => {
-      if (!disposed) setFailed(true);
+      if (!disposed) setFailure({ reason: "timeout" });
     }, 20000);
     const container = host.current;
     const iframe = document.createElement("iframe");
@@ -138,15 +148,15 @@ export function SourcePreview({
                 player.current?.unMute();
               }
             },
-            onError() {
+            onError(event) {
               clearTimeout(readyTimeout);
-              if (!disposed) setFailed(true);
+              if (!disposed) setFailure({ reason: "player", code: event?.data });
             },
           },
         });
       })
       .catch(() => {
-        if (!disposed) setFailed(true);
+        if (!disposed) setFailure({ reason: "load" });
       });
     const timer = setInterval(() => {
       const p = player.current;
@@ -167,7 +177,23 @@ export function SourcePreview({
       player.current = null;
       container.replaceChildren();
     };
-  }, [playing, videoID, media.title]);
+  }, [playing, videoID, media.title, attempt]);
+  const failureKey =
+    failure?.reason === "timeout"
+      ? "preview.timeout"
+      : failure?.reason === "load"
+        ? "preview.loadFailed"
+        : failure?.code === 101 || failure?.code === 150
+          ? "preview.embedDenied"
+          : failure?.code === 100
+            ? "preview.notFound"
+            : failure?.code === 153
+              ? "preview.identity"
+              : failure?.code === 2
+                ? "preview.invalid"
+                : failure?.code === 5
+                  ? "preview.playback"
+                  : "preview.failed";
   return (
     <div className={`source-preview ${frameReady ? "is-ready" : ""}`}>
       <div className="source-player">
@@ -179,13 +205,16 @@ export function SourcePreview({
             alt=""
           />
         )}
-        {!playing && (
+        {(!playing || (ready && !frameReady && !failed)) && (
           <button
             type="button"
             className="preview-play"
             onClick={() => {
               requestedPlay.current = true;
+              preparingFrame.current = false;
               setPlaying(true);
+              player.current?.unMute();
+              player.current?.playVideo();
             }}
             disabled={!videoID}>
             <PlayIcon />
@@ -195,7 +224,21 @@ export function SourcePreview({
       </div>
       {failed ? (
         <p className="hint warn" role="status">
-          {t("preview.failed")}{" "}
+          {t(failureKey)}{" "}
+          {failure?.code !== undefined && <span className="mono">(YouTube {failure.code}) </span>}
+          {![2, 100, 101, 150].includes(failure?.code ?? 0) && (
+            <button
+              className="btn small"
+              type="button"
+              onClick={() => {
+                setFailure(null);
+                setReady(false);
+                setFrameReady(false);
+                setAttempt((n) => n + 1);
+              }}>
+              {t("capture.retry")}
+            </button>
+          )}{" "}
           <a
             href={`https://www.youtube.com/watch?v=${videoID}`}
             target="_blank"

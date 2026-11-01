@@ -21,6 +21,14 @@ const (
 	testOrig  = "http://127.0.0.1:8080"
 )
 
+func TestReferrerPolicyExposesOnlyOrigin(t *testing.T) {
+	h := newHarness(t)
+	response := h.do(t, http.MethodGet, "/api/health", "")
+	if got := response.Header().Get("Referrer-Policy"); got != "strict-origin" {
+		t.Fatalf("Referrer-Policy = %q", got)
+	}
+}
+
 type harness struct {
 	srv       *api.Server
 	tools     *fakeTools
