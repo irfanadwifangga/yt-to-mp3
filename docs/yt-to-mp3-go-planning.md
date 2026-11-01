@@ -36,7 +36,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 
 | Bukan tujuan | Catatan |
 | --- | --- |
-| Playlist dan channel | Ditunda; menuntut relasi parent-child pada data model (ADR-017) |
+| ~~Playlist~~ dan channel | Playlist didukung sejak v0.4.0 (ADR-037). Channel tetap di luar cakupan |
 | Pilihan codec dan parameter encoder bebas | Setiap format punya satu codec tujuan yang tetap (ADR-036); pengguna memilih wadah dan kualitas, bukan codec |
 | Login, cookies, bypass age-gate | `AGE_RESTRICTED` berhenti sebagai error, bukan fitur tertunda |
 | Akses multi-user atau remote | Loopback-only adalah keputusan keamanan, bukan keterbatasan sementara |
@@ -65,7 +65,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-014 | Loopback-only + validasi Host/Origin + session token | Server di localhost dapat di-request situs web mana pun; mitigasi CSRF dan DNS rebinding |
 | ADR-015 | `-f bestaudio` lalu transcode eksplisit, bukan `yt-dlp -x` end-to-end | Hindari mengunduh stream video; kontrol penuh atas parameter encoder dan progress |
 | ADR-016 | Progress berbobot dua fase | Download dan transcode punya sumber progress berbeda dan tidak sebanding |
-| ADR-017 | `--no-playlist` pada MVP | Playlist menuntut relasi parent-child pada data model; ditunda agar MVP tetap sederhana |
+| ADR-017 | ~~`--no-playlist` pada MVP~~ **digantikan ADR-037** | Lihat ADR-037 |
 | ADR-018 | `--ignore-config`, argv tanpa shell, whitelist skema URL | Cegah injeksi lewat `yt-dlp.conf` milik user dan URL yang terbaca sebagai flag |
 | ADR-019 | Migrasi versioned dengan `goose` + `embed.FS` | Migrasi terkontrol tanpa dependensi eksternal saat runtime |
 | ADR-020 | ID3v2.3 tagging + embedded cover art di pipeline | Output MP3 tanpa tag terasa belum selesai untuk use case musik |
@@ -85,6 +85,7 @@ Ditulis eksplisit supaya tidak diam-diam masuk lewat scope creep:
 | ADR-035 | Keluaran video selalu MP4 H.264 8-bit + AAC; yt-dlp memilih resolusi lebih dulu lalu H.264/AAC (`-S res:N,vcodec:h264,acodec:aac`) dan menggabung ke MKV; transcoder menyalin stream yang sudah H.264/AAC dan meng-encode ulang sisanya dengan libx264 `veryfast` CRF 20 | Pemutar bawaan Windows, TV, dan ponsel lama tidak memutar VP9/AV1/Opus di MP4. YouTube hanya menyajikan H.264 sampai 1080p, jadi 360p–1080p cukup disalin (cepat, tanpa kehilangan kualitas) dan hanya resolusi di atasnya yang di-encode ulang. Resolusi didahulukan atas codec supaya pilihan 720p memang menghasilkan 720p. MKV sebagai wadah gabungan tidak pernah gagal karena kombinasi codec; wadah MP4 disusun transcoder sendiri. Preset video tetap satu tabel dengan preset audio karena job, dedup, dan riwayat berporos pada `preset_id` |
 | ADR-036 | Satu tabel profil wadah (`domain.OutputFormat`) menentukan codec yang boleh disalin, codec yang didahulukan yt-dlp, MIME, sampul, dan faststart; preset hanya memilih wadah dan kualitas. Video: MKV menyalin apa pun, WebM menyalin VP9/VP8/AV1 + Opus/Vorbis dan meng-encode ke VP9 realtime, MOV/FLV mengikuti MP4, AVI selalu MPEG-4 Part 2 (Xvid) + MP3. Audio: hanya Opus asli yang menyalin sumber; M4A, Vorbis, FLAC, ALAC, dan WAV selalu di-encode | Setiap wadah punya satu alasan keberadaan yang jelas: kompatibilitas (MP4, MOV, FLV), kualitas asli tanpa encode ulang (MKV, Opus), web (WebM), pemutar lama (AVI), lossless atau editing (FLAC, ALAC, WAV). Menyatukan pengetahuannya di satu tabel mencegah pemilihan stream yt-dlp dan keputusan salin FFmpeg saling menyimpang. Opus disalin karena YouTube sendiri menyajikan Opus: meng-encode-nya ulang hanya menurunkan kualitas |
 | ADR-034 | Di Windows, UI dibuka sebagai jendela aplikasi Microsoft Edge (`--app`) dengan profil khusus di direktori data | Memberi jendela sendiri tanpa tab dan address bar tanpa dependensi baru: Edge ada di setiap Windows 10/11, sedangkan Wails butuh cgo di macOS/Linux (bertentangan dengan ADR-011) dan Electron/Tauri membawa runtime puluhan MB. Profil khusus membuat proses Edge hidup selama jendela terbuka, sehingga penutupannya bisa dideteksi. Tanpa Edge, atau di macOS/Linux, UI tetap dibuka di browser default |
+| ADR-037 | Playlist didukung: metadata playlist diambil terpisah, setiap video menjadi job tersendiri, `--no-playlist` tetap dipakai pada download per-video | Playlist (termasuk Mix/Radio) diproses lewat endpoint metadata yang membaca daftar video lalu menambahkannya satu per satu ke antrean. Download individu tetap memakai `--no-playlist` agar yt-dlp tidak memperluas URL yang memuat parameter playlist menjadi seluruh daftar. Channel tetap di luar cakupan karena ukurannya tidak terbatas dan UX-nya sangat berbeda dari playlist. Menggantikan ADR-017 |
 
 ## 5. Struktur folder
 
@@ -362,7 +363,7 @@ Argumen yt-dlp dibangun sebagai argv, tidak pernah lewat shell:
 ```text
 --ignore-config          # abaikan yt-dlp.conf milik user (vektor injeksi --exec)
 --no-exec
---no-playlist            # ADR-017
+--no-playlist            # download video tunggal; playlist diproses lewat endpoint terpisah (ADR-037)
 --newline
 --progress-template "download:PROGRESS %(progress.downloaded_bytes)s %(progress.total_bytes_estimate)s"
 -f "bestaudio/best"      # ADR-015, jangan unduh stream video
