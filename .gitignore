@@ -44,3 +44,6 @@ Thumbs.db
 
 # Resource Windows dibuat saat build rilis (make winres / hook GoReleaser)
 /cmd/app/resource_windows_*.syso
+
+# Lisensi pihak ketiga dihasilkan saat build rilis
+/THIRD_PARTY_NOTICES.md

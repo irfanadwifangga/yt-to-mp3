@@ -21,6 +21,7 @@
 #ifndef SourceExe
   #error SourceExe wajib diisi lewat /DSourceExe=<path ke yt-to-mp3.exe>
 #endif
+#define SourceDir ExtractFilePath(SourceExe)
 
 [Setup]
 ; AppId mengikat pembaruan dan uninstall ke instalasi yang sama. Jangan
@@ -59,6 +60,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "yt-to-mp3.exe"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+; THIRD_PARTY_NOTICES.md dihasilkan saat build dan masuk arsip GoReleaser;
+; job installer mengekstraknya ke folder yang sama dengan SourceExe.
+Source: "{#SourceDir}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [InstallDelete]
 ; Shortcut dari versi sebelum nama tampilan diganti. Tanpa ini pembaruan

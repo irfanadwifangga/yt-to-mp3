@@ -74,6 +74,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - THIRD_PARTY_NOTICES.md
       # README di root hanya perkenalan; dokumentasi lengkap yang
       # dirujuknya ikut dibawa supaya tautannya tetap berguna di arsip.
       - docs/README.en.md
