@@ -39,7 +39,7 @@ Konverter video YouTube menjadi audio MP3 atau video MP4 berbentuk aplikasi desk
 
 ## Instalasi
 
-**Windows:** unduh `yt-to-mp3_<versi>_windows_amd64_setup.exe` dari [situs resmi](https://yt-to-mp3.irvan.dev) atau halaman Releases lalu jalankan. Tidak perlu hak admin. Pemasang membuat pintasan di Start Menu, dan aplikasi bisa dihapus dari **Settings → Apps**. Menghapus aplikasi tidak menghapus riwayat maupun berkas hasil konversi.
+**Windows:** unduh `yt-to-mp3_<versi>_windows_amd64_setup.exe` dari [situs resmi](https://yt-to-mp3.vercel.app) atau halaman Releases lalu jalankan. Tidak perlu hak admin. Pemasang membuat pintasan di Start Menu, dan aplikasi bisa dihapus dari **Settings → Apps**. Menghapus aplikasi tidak menghapus riwayat maupun berkas hasil konversi.
 
 Pemasang dan berkas exe belum ditandatangani, sehingga SmartScreen dapat menampilkan "Windows protected your PC". Pilih **More info** lalu **Run anyway**. Cocokkan berkas dengan `.sha256` di halaman rilis bila ingin memastikan unduhannya utuh.
 
