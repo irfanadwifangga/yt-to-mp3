@@ -8,6 +8,11 @@ Konverter video YouTube menjadi audio MP3 atau video MP4 berbentuk aplikasi desk
 
 ## Fitur
 
+- **Preview sumber dan trim** — putar sumber YouTube, pilih satu rentang mulai–akhir, lalu konversi potongan dengan pengodean ulang yang presisi. Video yang menolak pemutaran tersemat menyediakan tautan ke sumber.
+- **Estimasi ukuran hasil** — mengikuti durasi pilihan dan format jika datanya memadai. Ukuran akhir dapat berbeda dan ukuran unduhan sumber dapat lebih besar.
+- **Antrean dan riwayat terpadu** — pencarian judul di seluruh riwayat, filter status dan jenis media, serta halaman berisi 10, 25, atau 50 baris.
+- **Akses langsung** — tombol Ganti membuka pemilih folder, Log membuka modal tersendiri, dan ID/EN di sebelah Setelan mengganti bahasa tanpa menghapus input.
+
 - **Analisis tanpa mengunduh** — tempel tautan dan pratinjau judul, kanal, durasi, serta codec sumber langsung muncul.
 - **Progres langsung** per tugas konversi lewat SSE, ditampilkan sebagai sampul video yang terisi warna dari bawah ke atas. Membatalkan tugas konversi menghentikan seluruh pohon proses, termasuk FFmpeg yang dijalankan yt-dlp, lalu membersihkan berkas sementara.
 - **Daftar selesai** — buka folder hasil di pengelola berkas, simpan salinan, coba lagi yang gagal, atau hapus dari daftar (dengan atau tanpa berkasnya). Riwayat panjang dimuat bertahap.
@@ -90,7 +95,7 @@ Cara memakai:
 
 1. Tempel atau ketik URL video YouTube. Analisis berjalan otomatis begitu tautannya lengkap; tidak ada tombol yang perlu ditekan (Enter tetap bisa dipakai).
 2. Pilih preset, lalu **Konversi**.
-3. Pantau progres di **Sedang diproses**. Begitu selesai, notifikasi memberi tahu bahwa berkas sudah tersimpan di folder hasil (tertera di bagian bawah halaman), lengkap dengan tombol **Tampilkan di folder**. Berkas tidak perlu diunduh lagi; **Simpan salinan** di daftar Selesai hanya membuat duplikat lewat peramban.
+3. Pantau progres di **Antrean & riwayat**. Begitu selesai, notifikasi memberi tahu bahwa berkas sudah tersimpan di folder hasil (tertera di bagian bawah halaman), lengkap dengan tombol **Tampilkan di folder**. Berkas tidak perlu diunduh lagi; **Simpan salinan** pada tugas yang selesai hanya membuat duplikat lewat peramban.
 
 Menghentikan aplikasi: tombol **Keluar** di kanan atas, menutup jendela aplikasi, atau `Ctrl+C` di terminal. Bila UI terbuka di tab browser, aplikasi juga berhenti sendiri setelah tab ditutup dan tidak ada tugas konversi selama 30 menit; batasnya bisa diubah atau dimatikan (0) di **Setelan → Lanjutan**. Tidak ada ikon baki sistem karena pustaka tray membutuhkan cgo, dan itu akan merusak target cross-compile ([ADR-021](yt-to-mp3-go-planning.md#4-keputusan-teknis)).
 

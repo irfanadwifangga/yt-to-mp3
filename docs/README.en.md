@@ -8,6 +8,11 @@ A local desktop app that converts YouTube videos to MP3 audio or MP4 video (tech
 
 ## Features
 
+- **Source preview and trimming** — play the YouTube source, select one start/end range, and convert a precisely re-encoded clip. Videos that refuse embedded playback provide a link to the source.
+- **Output size estimates** — based on the selected duration and format when enough data is available. Final size may vary and the source download may be larger.
+- **Unified queue and history** — search titles across the full history, filter by status and media type, and choose 10, 25, or 50 rows per page.
+- **Direct controls** — Change opens the folder picker, Logs opens a separate dialog, and ID/EN beside Settings changes language while preserving input.
+
 - **Analyze without downloading** — paste a link and a preview of the title, channel, duration, and source codec appears right away.
 - **Live progress** per job over SSE, shown as the video cover filling with color from the bottom up. Cancelling a job stops the whole process tree, including the FFmpeg that yt-dlp runs, then cleans up temporary files.
 - **Finished list** — open the output folder in your file manager, save a copy, retry failed jobs, or remove them from the list (with or without the file). Long histories load incrementally.
@@ -90,7 +95,7 @@ How to use it:
 
 1. Paste or type a YouTube video URL. Analysis starts automatically once the link is complete; there is no button to press (Enter still works).
 2. Pick a preset, then press **Convert**.
-3. Follow the progress under **In progress**. When it finishes, a notification tells you the file is saved in the output folder (shown at the bottom of the page), with a **Show in folder** button. There is no need to download the file again; **Save a copy** in the **Finished** list only makes a duplicate through the browser.
+3. Follow progress under **Queue & history**. When it finishes, a notification tells you the file is saved in the output folder (shown at the bottom of the page), with a **Show in folder** button. There is no need to download the file again; **Save a copy** on a completed task only makes a duplicate through the browser.
 
 To stop the app, press **Quit** in the top right, close the app window, or press `Ctrl+C` in the terminal. When the UI is in a browser tab, the app also stops on its own after the tab is closed and no job has run for 30 minutes; the limit can be changed or disabled (0) in **Settings → Advanced**. There is no tray icon because tray libraries need cgo, which would break cross-compilation ([ADR-021](yt-to-mp3-go-planning.md#4-keputusan-teknis)).
 
