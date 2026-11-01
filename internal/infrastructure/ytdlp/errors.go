@@ -19,6 +19,8 @@ type pattern struct {
 }
 
 var patterns = []pattern{
+	{"this playlist type is unviewable", domain.CodePlaylistUnavailable, domain.ClassPermanent},
+	{"the playlist does not exist", domain.CodePlaylistUnavailable, domain.ClassPermanent},
 	{"private video", domain.CodeVideoPrivate, domain.ClassPermanent},
 	{"sign in to confirm your age", domain.CodeAgeRestricted, domain.ClassPermanent},
 	{"age-restricted", domain.CodeAgeRestricted, domain.ClassPermanent},

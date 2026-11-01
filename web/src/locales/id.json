@@ -1,4 +1,6 @@
 {
+  "error.PLAYLIST_SEED_REQUIRED": "Mix YouTube memerlukan video asal. Salin tautan video yang memuat parameter v dan list.",
+  "error.PLAYLIST_UNAVAILABLE": "Playlist atau Mix ini tidak dapat dibuka oleh YouTube. Gunakan tautan video asal untuk Mix, atau periksa apakah playlist masih tersedia.",
   "playlist.title": "Unduh playlist",
   "playlist.open": "Buka playlist",
   "playlist.loading": "Mengambil daftar video…",

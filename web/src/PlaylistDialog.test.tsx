@@ -74,7 +74,7 @@ it("adds only selected available videos without applying a trim range", async ()
 });
 it("skips active duplicates and stops when the queue is full", async () => {
   vi.mocked(api.createJob)
-    .mockRejectedValueOnce(new ApiError("DUPLICATE_ACTIVE", 409))
+    .mockRejectedValueOnce(new ApiError("DUPLICATE_ACTIVE_JOB", 409))
     .mockRejectedValueOnce(new ApiError("QUEUE_FULL", 503));
   setup();
   await screen.findByText("Collection");

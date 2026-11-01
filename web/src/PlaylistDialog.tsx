@@ -87,7 +87,7 @@ export function PlaylistDialog({
         if (stop.current) break;
         const entry = list.entries[index]!;
         if (seen.has(entry.url)) {
-          record(index, { status: "skipped", message: messageForCode("DUPLICATE_ACTIVE") });
+          record(index, { status: "skipped", message: messageForCode("DUPLICATE_ACTIVE_JOB") });
           continue;
         }
         seen.add(entry.url);
@@ -98,7 +98,7 @@ export function PlaylistDialog({
         } catch (err) {
           const code = err instanceof ApiError ? err.code : "NETWORK";
           record(index, {
-            status: code === "DUPLICATE_ACTIVE" ? "skipped" : "failed",
+            status: code === "DUPLICATE_ACTIVE_JOB" ? "skipped" : "failed",
             message: messageFor(err),
           });
           if (["QUEUE_FULL", "UNAUTHORIZED", "TIMEOUT", "RATE_LIMITED", "NETWORK"].includes(code))

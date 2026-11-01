@@ -15,3 +15,10 @@ it("accepts a playlist or mixed video link without forwarding arbitrary URLs", (
   ])
     expect(playlistURL(url)).toBeNull();
 });
+
+it("keeps the seed video required by the supplied YouTube Mix", () => {
+  const expected = "https://www.youtube.com/watch?v=u9z--aIMHhE&list=RDu9z--aIMHhE";
+  expect(playlistURL(expected + "&index=1")).toBe(expected);
+  expect(playlistURL("https://www.youtube.com/playlist?list=RDu9z--aIMHhE")).toBe(expected);
+  expect(playlistURL("https://youtu.be/u9z--aIMHhE?list=RDu9z--aIMHhE")).toBe(expected);
+});

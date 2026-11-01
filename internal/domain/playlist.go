@@ -39,5 +39,18 @@ func NormalizePlaylistURL(raw string) (string, *Error) {
 	if !playlistIDPattern.MatchString(id) {
 		return "", NewError(CodeInvalidURL, ClassPermanent, "id playlist tidak valid")
 	}
+	if strings.HasPrefix(id, "RD") {
+		seed := ""
+		if key, invalid := NormalizeURL(raw); invalid == nil {
+			seed = VideoID(key)
+		}
+		if seed == "" && len(id) == 13 && videoIDPattern.MatchString(id[2:]) {
+			seed = id[2:]
+		}
+		if seed == "" {
+			return "", NewError(CodePlaylistSeedRequired, ClassPermanent, "Mix YouTube memerlukan video asal")
+		}
+		return "https://www.youtube.com/watch?v=" + seed + "&list=" + id, nil
+	}
 	return "https://www.youtube.com/playlist?list=" + id, nil
 }

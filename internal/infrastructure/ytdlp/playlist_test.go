@@ -42,3 +42,10 @@ func TestPlaylistTruncationIsExplicit(t *testing.T) {
 		t.Fatalf("bad truncation: %+v %v", list, err)
 	}
 }
+
+func TestUnviewablePlaylistErrorIsActionable(t *testing.T) {
+	err := mapStderr([]byte("ERROR: [youtube:tab] YouTube said: This playlist type is unviewable."), 1)
+	if err.Code != domain.CodePlaylistUnavailable || err.Retryable() {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -13,7 +13,7 @@ import (
 )
 
 func playlistArgs(url string) []string {
-	return []string{"--ignore-config", "--no-exec", "--yes-playlist", "--flat-playlist", "--dump-single-json", "--skip-download", "--ignore-errors", "--no-warnings", "--playlist-end", fmt.Sprint(domain.MaxPlaylistEntries + 1), "--socket-timeout", "20", "--retries", "1", "--", url}
+	return []string{"--ignore-config", "--no-exec", "--no-cache-dir", "--yes-playlist", "--flat-playlist", "--dump-single-json", "--skip-download", "--ignore-errors", "--no-warnings", "--playlist-end", fmt.Sprint(domain.MaxPlaylistEntries + 1), "--socket-timeout", "20", "--retries", "1", "--", url}
 }
 
 func (r *Resolver) ResolvePlaylist(ctx context.Context, rawURL string) (*domain.Playlist, error) {

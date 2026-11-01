@@ -1,4 +1,6 @@
 {
+  "error.PLAYLIST_SEED_REQUIRED": "This YouTube Mix needs its seed video. Copy a video link containing both v and list parameters.",
+  "error.PLAYLIST_UNAVAILABLE": "YouTube could not open this playlist or Mix. For a Mix, use the original video link; otherwise check that the playlist is still available.",
   "playlist.title": "Download playlist",
   "playlist.open": "Open playlist",
   "playlist.loading": "Fetching video list…",

@@ -8,6 +8,8 @@ Konverter video YouTube menjadi audio MP3 atau video MP4 berbentuk aplikasi desk
 
 ## Fitur
 
+- **Mix/Radio YouTube** — tautan `watch?v=…&list=RD…` mempertahankan video asal saat membaca daftar Mix. Salin URL lengkap dari video yang sedang diputar; Mix tanpa video asal yang dapat dikenali menampilkan petunjuk khusus. Daftar Mix dapat berubah ketika dibuka kembali. Pembatasan embed pada preview tetap mengikuti izin pemilik video.
+
 - **Playlist YouTube** — tempel URL playlist untuk memilih semua atau sebagian video, lalu tentukan Audio/Video, format, dan kualitas. Untuk tautan video dengan parameter playlist, tekan **Buka playlist**. Setiap video ditambahkan sebagai tugas terpisah tanpa trim; duplikat aktif dilewati dan penambahan berhenti jika antrean penuh. Daftar dibatasi 500 entri pertama, dengan pemberitahuan jika dipotong. Video privat, dihapus, atau siaran langsung yang dikenali tidak dapat dipilih; ketersediaan lainnya diperiksa saat pengunduhan. Tombol **Hentikan penambahan** berhenti setelah permintaan yang sedang berjalan selesai dan mempertahankan tugas yang sudah masuk.
 - **Diagnosis preview** — pesan membedakan larangan embed oleh pemilik, video tidak tersedia, identitas aplikasi ditolak, kegagalan jaringan, dan timeout. Kode YouTube ditampilkan untuk pelaporan; pemuatan yang gagal dapat dicoba lagi. Video yang menolak embed tetap menyediakan tautan ke YouTube dan input trim manual. Kebijakan referrer hanya mengirim origin, tanpa path atau query sesi. [Rujukan kode error YouTube](https://developers.google.com/youtube/iframe_api_reference#Events).
 

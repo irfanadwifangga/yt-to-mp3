@@ -15,3 +15,16 @@ func TestNormalizePlaylistURL(t *testing.T) {
 		}
 	}
 }
+
+func TestMixPreservesSeedVideo(t *testing.T) {
+	want := "https://www.youtube.com/watch?v=u9z--aIMHhE&list=RDu9z--aIMHhE"
+	for _, raw := range []string{want + "&index=1", "https://www.youtube.com/playlist?list=RDu9z--aIMHhE", "https://youtu.be/u9z--aIMHhE?list=RDu9z--aIMHhE"} {
+		got, err := NormalizePlaylistURL(raw)
+		if err != nil || got != want {
+			t.Fatalf("%q => %q, %v", raw, got, err)
+		}
+	}
+	if _, err := NormalizePlaylistURL("https://www.youtube.com/playlist?list=RDCLAK5uy_test"); err == nil || err.Code != CodePlaylistSeedRequired {
+		t.Fatalf("missing seed should be actionable: %v", err)
+	}
+}
