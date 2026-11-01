@@ -5,6 +5,8 @@ import "@fontsource-variable/jetbrains-mono/wght.css";
 import { App } from "./App";
 import { applyTheme, loadTheme } from "./theme";
 import "./index.css";
+import "./studio.css";
+import "./controls.css";
 
 // Tema dipasang sebelum render pertama supaya halaman tidak berkedip dari
 // terang ke gelap.

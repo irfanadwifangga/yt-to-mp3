@@ -1,3 +1,7 @@
+import { TrimTimeline } from "./TrimTimeline";
+import { NumberInput } from "./NumberInput";
+import { Select } from "./Select";
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import {
   api,
@@ -8,10 +12,18 @@ import {
   type Preset,
   type PresetKind,
 } from "./api";
-import { Cover } from "./Cover";
-import { CloseIcon, FolderIcon, MusicIcon, VideoIcon } from "./icons";
+import { SourcePreview } from "./SourcePreview";
+import { estimateBytes } from "./estimate";
+import { CloseIcon, FolderIcon, MusicIcon, VideoIcon, ScissorsIcon, DownloadIcon } from "./icons";
 import { t } from "./i18n";
-import { formatDuration, formatHint, formatTime, messageFor, presetLabel } from "./messages";
+import {
+  formatBytes,
+  formatDuration,
+  formatHint,
+  formatTime,
+  messageFor,
+  presetLabel,
+} from "./messages";
 
 /**
  * Pola longgar yang memicu analisis otomatis.
@@ -54,15 +66,15 @@ interface Props {
   presets: Preset[];
   defaultPreset: string;
   onQueued: (job: Job) => void;
+  toolbarHost?: HTMLElement | null;
 }
 
 /**
  * Kartu utama: tempel tautan, lihat pratinjau, lalu antrekan.
  *
- * Tidak ada tombol analisis. Tautan yang valid langsung dianalisis, jadi
- * tombol yang harus diklik hanya satu: Konversi.
+ * Tautan valid dianalisis otomatis; tombol Analisis juga mendukung input manual.
  */
-export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
+export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }: Props) {
   const [url, setUrl] = useState("");
   const [presetId, setPresetId] = useState("");
   // Jenis keluaran yang dipilih; null berarti mengikuti preset bawaan.
@@ -82,6 +94,10 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   // server setiap kali analisis selesai, lalu bebas disunting.
   const [tagTitle, setTagTitle] = useState("");
   const [tagArtist, setTagArtist] = useState("");
+  const [trimEnabled, setTrimEnabled] = useState(false);
+  const [startMS, setStartMS] = useState(0);
+  const [endMS, setEndMS] = useState(0);
+  const queueing = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Tautan yang sedang atau terakhir dianalisis. Hasil untuk tautan lain
@@ -122,10 +138,36 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   }
 
   const selected =
-    presetId && presetOf(presetId)?.kind === activeKind && presetOf(presetId)?.format === activeFormat
+    presetId &&
+    presetOf(presetId)?.kind === activeKind &&
+    presetOf(presetId)?.format === activeFormat
       ? presetId
       : defaultFor(activeKind, activeFormat);
   const selectedPreset = presetOf(selected);
+  const trimValid =
+    !trimEnabled ||
+    Boolean(
+      result &&
+        Number.isFinite(startMS) &&
+        Number.isFinite(endMS) &&
+        startMS >= 0 &&
+        endMS > startMS &&
+        endMS <= result.duration_ms,
+    );
+  const estimatedSize =
+    result && selectedPreset && trimValid
+      ? estimateBytes(
+          result,
+          selectedPreset,
+          trimEnabled ? endMS - startMS : result.duration_ms,
+          trimEnabled,
+        )
+      : null;
+  useEffect(() => {
+    setTrimEnabled(false);
+    setStartMS(0);
+    setEndMS(result?.duration_ms ?? 0);
+  }, [result?.source_key, result?.duration_ms]);
 
   function chooseKind(k: PresetKind) {
     setKind(k);
@@ -198,10 +240,17 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
     const link = url.trim();
     // Tautan yang ditempel saat status tool belum diketahui ikut dianalisis
     // begitu ready berubah menjadi true, karena ready ada di dependensi.
-    if (ready !== true || busy === "queue" || !YOUTUBE_URL.test(link) || link === analyzed.current) {
+    if (
+      ready !== true ||
+      busy === "queue" ||
+      !YOUTUBE_URL.test(link) ||
+      link === analyzed.current
+    ) {
       return;
     }
-    const timer = setTimeout(() => void analyze(link), TYPE_DELAY_MS);
+    const timer = setTimeout(() => {
+      if (link !== analyzed.current) void analyze(link);
+    }, TYPE_DELAY_MS);
     return () => clearTimeout(timer);
     // analyze sengaja tidak masuk dependensi: fungsinya dibuat ulang setiap render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,17 +278,23 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
   }
 
   async function handleConvert() {
-    if (!selected || !result) return;
+    if (!selected || !result || !trimValid || queueing.current) return;
+    queueing.current = true;
     setBusy("queue");
     setError(null);
     try {
       const title = tagTitle.trim();
-      const job = await api.createJob(url, selected, { title, artist: tagArtist.trim() });
+      const job = await api.createJob(url, selected, {
+        title,
+        artist: tagArtist.trim(),
+        ...(trimEnabled ? { trim_start_ms: startMS, trim_end_ms: endMS } : {}),
+      });
       onQueued({ ...job, title: job.title || title || result.title });
       reset();
     } catch (err) {
       setError(messageFor(err, t("capture.queueFailed")));
     } finally {
+      queueing.current = false;
       setBusy(null);
     }
   }
@@ -280,7 +335,12 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
 
   // Konversi sebelumnya dengan preset yang sedang dipilih. Preset lain
   // menghasilkan berkas berbeda, jadi bukan duplikat.
-  const previous = result?.previous_conversions?.find((p) => p.preset_id === selected);
+  const previous = result?.previous_conversions?.find(
+    (p) =>
+      p.preset_id === selected &&
+      (p.trim_start_ms ?? null) === (trimEnabled ? startMS : null) &&
+      (p.trim_end_ms ?? null) === (trimEnabled ? endMS : null),
+  );
 
   // Saran atau suntingan yang berbeda dari metadata asli ditampilkan
   // berdampingan dengan aslinya, supaya tebakan yang keliru mudah dikenali.
@@ -306,57 +366,71 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
       : busy === "update"
         ? t("tools.updating")
         : busy === "analyze"
-        ? t("capture.busy")
-        : ready === null
-          ? t("capture.checkingTools")
-          : t("capture.pasteHint");
+          ? t("capture.busy")
+          : ready === null
+            ? t("capture.checkingTools")
+            : t("capture.pasteHint");
+
+  const urlForm = (
+    <form
+      aria-label={t("capture.label")}
+      className="capture-row"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void analyze(url);
+      }}>
+      <label className="url-field-label" htmlFor="capture-url">
+        {t("capture.urlLabel")}
+      </label>
+      <div className="capture-input">
+        <input
+          ref={inputRef}
+          id="capture-url"
+          type="url"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
+          value={url}
+          onChange={(e) => handleChange(e.target.value)}
+          onPaste={handlePaste}
+          placeholder={t("capture.urlPlaceholder")}
+          aria-describedby="capture-hint"
+          aria-busy={busy === "analyze"}
+          disabled={ready === false}
+        />
+        {busy === "analyze" ? (
+          <span className="capture-spinner" aria-hidden="true" />
+        ) : (
+          url && (
+            <button
+              type="button"
+              className="icon-btn capture-clear"
+              onClick={reset}
+              aria-label={t("capture.clearInput")}>
+              <CloseIcon />
+            </button>
+          )
+        )}
+      </div>
+      <button className="btn primary" type="submit" disabled={busy !== null || ready === false}>
+        {t("capture.analyze")}
+      </button>
+    </form>
+  );
 
   return (
-    <section className="capture" aria-labelledby="capture-label">
-      <label id="capture-label" htmlFor="capture-url" className="capture-label">
+    <section
+      className={`capture ${result ? "has-source" : "is-empty"}`}
+      aria-labelledby="capture-label">
+      <span id="capture-label" className="capture-label">
         {t("capture.label")}
-      </label>
+      </span>
 
       {/* Enter tetap memicu analisis lewat submit implisit form satu input,
           termasuk untuk tautan yang tidak dikenali pola otomatis. */}
-      <form
-        className="capture-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void analyze(url);
-        }}>
-        <div className="capture-input">
-          <input
-            ref={inputRef}
-            id="capture-url"
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-            value={url}
-            onChange={(e) => handleChange(e.target.value)}
-            onPaste={handlePaste}
-            placeholder="https://www.youtube.com/watch?v=…"
-            aria-describedby="capture-hint"
-            aria-busy={busy === "analyze"}
-            disabled={ready === false}
-          />
-          {busy === "analyze" ? (
-            <span className="capture-spinner" aria-hidden="true" />
-          ) : (
-            url && (
-              <button
-                type="button"
-                className="icon-btn capture-clear"
-                onClick={reset}
-                aria-label={t("capture.clearInput")}>
-                <CloseIcon />
-              </button>
-            )
-          )}
-        </div>
-      </form>
+      {toolbarHost ? createPortal(urlForm, toolbarHost) : urlForm}
 
+      {!result && <h2 className="capture-empty-title">{t("capture.emptyTitle")}</h2>}
       <p id="capture-hint" className="hint" role="status">
         {status}
       </p>
@@ -388,7 +462,74 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
 
       {result && (
         <div className="preview">
-          <Cover sourceKey={result.source_key} state="done" size="lg" />
+          <div className="preview-editor">
+            <h2 className="source-caption">{result.title}</h2>
+            <SourcePreview
+              key={result.source_key}
+              media={result}
+              trimEnabled={trimEnabled}
+              startMS={trimEnabled ? startMS : 0}
+              endMS={trimEnabled && trimValid ? endMS : null}
+            />
+            <div className="trim-controls">
+              <label className="trim-toggle">
+                <ScissorsIcon />
+                <input
+                  type="checkbox"
+                  checked={trimEnabled}
+                  disabled={result.duration_ms <= 0 || busy === "queue"}
+                  onChange={(e) => setTrimEnabled(e.target.checked)}
+                />
+                {t("trim.enable")}
+              </label>
+              {trimEnabled && (
+                <>
+                  <div className="trim-inputs">
+                    <label>
+                      {t("trim.start")}
+                      <NumberInput
+                        aria-label={t("trim.start")}
+                        type="number"
+                        min="0"
+                        max={result.duration_ms / 1000}
+                        step="0.001"
+                        value={startMS / 1000}
+                        onChange={(e) => setStartMS(Math.round(Number(e.target.value) * 1000))}
+                        disabled={busy === "queue"}
+                      />
+                    </label>
+                    <span className="mono">
+                      {trimValid ? formatDuration(endMS - startMS) : "—"}
+                    </span>
+                    <label>
+                      {t("trim.end")}
+                      <NumberInput
+                        aria-label={t("trim.end")}
+                        type="number"
+                        min="0"
+                        max={result.duration_ms / 1000}
+                        step="0.001"
+                        value={endMS / 1000}
+                        onChange={(e) => setEndMS(Math.round(Number(e.target.value) * 1000))}
+                        disabled={busy === "queue"}
+                      />
+                    </label>
+                  </div>
+                  <TrimTimeline
+                    durationMS={result.duration_ms}
+                    startMS={startMS}
+                    endMS={endMS}
+                    disabled={busy === "queue"}
+                    onStart={setStartMS}
+                    onEnd={setEndMS}
+                  />
+                  <p className={trimValid ? "hint" : "hint warn"} role="status">
+                    {t(trimValid ? "trim.reencode" : "error.INVALID_TRIM")}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
 
           <div className="preview-body">
             <div className="tag-fields">
@@ -463,6 +604,13 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
               </div>
             )}
 
+            <div className="estimate" role="status">
+              <span>{t("estimate.label")}</span>
+              <strong>
+                {estimatedSize === null ? t("estimate.unknown") : `≈ ${formatBytes(estimatedSize)}`}
+              </strong>
+              <p className="hint">{t("estimate.hint")}</p>
+            </div>
             <div className="preview-actions">
               {kinds.length > 1 && (
                 <div className="kind-switch" role="group" aria-label={t("capture.kind")}>
@@ -479,38 +627,45 @@ export function Capture({ ready, presets, defaultPreset, onQueued }: Props) {
                   ))}
                 </div>
               )}
-              {formats.length > 1 && (
-                <select
-                  className="format-select"
-                  value={activeFormat}
-                  onChange={(e) => chooseFormat(e.target.value)}
-                  aria-label={t("capture.format")}>
-                  {formats.map((f) => (
-                    <option key={f} value={f}>
-                      {f.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
+              {formats.length > 0 && (
+                <label className="export-field">
+                  <span>{t("capture.format")}</span>
+                  <Select
+                    className="format-select"
+                    value={activeFormat}
+                    onChange={(e) => chooseFormat(e.target.value)}
+                    aria-label={t("capture.format")}>
+                    {formats.map((f) => (
+                      <option key={f} value={f}>
+                        {f.toUpperCase()}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
               )}
               {/* Format dengan satu pilihan, seperti WAV, tidak butuh
                   pilihan kualitas; penjelasannya ada di bawah. */}
-              {choices.length > 1 && (
-                <select
-                  value={selected}
-                  onChange={(e) => setPresetId(e.target.value)}
-                  aria-label={t("capture.preset")}>
-                  {choices.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {qualityLabel(p)}
-                    </option>
-                  ))}
-                </select>
+              {choices.length > 0 && (
+                <label className="export-field">
+                  <span>{t("capture.preset")}</span>
+                  <Select
+                    value={selected}
+                    onChange={(e) => setPresetId(e.target.value)}
+                    aria-label={t("capture.preset")}>
+                    {choices.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {qualityLabel(p)}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
               )}
               <button
                 type="button"
                 className="btn primary"
                 onClick={() => void handleConvert()}
-                disabled={busy !== null || !selected}>
+                disabled={busy !== null || !selected || !trimValid}>
+                <DownloadIcon />
                 {busy === "queue"
                   ? t("capture.queueing")
                   : previous

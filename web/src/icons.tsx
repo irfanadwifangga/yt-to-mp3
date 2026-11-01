@@ -72,3 +72,79 @@ export function TerminalIcon() {
     </svg>
   );
 }
+
+export function PlayIcon() {
+  return (
+    <svg {...common}>
+      <path d="m8 5 11 7-11 7z" />
+    </svg>
+  );
+}
+
+export function GlobeIcon() {
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a17 17 0 0 1 0 18 17 17 0 0 1 0-18" />
+    </svg>
+  );
+}
+
+export function SearchIcon() {
+  return (
+    <svg {...common}>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 5 5" />
+    </svg>
+  );
+}
+
+export function ScissorsIcon() {
+  return (
+    <svg {...common}>
+      <circle cx="5" cy="6" r="3" />
+      <circle cx="5" cy="18" r="3" />
+      <path d="m8 8 13 12M8 16 13 11M15 9l6-5" />
+    </svg>
+  );
+}
+
+export function RetryIcon() {
+  return (
+    <svg {...common}>
+      <path d="M3 10a9 9 0 1 1 2 8M3 4v6h6" />
+    </svg>
+  );
+}
+
+export function TrashIcon() {
+  return (
+    <svg {...common}>
+      <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+    </svg>
+  );
+}
+
+export function ChevronLeftIcon() {
+  return (
+    <svg {...common}>
+      <path d="m15 5-7 7 7 7" />
+    </svg>
+  );
+}
+
+export function ChevronRightIcon() {
+  return (
+    <svg {...common}>
+      <path d="m9 5 7 7-7 7" />
+    </svg>
+  );
+}
+
+export function PowerIcon() {
+  return (
+    <svg {...common}>
+      <path d="M12 2v10M6.3 5.3a9 9 0 1 0 11.4 0" />
+    </svg>
+  );
+}

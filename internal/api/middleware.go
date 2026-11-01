@@ -44,6 +44,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; img-src 'self' data: https://i.ytimg.com; "+
 				"style-src 'self' 'unsafe-inline'; font-src 'self'; "+
+				"script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube-nocookie.com https://www.youtube.com; "+
 				"connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})

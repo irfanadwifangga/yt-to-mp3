@@ -24,8 +24,8 @@ function detect(): Locale {
   return lang.startsWith("id") ? "id" : "en";
 }
 
-export const locale: Locale = detect();
-export const dateLocale = locale === "id" ? "id-ID" : "en-US";
+export let locale: Locale = detect();
+export let dateLocale = locale === "id" ? "id-ID" : "en-US";
 
 document.documentElement.lang = locale;
 
@@ -50,11 +50,9 @@ export function t(key: string, vars?: Record<string, string | number>): string {
 }
 
 /**
- * Mengganti bahasa lalu memuat ulang halaman.
+ * Mengganti bahasa dan memberi tahu antarmuka tanpa kehilangan draft.
  *
- * Memuat ulang lebih sederhana dan lebih pasti daripada merender ulang
- * seluruh pohon: tidak ada komponen yang tertinggal memegang teks lama.
- * Session token aman karena tersimpan di sessionStorage, bukan di URL.
+ * Komponen utama berlangganan localechange agar draft dan posisi halaman tetap terjaga.
  */
 export function setLocale(next: Locale): void {
   try {
@@ -62,5 +60,8 @@ export function setLocale(next: Locale): void {
   } catch {
     // Tanpa penyimpanan, pilihan hanya berlaku sampai halaman ditutup.
   }
-  location.reload();
+  locale = next;
+  dateLocale = next === "id" ? "id-ID" : "en-US";
+  document.documentElement.lang = next;
+  window.dispatchEvent(new Event("localechange"));
 }

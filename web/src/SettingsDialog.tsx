@@ -1,3 +1,5 @@
+import { NumberInput } from "./NumberInput";
+import { Select } from "./Select";
 import { useEffect, useRef, useState } from "react";
 import {
   api,
@@ -6,11 +8,18 @@ import {
   type Preset,
   type PresetKind,
   type Setting,
-  type ToolProgress
+  type ToolProgress,
 } from "./api";
 import { CloseIcon, FolderIcon, MusicIcon, VideoIcon } from "./icons";
 import { has, locale, setLocale, t, type Locale } from "./i18n";
-import { formatBytes, formatHint, formatTime, messageFor, presetFullLabel, presetLabel } from "./messages";
+import {
+  formatBytes,
+  formatHint,
+  formatTime,
+  messageFor,
+  presetFullLabel,
+  presetLabel,
+} from "./messages";
 import { loadTheme, saveTheme, type Theme } from "./theme";
 
 export type SettingsSection =
@@ -19,7 +28,6 @@ export type SettingsSection =
   | "queue"
   | "tools"
   | "display"
-  | "logs"
   | "advanced"
   | "about";
 
@@ -34,7 +42,6 @@ const GROUPS: { id: SettingsSection; keys: string[] }[] = [
   { id: "queue", keys: ["max_concurrent_jobs", "max_queue_depth"] },
   { id: "tools", keys: ["tool_update_check"] },
   { id: "display", keys: [] },
-  { id: "logs", keys: [] },
   { id: "advanced", keys: ["idle_shutdown_minutes", "log_level"] },
   { id: "about", keys: [] },
 ];
@@ -62,6 +69,10 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
   const dialogRef = useRef<HTMLDialogElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const open = section !== null;
+  const [activeGroup, setActiveGroup] = useState<SettingsSection>(section ?? "storage");
+  useEffect(() => {
+    if (section) setActiveGroup(section);
+  }, [section]);
 
   const [settings, setSettings] = useState<Setting[] | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -156,8 +167,7 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
       onClick={(e) => {
         // Klik pada backdrop menutup dialog; klik di dalam lembar tidak.
         if (e.target === e.currentTarget) onClose();
-      }}
-    >
+      }}>
       <div className="sheet">
         <header className="sheet-head">
           <h2 id="settings-title">{t("settings.title")}</h2>
@@ -165,15 +175,21 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
             type="button"
             className="icon-btn"
             onClick={onClose}
-            aria-label={t("settings.close")}
-          >
+            aria-label={t("settings.close")}>
             <CloseIcon />
           </button>
         </header>
 
         <nav className="sheet-nav" aria-label={t("settings.title")}>
           {GROUPS.map((g) => (
-            <button key={g.id} type="button" onClick={() => scrollToGroup(g.id)}>
+            <button
+              key={g.id}
+              type="button"
+              aria-current={activeGroup === g.id ? "true" : undefined}
+              onClick={() => {
+                setActiveGroup(g.id);
+                scrollToGroup(g.id);
+              }}>
               {t(`settings.group.${g.id}`)}
             </button>
           ))}
@@ -204,16 +220,7 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
 
               {g.id === "tools" && <ToolsPanel health={health} onChanged={onChanged} />}
               {g.id === "display" && <DisplayPanel />}
-              {g.id === "logs" && <LogsPanel />}
               {g.id === "about" && <AboutPanel health={health} onChanged={onChanged} />}
-              {g.id === "advanced" && (
-                <div style={{ marginTop: "0.5rem" }}>
-                  <button type="button" className="btn small" onClick={() => scrollToGroup("logs")}>
-                    <FolderIcon />
-                    {t("settings.viewLogs")}
-                  </button>
-                </div>
-              )}
             </section>
           ))}
         </div>
@@ -229,7 +236,11 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
                   : ""}
           </p>
           {changed.length > 0 && (
-            <button type="button" className="btn ghost" onClick={() => setDraft({})} disabled={busy}>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setDraft({})}
+              disabled={busy}>
               {t("settings.discard")}
             </button>
           )}
@@ -237,8 +248,7 @@ export function SettingsDialog({ section, health, presets, onClose, onChanged }:
             type="button"
             className="btn primary"
             onClick={() => void save()}
-            disabled={busy || changed.length === 0}
-          >
+            disabled={busy || changed.length === 0}>
             {busy ? t("settings.saving") : t("settings.save")}
           </button>
         </footer>
@@ -279,7 +289,8 @@ function PresetPicker({ id, value, presets, describedBy, onChange }: PresetPicke
   /** Preset pertama yang masuk akal untuk jenis dan format tertentu. */
   function firstOf(k: PresetKind, f?: string): string {
     const candidates = presets.filter((p) => p.kind === k && (!f || p.format === f));
-    const video = k === "video" ? candidates.find((p) => p.max_height === DEFAULT_VIDEO_HEIGHT) : undefined;
+    const video =
+      k === "video" ? candidates.find((p) => p.max_height === DEFAULT_VIDEO_HEIGHT) : undefined;
     return (video ?? candidates[0])?.id ?? "";
   }
 
@@ -301,7 +312,7 @@ function PresetPicker({ id, value, presets, describedBy, onChange }: PresetPicke
             ))}
           </div>
         )}
-        <select
+        <Select
           id={id}
           className="preset-format"
           value={format}
@@ -313,10 +324,10 @@ function PresetPicker({ id, value, presets, describedBy, onChange }: PresetPicke
               {f.toUpperCase()}
             </option>
           ))}
-        </select>
+        </Select>
         {/* Format dengan satu pilihan, seperti WAV, tidak butuh pilihan kualitas. */}
         {choices.length > 1 && (
-          <select
+          <Select
             className="preset-quality"
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -326,7 +337,7 @@ function PresetPicker({ id, value, presets, describedBy, onChange }: PresetPicke
                 {presetLabel(p)}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
       {format && <p className="hint">{formatHint(format)}</p>}
@@ -375,7 +386,13 @@ function Field({ setting, value, dirty, invalid, presets, onChange }: FieldProps
   switch (setting.key === "default_preset_id" && presets.length > 0 ? "preset" : setting.kind) {
     case "preset":
       control = (
-        <PresetPicker id={id} value={value} presets={presets} describedBy={hintId} onChange={onChange} />
+        <PresetPicker
+          id={id}
+          value={value}
+          presets={presets}
+          describedBy={hintId}
+          onChange={onChange}
+        />
       );
       break;
     case "path":
@@ -383,18 +400,22 @@ function Field({ setting, value, dirty, invalid, presets, onChange }: FieldProps
       break;
     case "enum":
       control = (
-        <select id={id} value={value} onChange={(e) => onChange(e.target.value)} aria-describedby={hintId}>
+        <Select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-describedby={hintId}>
           {setting.options?.map((opt) => (
             <option key={opt} value={opt}>
               {optionLabel(setting.key, opt, presets)}
             </option>
           ))}
-        </select>
+        </Select>
       );
       break;
     case "int":
       control = (
-        <input
+        <NumberInput
           id={id}
           type="number"
           className="mono narrow"
@@ -422,7 +443,13 @@ function Field({ setting, value, dirty, invalid, presets, onChange }: FieldProps
       break;
     default:
       control = (
-        <input id={id} type="text" value={value} onChange={(e) => onChange(e.target.value)} aria-describedby={hintId} />
+        <input
+          id={id}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-describedby={hintId}
+        />
       );
   }
 
@@ -578,19 +605,28 @@ function ToolsPanel({ health, onChanged }: { health: Health | null; onChanged: (
       <ul className="tools">
         {Object.entries(health.tools).map(([name, tool]) => (
           <li key={name} aria-busy={busy.has(name)}>
-            <span className={tool.available ? (tool.update_available ? "dot warn" : "dot ok") : "dot warn"} />
+            <span
+              className={
+                tool.available ? (tool.update_available ? "dot warn" : "dot ok") : "dot warn"
+              }
+            />
             <span className="tool-name">{name}</span>
             <span className="mono tool-version">
               {tool.available ? tool.version || t("tools.installed") : t("tools.unavailable")}
               {tool.update_available && tool.latest_version && (
-                <span className="tool-latest"> → {t("tools.newVersion", { version: tool.latest_version })}</span>
+                <span className="tool-latest">
+                  {" "}
+                  → {t("tools.newVersion", { version: tool.latest_version })}
+                </span>
               )}
             </span>
             <ToolAction
               name={name}
               tool={tool}
               busy={busy.has(name)}
-              onInstall={() => void run(name, t("tools.installFailed"), () => api.installTool(name))}
+              onInstall={() =>
+                void run(name, t("tools.installFailed"), () => api.installTool(name))
+              }
               onUpdate={() => void run(name, t("tools.updateFailed"), () => api.updateTool(name))}
             />
             {busy.has(name) && progress[name] && <ToolProgressBar progress={progress[name]} />}
@@ -628,8 +664,8 @@ function ToolProgressBar({ progress }: { progress: ToolProgress }) {
           // "0 KB" terbaca seperti unduhan yang macet.
           t("tools.connecting")
         : sized
-        ? t("tools.downloading", { done, total: formatBytes(progress.total_bytes) })
-        : t("tools.downloadingUnknown", { done });
+          ? t("tools.downloading", { done, total: formatBytes(progress.total_bytes) })
+          : t("tools.downloadingUnknown", { done });
 
   return (
     <div className="tool-progress">
@@ -640,7 +676,8 @@ function ToolProgressBar({ progress }: { progress: ToolProgress }) {
         aria-label={label}
       />
       <span className="hint mono">
-        {progress.steps > 1 && `${t("tools.step", { step: progress.step, steps: progress.steps })} · `}
+        {progress.steps > 1 &&
+          `${t("tools.step", { step: progress.step, steps: progress.steps })} · `}
         {label}
       </span>
     </div>
@@ -713,15 +750,14 @@ function DisplayPanel() {
         </div>
         {/* Nama bahasa sengaja ditulis dalam bahasanya sendiri, supaya tetap
             terbaca oleh orang yang tidak memahami bahasa yang sedang aktif. */}
-        <select
+        <Select
           id="setting-language"
           value={locale}
           onChange={(e) => setLocale(e.target.value as Locale)}
-          aria-describedby="setting-language-hint"
-        >
+          aria-describedby="setting-language-hint">
           <option value="id">Bahasa Indonesia</option>
           <option value="en">English</option>
-        </select>
+        </Select>
         <p id="setting-language-hint" className="hint">
           {t("settings.hint.language")}
         </p>
@@ -798,209 +834,5 @@ function AboutPanel({ health, onChanged }: { health: Health | null; onChanged: (
       <dt>{t("settings.about.commit")}</dt>
       <dd className="mono">{health.commit}</dd>
     </dl>
-  );
-}
-
-function LogsPanel() {
-  const [lines, setLines] = useState<string[]>([]);
-  const [logPath, setLogPath] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [filterLevel, setFilterLevel] = useState<string>("ALL");
-  const [search, setSearch] = useState("");
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const [revealing, setRevealing] = useState(false);
-  const [userScrolled, setUserScrolled] = useState(false);
-  const logEndRef = useRef<HTMLDivElement>(null);
-  const consoleRef = useRef<HTMLDivElement>(null);
-
-  async function fetchLogs(silent = false) {
-    if (!silent) setLoading(true);
-    try {
-      const res = await api.logs(500);
-      setLines(res.lines);
-      setLogPath(res.path);
-      setError(null);
-    } catch (err) {
-      if (!silent) setError(messageFor(err, t("logs.loadFailed")));
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void fetchLogs();
-  }, []);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const timer = setInterval(() => {
-      void fetchLogs(true);
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [autoRefresh]);
-
-  useEffect(() => {
-    if (!userScrolled && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: "instant" });
-    }
-  }, [lines, userScrolled]);
-
-  const filtered = lines.filter((line) => {
-    if (filterLevel !== "ALL") {
-      const target = `level=${filterLevel}`;
-      if (!line.toUpperCase().includes(target)) return false;
-    }
-    if (search.trim()) {
-      if (!line.toLowerCase().includes(search.toLowerCase())) return false;
-    }
-    return true;
-  });
-
-  async function handleCopy() {
-    const text = filtered.join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Abaikan bila clipboard ditolak
-    }
-  }
-
-  async function handleReveal() {
-    setRevealing(true);
-    try {
-      await api.revealLogs();
-    } catch (err) {
-      setError(messageFor(err, t("logs.revealFailed")));
-    } finally {
-      setRevealing(false);
-    }
-  }
-
-  return (
-    <div className="logs-panel">
-      {error && (
-        <p className="alert" role="alert">
-          {error}
-        </p>
-      )}
-
-      <div className="logs-toolbar">
-        <div className="logs-filters">
-          <select
-            value={filterLevel}
-            onChange={(e) => setFilterLevel(e.target.value)}
-            aria-label={t("logs.filterAll")}
-          >
-            <option value="ALL">{t("logs.filterAll")}</option>
-            <option value="INFO">INFO</option>
-            <option value="WARN">WARN</option>
-            <option value="ERROR">ERROR</option>
-            <option value="DEBUG">DEBUG</option>
-          </select>
-
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("logs.searchPlaceholder")}
-            className="logs-search-input"
-          />
-        </div>
-
-        <div className="logs-actions">
-          <label className="logs-auto-refresh">
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(e) => setAutoRefresh(e.target.checked)}
-            />
-            <span>{t("logs.autoRefresh")}</span>
-          </label>
-
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => void fetchLogs()}
-            disabled={loading}
-          >
-            {t("logs.refresh")}
-          </button>
-
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => void handleCopy()}
-            disabled={filtered.length === 0}
-          >
-            {copied ? t("logs.copied") : t("logs.copy")}
-          </button>
-
-          <button
-            type="button"
-            className="btn small"
-            onClick={() => void handleReveal()}
-            disabled={revealing}
-            title={logPath}
-          >
-            <FolderIcon />
-            {t("logs.openFile")}
-          </button>
-        </div>
-      </div>
-
-      <div
-        className="logs-console"
-        ref={consoleRef}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-          setUserScrolled(!isNearBottom);
-        }}
-      >
-        {lines.length === 0 ? (
-          <p className="logs-empty">{t("logs.empty")}</p>
-        ) : filtered.length === 0 ? (
-          <p className="logs-empty">{t("logs.noMatch")}</p>
-        ) : (
-          filtered.map((line, idx) => {
-            const isError = line.includes("level=ERROR") || line.includes("level=error");
-            const isWarn = line.includes("level=WARN") || line.includes("level=warn");
-            const isInfo = line.includes("level=INFO") || line.includes("level=info");
-            const isDebug = line.includes("level=DEBUG") || line.includes("level=debug");
-            const levelClass = isError
-              ? "log-error"
-              : isWarn
-              ? "log-warn"
-              : isInfo
-              ? "log-info"
-              : isDebug
-              ? "log-debug"
-              : "";
-            return (
-              <div key={idx} className={`logs-line ${levelClass}`}>
-                <span className="logs-line-num">{idx + 1}</span>
-                <span className="logs-line-text">{line}</span>
-              </div>
-            );
-          })
-        )}
-        <div ref={logEndRef} />
-      </div>
-
-      <div className="logs-foot">
-        <span className="hint">
-          {t("logs.summary", { count: filtered.length, total: lines.length })}
-        </span>
-        {logPath && (
-          <code className="logs-path" title={logPath}>
-            {logPath}
-          </code>
-        )}
-      </div>
-    </div>
   );
 }

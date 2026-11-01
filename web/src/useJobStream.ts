@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { sessionToken, type JobStatus } from "./api";
+import { useEffect, useState } from "react";
+import { sessionToken, isTerminal, type JobStatus } from "./api";
 
 export interface StreamState {
   status?: JobStatus;
@@ -50,77 +50,100 @@ function parseFrames(chunk: string): Frame[] {
  */
 export function useJobStream(jobId: string | null, active: boolean): StreamState {
   const [state, setState] = useState<StreamState>({ done: false });
-  const lastEventId = useRef<string | undefined>(undefined);
-
   useEffect(() => {
+    setState({ done: false });
     if (!jobId || !active) return;
-
-    const controller = new AbortController();
-    let cancelled = false;
-
-    async function listen() {
+    let disposed = false;
+    let finished = false;
+    let generation = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    let lastEventId: string | undefined;
+    let delay = 1000;
+    async function connect() {
+      if (disposed || finished) return;
+      const current = ++generation;
+      controller?.abort();
+      const next = new AbortController();
+      controller = next;
+      let watchdog = setTimeout(() => next.abort(), 35_000);
+      setState({ done: false });
       const headers = new Headers();
       if (sessionToken) headers.set("X-Session-Token", sessionToken);
-      if (lastEventId.current) headers.set("Last-Event-ID", lastEventId.current);
-
+      if (lastEventId) headers.set("Last-Event-ID", lastEventId);
       try {
-        const res = await fetch(`/api/jobs/${jobId}/events`, {
-          headers,
-          signal: controller.signal,
-        });
-        if (!res.ok || !res.body) return;
-
+        const res = await fetch(`/api/jobs/${jobId}/events`, { headers, signal: next.signal });
+        if (!res.ok || !res.body) throw new Error("stream unavailable");
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-
-        while (!cancelled) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-
-          // Sisa setelah pemisah terakhir adalah frame yang belum utuh.
-          const lastBreak = buffer.lastIndexOf("\n\n");
-          if (lastBreak === -1) continue;
-
-          const complete = buffer.slice(0, lastBreak + 2);
-          buffer = buffer.slice(lastBreak + 2);
-
-          for (const frame of parseFrames(complete)) {
-            if (frame.id) lastEventId.current = frame.id;
-
-            let payload: Record<string, unknown> = {};
-            try {
-              payload = JSON.parse(frame.data);
-            } catch {
-              continue;
+        try {
+          while (!disposed && current === generation && !finished) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (current !== generation || disposed) break;
+            clearTimeout(watchdog);
+            watchdog = setTimeout(() => next.abort(), 35_000);
+            delay = 1000;
+            buffer += decoder.decode(value, { stream: true });
+            const lastBreak = buffer.lastIndexOf("\n\n");
+            if (lastBreak < 0) continue;
+            const frames = parseFrames(buffer.slice(0, lastBreak + 2));
+            buffer = buffer.slice(lastBreak + 2);
+            for (const frame of frames) {
+              let payload: Record<string, unknown>;
+              try {
+                payload = JSON.parse(frame.data);
+              } catch {
+                continue;
+              }
+              if (frame.id) lastEventId = frame.id;
+              finished =
+                frame.event === "done" ||
+                (typeof payload.status === "string" && isTerminal(payload.status as JobStatus));
+              setState((prev) => ({
+                status: (payload.status as JobStatus) ?? prev.status,
+                phase: (payload.phase as string) ?? prev.phase,
+                percent:
+                  payload.percent === undefined ? prev.percent : (payload.percent as number | null),
+                code: (payload.code as string) ?? prev.code,
+                done: finished,
+              }));
             }
-
-            setState((prev) => ({
-              status: (payload.status as JobStatus) ?? prev.status,
-              phase: (payload.phase as string) ?? prev.phase,
-              percent:
-                payload.percent === undefined
-                  ? prev.percent
-                  : (payload.percent as number | null),
-              code: (payload.code as string) ?? prev.code,
-              done: frame.event === "done",
-            }));
           }
+        } finally {
+          await reader.cancel().catch(() => {});
+          reader.releaseLock();
         }
       } catch {
-        // Koneksi terputus atau dibatalkan; pemanggil tetap punya polling
-        // sebagai cadangan sehingga tidak ada yang perlu ditangani di sini.
+        /* Polling remains available while the stream reconnects. */
+      } finally {
+        clearTimeout(watchdog);
+        if (!disposed && !finished && current === generation) {
+          setState({ done: false });
+          retry = setTimeout(() => void connect(), delay);
+          delay = Math.min(delay * 2, 15000);
+        }
       }
     }
-
-    void listen();
+    function resume() {
+      if (document.visibilityState === "hidden" || disposed || finished) return;
+      clearTimeout(retry);
+      void connect();
+    }
+    window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", resume);
+    void connect();
     return () => {
-      cancelled = true;
-      controller.abort();
+      disposed = true;
+      generation++;
+      clearTimeout(retry);
+      controller?.abort();
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", resume);
     };
   }, [jobId, active]);
-
   return state;
 }

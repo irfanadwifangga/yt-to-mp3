@@ -87,7 +87,7 @@ function setup(defaultPreset = "mp3_standard") {
   const user = userEvent.setup();
   render(<Capture ready presets={presets} defaultPreset={defaultPreset} onQueued={onQueued} />);
   // Label yang sama juga menamai section-nya, jadi dicari lewat peran.
-  const input = screen.getByRole("textbox", { name: t("capture.label") });
+  const input = screen.getByRole("textbox", { name: t("capture.urlLabel") });
   return { onQueued, user, input };
 }
 
@@ -149,7 +149,9 @@ describe("Capture", () => {
       title: "Bohemian Rhapsody (Live Aid)",
       artist: "Queen",
     });
-    expect(onQueued).toHaveBeenCalledWith(expect.objectContaining({ title: "Bohemian Rhapsody (Live Aid)" }));
+    expect(onQueued).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Bohemian Rhapsody (Live Aid)" }),
+    );
   });
 
   it("mengembalikan judul dan artis asli", async () => {
@@ -220,7 +222,12 @@ describe("Capture", () => {
     vi.mocked(api.metadata).mockImplementation((link) =>
       link === LINK
         ? slow.promise
-        : Promise.resolve(metadata({ source_key: "youtube:dQw4w9WgXcQ", suggested_title: "Never Gonna Give You Up" })),
+        : Promise.resolve(
+            metadata({
+              source_key: "youtube:dQw4w9WgXcQ",
+              suggested_title: "Never Gonna Give You Up",
+            }),
+          ),
     );
     const { user, input } = setup();
 
@@ -334,7 +341,7 @@ describe("Capture", () => {
     expect(api.createJob).toHaveBeenCalledWith(LINK, "mkv_best", expect.anything());
   });
 
-  it("menyembunyikan pilihan kualitas untuk format dengan satu pilihan", async () => {
+  it("menampilkan kualitas yang dipakai untuk format dengan satu pilihan", async () => {
     vi.mocked(api.metadata).mockResolvedValue(metadata());
     vi.mocked(api.createJob).mockResolvedValue(queuedJob);
     const { user, input } = setup();
@@ -346,10 +353,41 @@ describe("Capture", () => {
     expect([...formatField().options].map((o) => o.textContent)).toEqual(["MP3", "OPUS", "WAV"]);
     await user.selectOptions(formatField(), "wav");
 
-    expect(screen.queryByLabelText(t("capture.preset"))).toBeNull();
+    expect((screen.getByLabelText(t("capture.preset")) as HTMLSelectElement).value).toBe(
+      "wav_pcm16",
+    );
     expect(screen.getByText(t("formatHint.wav"))).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: t("capture.convert") }));
     expect(api.createJob).toHaveBeenCalledWith(LINK, "wav_pcm16", expect.anything());
   });
+});
+
+it("keeps trim edits after an explicit analysis and submits their exact range", async () => {
+  vi.mocked(api.metadata).mockResolvedValue(metadata());
+  vi.mocked(api.createJob).mockResolvedValue(queuedJob);
+  const { user, input } = setup();
+  await user.type(input, LINK);
+  await user.click(screen.getByRole("button", { name: t("capture.analyze") }));
+  await titleField();
+  await user.click(screen.getByRole("checkbox", { name: t("trim.enable") }));
+  const start = screen.getByRole("spinbutton", { name: t("trim.start") });
+  const end = screen.getByRole("spinbutton", { name: t("trim.end") });
+  await user.clear(start);
+  await user.type(start, "1.25");
+  await user.clear(end);
+  await user.type(end, "3.5");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  });
+  expect(vi.mocked(api.metadata)).toHaveBeenCalledTimes(1);
+  expect((start as HTMLInputElement).value).toBe("1.25");
+  await user.click(screen.getByRole("button", { name: t("capture.convert") }));
+  await waitFor(() =>
+    expect(api.createJob).toHaveBeenCalledWith(
+      LINK,
+      "mp3_standard",
+      expect.objectContaining({ trim_start_ms: 1250, trim_end_ms: 3500 }),
+    ),
+  );
 });

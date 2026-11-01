@@ -66,33 +66,52 @@ export interface AppUpdate {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (token) headers.set("X-Session-Token", token);
-  if (init.body) headers.set("Content-Type", "application/json");
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (init.signal?.aborted) controller.abort();
+  init.signal?.addEventListener("abort", abort, { once: true });
+  // Native dialogs wait for the user. Tool work and metadata have separate budgets.
+  const timeout =
+    path === "/dialogs/folder"
+      ? 0
+      : path.startsWith("/tools/")
+        ? 600_000
+        : path === "/metadata"
+          ? 70_000
+          : 15_000;
+  const timer = timeout ? setTimeout(abort, timeout) : undefined;
+  try {
+    const headers = new Headers(init.headers);
+    if (token) headers.set("X-Session-Token", token);
+    if (init.body) headers.set("Content-Type", "application/json");
 
-  const res = await fetch(`/api${path}`, { ...init, headers });
+    const res = await fetch(`/api${path}`, { ...init, headers, signal: controller.signal });
 
-  if (!res.ok) {
-    let code = "INTERNAL";
-    let details: Record<string, string> = {};
-    try {
-      const body = await res.json();
-      code = body?.error?.code ?? code;
-      details = body?.error?.details ?? {};
-    } catch {
-      // Respons bukan JSON; pertahankan kode default.
+    if (!res.ok) {
+      let code = "INTERNAL";
+      let details: Record<string, string> = {};
+      try {
+        const body = await res.json();
+        code = body?.error?.code ?? code;
+        details = body?.error?.details ?? {};
+      } catch {
+        // Respons bukan JSON; pertahankan kode default.
+      }
+      throw new ApiError(code, res.status, details);
     }
-    throw new ApiError(code, res.status, details);
+
+    // 204 No Content tidak punya body untuk diurai.
+    if (res.status === 204) return undefined as T;
+
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener("abort", abort);
   }
-
-  // 204 No Content tidak punya body untuk diurai.
-  if (res.status === 204) return undefined as T;
-
-  return (await res.json()) as T;
 }
 
 export const api = {
-  health: () => request<Health>("/health"),
+  health: (signal?: AbortSignal) => request<Health>("/health", { signal }),
   shutdown: () => request<{ status: string }>("/shutdown", { method: "POST" }),
   tools: () => request<ToolsPayload>("/tools"),
   installTool: (name: string) =>
@@ -115,27 +134,44 @@ export const api = {
       body: JSON.stringify(values),
     }),
   /** scope "active" untuk antrean, "finished" untuk riwayat berhalaman. */
-  jobs: (params: { scope?: "active" | "finished"; limit?: number; cursor?: string } = {}) => {
+  jobs: (
+    params: { scope?: "active" | "finished"; limit?: number; cursor?: string } = {},
+    signal?: AbortSignal,
+  ) => {
     const query = new URLSearchParams();
     if (params.scope) query.set("status", params.scope);
     if (params.limit) query.set("limit", String(params.limit));
     if (params.cursor) query.set("cursor", params.cursor);
     const qs = query.toString();
-    return request<{ jobs: Job[]; next_cursor?: string }>(qs ? `/jobs?${qs}` : "/jobs");
+    return request<{ jobs: Job[]; next_cursor?: string }>(qs ? `/jobs?${qs}` : "/jobs", { signal });
+  },
+  jobsPage: (
+    params: { page: number; page_size: number; q?: string; status?: string; kind?: string },
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params))
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    return request<{ jobs: Job[]; total: number; page: number; page_size: number }>(
+      `/jobs?${query}`,
+      { signal },
+    );
   },
   /** title dan artist kosong berarti memakai metadata sumber. */
-  createJob: (url: string, presetId: string, tags: { title?: string; artist?: string } = {}) =>
+  createJob: (
+    url: string,
+    presetId: string,
+    tags: { title?: string; artist?: string; trim_start_ms?: number; trim_end_ms?: number } = {},
+  ) =>
     request<Job>("/jobs", {
       method: "POST",
       body: JSON.stringify({ url, preset_id: presetId, ...tags }),
     }),
-  cancelJob: (id: string) =>
-    request<{ status: string }>(`/jobs/${id}/cancel`, { method: "POST" }),
+  cancelJob: (id: string) => request<{ status: string }>(`/jobs/${id}/cancel`, { method: "POST" }),
   retryJob: (id: string) => request<Job>(`/jobs/${id}/retry`, { method: "POST" }),
   deleteJob: (id: string, deleteFile = false) =>
     request<void>(`/jobs/${id}?delete_file=${deleteFile}`, { method: "DELETE" }),
-  revealFile: (id: string) =>
-    request<void>(`/files/${id}/reveal`, { method: "POST" }),
+  revealFile: (id: string) => request<void>(`/files/${id}/reveal`, { method: "POST" }),
   /**
    * Membuka dialog pemilih folder native di komputer pengguna. Browser tidak
    * pernah memberi tahu halaman path absolut sebuah folder, jadi dialognya
@@ -151,7 +187,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url }),
     }),
-  logs: (lines = 300) => request<LogsPayload>(`/logs?lines=${lines}`),
+  logs: (lines = 300, signal?: AbortSignal) =>
+    request<LogsPayload>(`/logs?lines=${lines}`, { signal }),
   revealLogs: () => request<void>("/logs/reveal", { method: "POST" }),
 };
 
@@ -160,7 +197,16 @@ export interface LogsPayload {
   path: string;
 }
 
+export interface SourceFormat {
+  height: number;
+  video_codec: string;
+  audio_codec: string;
+  bitrate_kbps: number;
+  size_bytes: number;
+}
+
 export interface Metadata {
+  source_formats?: SourceFormat[];
   source_key: string;
   source_url: string;
   title: string;
@@ -180,6 +226,8 @@ export interface Metadata {
 }
 
 export interface PreviousConversion {
+  trim_start_ms?: number;
+  trim_end_ms?: number;
   job_id: string;
   preset_id: string;
   file_id: string;
@@ -227,6 +275,10 @@ export type JobStatus =
   | "cancelled";
 
 export interface Job {
+  trim_start_ms?: number;
+  trim_end_ms?: number;
+  duration_ms?: number;
+  file_size_bytes?: number;
   id: string;
   source_url: string;
   source_key: string;
