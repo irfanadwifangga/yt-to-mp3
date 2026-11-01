@@ -156,3 +156,20 @@ func TestIdleJendelaDitutupMenungguJob(t *testing.T) {
 		t.Fatal("tidak berhenti setelah job selesai dan jendela sudah ditutup")
 	}
 }
+
+func TestManagedWindowSurvivesSuspendedPolling(t *testing.T) {
+	w, m := newIdleWorld()
+	m.WindowOpened()
+	w.now = w.now.Add(2 * time.Hour)
+	if m.Idle(context.Background()) {
+		t.Fatal("managed window must survive suspended polling")
+	}
+	m.WindowClosed()
+	if m.Idle(context.Background()) {
+		t.Fatal("window close requires grace period")
+	}
+	w.now = w.now.Add(11 * time.Second)
+	if !m.Idle(context.Background()) {
+		t.Fatal("closed idle window should shut down")
+	}
+}

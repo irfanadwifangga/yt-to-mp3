@@ -334,10 +334,13 @@ func run() error {
 	// memberi akses penuh ke API selama proses hidup.
 	fmt.Fprintln(os.Stderr, "buka:", info.URL())
 
+	var appWindow *browser.Window
 	if !*noBrowser {
 		// Di Windows UI dibuka sebagai jendela aplikasi tersendiri (ADR-034).
 		// Menutupnya menghentikan aplikasi begitu tidak ada job yang berjalan.
 		if win := openUI(info.URL(), windowProfileDir(cfg), log, false); win != nil {
+			appWindow = win
+			idle.WindowOpened()
 			go func() {
 				<-win.Closed()
 				log.Info("jendela aplikasi ditutup")
@@ -354,6 +357,11 @@ func run() error {
 	case <-ctx.Done():
 		log.Info("sinyal diterima, mematikan")
 	case <-srv.ShutdownRequested():
+		if appWindow != nil {
+			if err := appWindow.Close(); err != nil {
+				log.Warn("gagal menutup jendela aplikasi", "error", err)
+			}
+		}
 		log.Info("permintaan shutdown dari UI")
 	case <-idle.Done():
 	}

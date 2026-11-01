@@ -73,3 +73,27 @@ func TestWindowHandoffTidakDianggapDitutup(t *testing.T) {
 	case <-time.After(1500 * time.Millisecond):
 	}
 }
+
+func TestWindowCloseTargetsOnlyOwnedProcess(t *testing.T) {
+	owned := watch(startHelper(t, "30s"))
+	other := watch(startHelper(t, "30s"))
+	t.Cleanup(func() { _ = owned.Close(); _ = other.Close() })
+	if err := owned.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(5 * time.Second)
+	for !owned.exited.Load() {
+		select {
+		case <-deadline:
+			t.Fatal("owned process did not exit")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if other.exited.Load() {
+		t.Fatal("unrelated process was closed")
+	}
+	if err := owned.Close(); err != nil {
+		t.Fatal("closing exited process must be safe:", err)
+	}
+}

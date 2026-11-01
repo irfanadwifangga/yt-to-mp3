@@ -2,7 +2,9 @@ package browser
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,7 +20,17 @@ var handoffThreshold = 5 * time.Second
 
 // Window adalah jendela aplikasi yang sedang terbuka.
 type Window struct {
-	closed chan struct{}
+	closed  chan struct{}
+	process *os.Process
+	exited  atomic.Bool
+}
+
+// Close targets only the dedicated browser process launched for this app.
+func (w *Window) Close() error {
+	if w.exited.Load() {
+		return nil
+	}
+	return closeAppProcess(w.process)
 }
 
 // Closed ditutup ketika pengguna menutup jendela. Tidak pernah ditutup bila
@@ -28,11 +40,12 @@ func (w *Window) Closed() <-chan struct{} { return w.closed }
 
 // watch mengamati proses browser sampai berakhir.
 func watch(cmd *exec.Cmd) *Window {
-	w := &Window{closed: make(chan struct{})}
+	w := &Window{closed: make(chan struct{}), process: cmd.Process}
 	limit := handoffThreshold
 	started := time.Now()
 	go func() {
 		_ = cmd.Wait()
+		w.exited.Store(true)
 		if time.Since(started) >= limit {
 			close(w.closed)
 		}

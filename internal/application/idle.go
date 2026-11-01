@@ -51,10 +51,19 @@ type IdleMonitor struct {
 	mu           sync.Mutex
 	lastBusy     time.Time
 	windowClosed bool
+	windowOpen   bool
 
 	wake chan struct{}
 	done chan struct{}
 	once sync.Once
+}
+
+// WindowOpened protects a managed window while browser timers are suspended.
+func (m *IdleMonitor) WindowOpened() {
+	m.mu.Lock()
+	m.windowOpen = true
+	m.windowClosed = false
+	m.mu.Unlock()
 }
 
 // WindowClosed memberi tahu bahwa jendela aplikasi ditutup.
@@ -68,6 +77,8 @@ type IdleMonitor struct {
 func (m *IdleMonitor) WindowClosed() {
 	m.mu.Lock()
 	m.windowClosed = true
+	m.windowOpen = false
+	m.lastBusy = m.d.Now()
 	m.mu.Unlock()
 	select {
 	case m.wake <- struct{}{}:
@@ -133,6 +144,12 @@ func (m *IdleMonitor) Run(ctx context.Context) {
 // Kegagalan membaca database dianggap sibuk. Menghentikan aplikasi karena
 // tidak bisa memastikan keadaan justru bisa memutus job yang sedang jalan.
 func (m *IdleMonitor) Idle(ctx context.Context) bool {
+	m.mu.Lock()
+	open := m.windowOpen
+	m.mu.Unlock()
+	if open {
+		return false
+	}
 	timeout := m.d.Timeout()
 	if m.closed() && (timeout <= 0 || timeout > windowCloseGrace) {
 		timeout = windowCloseGrace
