@@ -424,13 +424,16 @@ export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }
           )
         )}
       </div>
-      <button className="btn primary" type="submit" disabled={busy !== null || ready === false}>
+      <button
+        className="btn primary capture-analyze"
+        type="submit"
+        disabled={busy !== null || ready === false}>
         {t("capture.analyze")}
       </button>
       {YOUTUBE_URL.test(url) && playlistURL(url) && (
         <button
           type="button"
-          className="btn"
+          className="btn capture-playlist"
           disabled={ready !== true || busy === "queue" || busy === "update"}
           onClick={() => setPlaylistSource(playlistURL(url))}>
           {t("playlist.open")}

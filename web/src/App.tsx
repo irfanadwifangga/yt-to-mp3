@@ -277,9 +277,9 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
+        <div className="brand" aria-label={APP_NAME}>
           <img className="brand-logo" src="/icon.svg" alt="" />
-          {APP_NAME}
+          <span className="brand-name">{APP_NAME}</span>
         </div>
 
         <div className="capture-host" ref={setCaptureHost} />

@@ -8,6 +8,7 @@ import "./index.css";
 import "./studio.css";
 import "./controls.css";
 import "./playlist.css";
+import "./responsive.css";
 
 // Tema dipasang sebelum render pertama supaya halaman tidak berkedip dari
 // terang ke gelap.
