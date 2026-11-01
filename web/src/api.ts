@@ -76,9 +76,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ? 0
       : path.startsWith("/tools/")
         ? 600_000
-        : path === "/metadata"
-          ? 70_000
-          : 15_000;
+        : path === "/playlists"
+          ? 100_000
+          : path === "/metadata"
+            ? 70_000
+            : 15_000;
   const timer = timeout ? setTimeout(abort, timeout) : undefined;
   try {
     const headers = new Headers(init.headers);
@@ -187,6 +189,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url }),
     }),
+  playlist: (url: string, signal?: AbortSignal) =>
+    request<Playlist>("/playlists", { method: "POST", body: JSON.stringify({ url }), signal }),
   logs: (lines = 300, signal?: AbortSignal) =>
     request<LogsPayload>(`/logs?lines=${lines}`, { signal }),
   revealLogs: () => request<void>("/logs/reveal", { method: "POST" }),
@@ -195,6 +199,18 @@ export const api = {
 export interface LogsPayload {
   lines: string[];
   path: string;
+}
+
+export interface PlaylistEntry {
+  url: string;
+  title: string;
+  duration_ms: number;
+  unavailable: boolean;
+}
+export interface Playlist {
+  title: string;
+  entries: PlaylistEntry[];
+  truncated: boolean;
 }
 
 export interface SourceFormat {

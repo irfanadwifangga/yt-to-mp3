@@ -1,4 +1,6 @@
 import { TrimTimeline } from "./TrimTimeline";
+import { playlistURL } from "./playlist";
+import { PlaylistDialog } from "./PlaylistDialog";
 import { NumberInput } from "./NumberInput";
 import { Select } from "./Select";
 import { createPortal } from "react-dom";
@@ -76,6 +78,7 @@ interface Props {
  */
 export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }: Props) {
   const [url, setUrl] = useState("");
+  const [playlistSource, setPlaylistSource] = useState<string | null>(null);
   const [presetId, setPresetId] = useState("");
   // Jenis keluaran yang dipilih; null berarti mengikuti preset bawaan.
   // Sengaja bertahan setelah konversi: pengguna yang sedang mengambil video
@@ -214,6 +217,14 @@ export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }
     if (!link || ready !== true) return;
 
     analyzed.current = link;
+    if (!YOUTUBE_URL.test(link) && playlistURL(link)) {
+      setResult(null);
+      setError(null);
+      setErrorCode(null);
+      setBusy(null);
+      setPlaylistSource(playlistURL(link));
+      return;
+    }
     setBusy("analyze");
     setError(null);
     setErrorCode(null);
@@ -243,7 +254,7 @@ export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }
     if (
       ready !== true ||
       busy === "queue" ||
-      !YOUTUBE_URL.test(link) ||
+      (!YOUTUBE_URL.test(link) && !playlistURL(link)) ||
       link === analyzed.current
     ) {
       return;
@@ -259,7 +270,8 @@ export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }
   /** Menempel tautan adalah niat yang jelas; analisis berjalan tanpa jeda. */
   function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
     const text = e.clipboardData.getData("text").trim();
-    if (!YOUTUBE_URL.test(text) || ready !== true || busy === "queue") return;
+    if ((!YOUTUBE_URL.test(text) && !playlistURL(text)) || ready !== true || busy === "queue")
+      return;
     e.preventDefault();
     setUrl(text);
     void analyze(text);
@@ -415,6 +427,15 @@ export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }
       <button className="btn primary" type="submit" disabled={busy !== null || ready === false}>
         {t("capture.analyze")}
       </button>
+      {YOUTUBE_URL.test(url) && playlistURL(url) && (
+        <button
+          type="button"
+          className="btn"
+          disabled={ready !== true || busy === "queue" || busy === "update"}
+          onClick={() => setPlaylistSource(playlistURL(url))}>
+          {t("playlist.open")}
+        </button>
+      )}
     </form>
   );
 
@@ -429,6 +450,15 @@ export function Capture({ ready, presets, defaultPreset, onQueued, toolbarHost }
       {/* Enter tetap memicu analisis lewat submit implisit form satu input,
           termasuk untuk tautan yang tidak dikenali pola otomatis. */}
       {toolbarHost ? createPortal(urlForm, toolbarHost) : urlForm}
+      {playlistSource && (
+        <PlaylistDialog
+          url={playlistSource}
+          presets={presets}
+          defaultPreset={defaultPreset}
+          onQueued={onQueued}
+          onClose={() => setPlaylistSource(null)}
+        />
+      )}
 
       {!result && <h2 className="capture-empty-title">{t("capture.emptyTitle")}</h2>}
       <p id="capture-hint" className="hint" role="status">

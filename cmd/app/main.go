@@ -261,6 +261,7 @@ func run() error {
 		Tools:     toolService,
 		Presets:   presets,
 		Metadata:  application.NewMetadataService(resolver, mediaCache, log),
+		Playlists: resolver,
 		Jobs:      jobService,
 		Canceller: scheduler,
 		Hub:       hub,

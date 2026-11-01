@@ -15,6 +15,9 @@ vi.mock("./api", async (importOriginal) => {
 
 const LINK = "https://www.youtube.com/watch?v=fJ9rUzIMcZQ";
 const OTHER_LINK = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+vi.mock("./PlaylistDialog", () => ({
+  PlaylistDialog: ({ url }: { url: string }) => <p data-testid="playlist-dialog">{url}</p>,
+}));
 
 const audio = (id: string, format: string, over: Partial<Preset> = {}): Preset => ({
   id,
@@ -390,4 +393,16 @@ it("keeps trim edits after an explicit analysis and submits their exact range", 
       expect.objectContaining({ trim_start_ms: 1250, trim_end_ms: 3500 }),
     ),
   );
+});
+
+it("opens a pasted playlist directly and keeps mixed video links explicit", async () => {
+  vi.mocked(api.metadata).mockResolvedValue(metadata());
+  const { user, input } = setup();
+  await user.click(input);
+  await user.paste("https://youtube.com/playlist?list=PL_test");
+  expect(await screen.findByTestId("playlist-dialog")).toHaveProperty(
+    "textContent",
+    "https://www.youtube.com/playlist?list=PL_test",
+  );
+  expect(api.metadata).not.toHaveBeenCalled();
 });

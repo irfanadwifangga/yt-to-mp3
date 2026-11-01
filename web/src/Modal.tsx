@@ -6,10 +6,12 @@ export function Modal({
   title,
   onClose,
   children,
+  dismissible = true,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  dismissible?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -26,15 +28,19 @@ export function Modal({
       ref={ref}
       className="utility-modal"
       aria-label={title}
-      onCancel={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        if (dismissible) onClose();
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && dismissible) onClose();
       }}>
       <header className="sheet-head">
         <h2>{title}</h2>
         <button
           type="button"
           className="icon-btn"
+          disabled={!dismissible}
           onClick={onClose}
           aria-label={t("settings.close")}>
           <CloseIcon />

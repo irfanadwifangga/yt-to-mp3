@@ -8,6 +8,9 @@ A local desktop app that converts YouTube videos to MP3 audio or MP4 video (tech
 
 ## Features
 
+- **YouTube playlists** — paste a playlist URL to select all or some videos, then choose Audio/Video, format, and quality. For a video link containing a playlist parameter, press **Open playlist**. Each video becomes a separate task without trimming; active duplicates are skipped and adding stops when the queue is full. The list is limited to the first 500 entries, with a notice when truncated. Recognized private, deleted, or live entries cannot be selected; other availability checks happen when downloading. **Stop adding** waits for the current request and keeps tasks already queued.
+- **Preview diagnostics** — messages distinguish owner embedding restrictions, unavailable videos, rejected app identification, loading failures, and timeouts. YouTube error codes are shown for reporting, with retry for loading failures. Videos that reject embedding still offer a YouTube link and manual trim inputs. The referrer policy sends only the origin, without session paths or query parameters. [YouTube error reference](https://developers.google.com/youtube/iframe_api_reference#Events).
+
 - **Source preview and trimming** — play the YouTube source, select one start/end range, and convert a precisely re-encoded clip. Videos that refuse embedded playback provide a link to the source.
 - **Output size estimates** — based on the selected duration and format when enough data is available. Final size may vary and the source download may be larger.
 - **Unified queue and history** — search titles across the full history, filter by status and media type, and choose 10, 25, or 50 rows per page.

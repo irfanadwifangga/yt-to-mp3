@@ -34,6 +34,7 @@ type Options struct {
 
 	Tools     application.ToolManager
 	Metadata  *application.MetadataService
+	Playlists PlaylistResolver
 	Presets   application.PresetLister
 	Jobs      *application.JobService
 	Canceller JobCanceller
@@ -72,6 +73,7 @@ type Server struct {
 
 	tools     application.ToolManager
 	metadata  *application.MetadataService
+	playlists PlaylistResolver
 	presets   application.PresetLister
 	jobs      *application.JobService
 	canceller JobCanceller
@@ -113,6 +115,7 @@ func New(opts Options) *Server {
 		spaBuilt:   opts.SPABuilt,
 		tools:      opts.Tools,
 		metadata:   opts.Metadata,
+		playlists:  opts.Playlists,
 		presets:    opts.Presets,
 		jobs:       opts.Jobs,
 		canceller:  opts.Canceller,
@@ -156,6 +159,7 @@ func New(opts Options) *Server {
 	protected.HandleFunc("POST /tools/check", s.handleToolCheck)
 	protected.HandleFunc("POST /tools/update", s.handleToolUpdate)
 	protected.HandleFunc("POST /metadata", s.handleMetadata)
+	protected.HandleFunc("POST /playlists", s.handlePlaylist)
 	protected.HandleFunc("GET /presets", s.handlePresets)
 	protected.HandleFunc("POST /jobs", s.handleCreateJob)
 	protected.HandleFunc("GET /jobs", s.handleListJobs)
